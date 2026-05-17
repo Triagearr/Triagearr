@@ -1,0 +1,42 @@
+# Binaries
+/triagearr
+/cmd/triagearr/triagearr
+*.exe
+*.test
+*.out
+
+# Go workspace
+/vendor/
+
+# Build & release artifacts
+/dist/
+/bin/
+
+# Local config / data
+/data/
+/config/local.yml
+*.db
+*.db-wal
+*.db-shm
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Coverage
+coverage.out
+coverage.html
+
+# UI build
+/web/node_modules/
+/web/dist/
+/web/.vite/
+
+# Env files (must never be committed in plain)
+.env
+.env.local
+*.env.local

@@ -1,0 +1,106 @@
+version: 2
+
+project_name: triagearr
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: triagearr
+    main: ./cmd/triagearr
+    binary: triagearr
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.date={{ .CommitDate }}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - config.example.yml
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github-native
+  sort: asc
+
+dockers:
+  - id: linux-amd64
+    image_templates:
+      - "ghcr.io/triagearr/triagearr:{{ .Version }}-amd64"
+    use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .ShortCommit }}"
+      - "--build-arg=DATE={{ .CommitDate }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+  - id: linux-arm64
+    image_templates:
+      - "ghcr.io/triagearr/triagearr:{{ .Version }}-arm64"
+    use: buildx
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .ShortCommit }}"
+      - "--build-arg=DATE={{ .CommitDate }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+
+docker_manifests:
+  - name_template: "ghcr.io/triagearr/triagearr:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/triagearr/triagearr:{{ .Version }}-amd64"
+      - "ghcr.io/triagearr/triagearr:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/triagearr/triagearr:{{ if .Prerelease }}rc{{ else }}latest{{ end }}"
+    image_templates:
+      - "ghcr.io/triagearr/triagearr:{{ .Version }}-amd64"
+      - "ghcr.io/triagearr/triagearr:{{ .Version }}-arm64"
+
+release:
+  github:
+    owner: Triagearr
+    name: Triagearr
+  prerelease: auto
+  mode: replace
+  header: |
+    ## triagearr {{ .Tag }}
+
+    Container image: `ghcr.io/triagearr/triagearr:{{ .Version }}`

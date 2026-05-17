@@ -1,0 +1,184 @@
+# =============================================================================
+# Triagearr — heavily-commented example configuration
+# =============================================================================
+# Copy this file to /config/config.yml and adjust to your environment.
+# Anything in ${VAR} syntax is replaced with the value of the environment
+# variable at load time (and on SIGHUP reload).
+# See docs/CONFIGURATION.md for the authoritative reference.
+# =============================================================================
+
+# Master mode switch.
+#   dry-run: logs what *would* happen but never deletes. Safe.
+#   live:    destructive actions enabled. Requires also act:true per *arr.
+mode: dry-run
+
+# -----------------------------------------------------------------------------
+# HTTP server
+# -----------------------------------------------------------------------------
+http:
+  bind: ":9494"
+  # Required if bind is not 127.0.0.1.
+  # Generate one with: openssl rand -hex 32
+  api_key: "${TRIAGEARR_API_KEY}"
+  # CORS — leave empty unless serving the UI from a different origin (dev only).
+  cors_origins: []
+
+# -----------------------------------------------------------------------------
+# Storage
+# -----------------------------------------------------------------------------
+storage:
+  sqlite_path: /data/triagearr.db
+  retention:
+    snapshots_raw: 30d       # high-resolution snapshots kept this long
+    snapshots_daily: 365d    # downsampled daily aggregates kept this long
+    audit_log: 365d
+  vacuum:
+    enabled: true
+    min_reclaim_mb: 100      # skip VACUUM if reclaimable space < this
+
+# -----------------------------------------------------------------------------
+# *arr instances
+# -----------------------------------------------------------------------------
+# Each *arr type is a *list* of instances. Empty list = type disabled.
+# Each instance has its own enabled/poll/act switches.
+# Defaults are conservative: nothing is enabled until you say so.
+arrs:
+  sonarr:
+    - name: main
+      enabled: true
+      url: http://sonarr:8989
+      api_key: ${SONARR_API_KEY}
+      poll: true             # read state from this instance
+      act: false             # ❗ leave false until you've validated dry-run output
+      tags_exclude: [triagearr-keep]
+      categories_only: []
+    # Example of a second instance, disabled by default:
+    # - name: anime
+    #   enabled: false
+    #   url: http://sonarr-anime:8989
+    #   api_key: ${SONARR_ANIME_API_KEY}
+
+  radarr:
+    - name: main
+      enabled: true
+      url: http://radarr:7878
+      api_key: ${RADARR_API_KEY}
+      poll: true
+      act: false
+      tags_exclude: [triagearr-keep]
+
+  lidarr: []
+  readarr: []
+  whisparr_v2: []
+  whisparr_v3: []
+
+# -----------------------------------------------------------------------------
+# qBittorrent (single instance in V1)
+# -----------------------------------------------------------------------------
+qbit:
+  enabled: true
+  url: http://gluetun:8090       # qbit often shares gluetun's netns
+  username: ""
+  password: ""
+  category_exclude: [keep, archive]
+  tags_exclude: [forever, triagearr-keep]
+  delete_with_files: true        # delete physical files when nlink==1
+
+# -----------------------------------------------------------------------------
+# Maintainerr (V2, optional)
+# -----------------------------------------------------------------------------
+# Read-only mirroring of Maintainerr collections so Triagearr can be aware of
+# what Maintainerr plans to delete. Does not affect V1 behavior.
+maintainerr:
+  enabled: false
+  url: http://maintainerr:6246
+  api_key: ""
+
+# -----------------------------------------------------------------------------
+# Volumes to watch for disk pressure
+# -----------------------------------------------------------------------------
+volumes:
+  - name: media
+    path: /share/files
+    disk_pressure:
+      enabled: true
+      threshold_free_percent: 15   # fire if free < 15%
+      target_free_percent: 25      # aim to restore to 25% free
+      max_run_size_gb: 50          # cap deletions per run
+
+# -----------------------------------------------------------------------------
+# Polling cadences
+# -----------------------------------------------------------------------------
+polling:
+  qbit_interval: 30m
+  arr_interval: 1h
+  disk_interval: 5m
+  maintainerr_interval: 1h
+  downsample_cron: "0 3 * * *"     # daily 3 AM
+
+# -----------------------------------------------------------------------------
+# Scoring (see docs/SCORING.md for the algorithm)
+# -----------------------------------------------------------------------------
+scoring:
+  weights:
+    ratio_obligation_met:  +50
+    upload_velocity_inv:   +30
+    age_days:              +0.1
+    seeders_low_guard:     -1000   # near-veto for rare content
+    swarm_health_bonus:    +5
+    # hnr_window is a hard non-configurable veto (-10000), see SCORING.md
+
+  rare_content_threshold: 3        # global default (per-tracker can override)
+  hnr_window_days: 14              # never act within this window of torrent added
+
+  per_tracker:
+    # Replace with your actual tracker hostnames.
+    "your-private-tracker.example.org":
+      min_seed_days: 30
+      min_ratio: 1.0
+      rare_threshold: 5            # private trackers: more conservative
+    "public-tracker.example":
+      min_seed_days: 0
+      min_ratio: 0.0
+      rare_threshold: 0
+
+# -----------------------------------------------------------------------------
+# Triggers
+# -----------------------------------------------------------------------------
+triggers:
+  schedule: "0 4 * * *"      # cron expression; empty/null disables
+  disk_pressure: true        # fire on threshold cross
+  manual_api: true           # allow POST /api/v1/runs
+
+# -----------------------------------------------------------------------------
+# Action safety caps
+# -----------------------------------------------------------------------------
+action:
+  max_deletions_per_run: 10
+  inter_action_delay: 5s
+  retry:
+    max_attempts: 3
+    backoff: 30s
+  cross_seed:
+    # skip:         leave cross-seeded torrent alive, don't delete files (safest)
+    # warn_only:    delete torrent metadata only, keep files (silent fail)
+    # force_delete: delete files anyway, other seeders will break
+    on_conflict: skip
+
+# -----------------------------------------------------------------------------
+# Notifications
+# -----------------------------------------------------------------------------
+notifications:
+  telegram:
+    enabled: true
+    chat_id: ${TELEGRAM_CHAT_ID}
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    on:
+      - action_executed
+      - action_failed
+      - disk_pressure_triggered
+      - health_degraded
+  webhook:
+    enabled: false
+    url: ""
+    headers: {}

@@ -1,0 +1,30 @@
+.git
+.github
+.vscode
+.idea
+bin/
+dist/
+data/
+coverage.out
+*.db
+*.db-wal
+*.db-shm
+*.test
+*.out
+*.log
+
+# Docs not needed in the build context
+docs/
+*.md
+LICENSE
+CHANGELOG.md
+CONTRIBUTING.md
+CLAUDE.md
+
+# Local config
+config/local.yml
+.env
+.env.local
+
+# Web dev artifacts (only dist/ matters once UI exists)
+web/node_modules/
