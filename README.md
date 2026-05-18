@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🎯 Triagearr
+<img src="Logo/logo.svg" alt="Triagearr" width="128" height="128">
+
+# Triagearr
 
 **Disk-pressure-aware media reaper for Plex + *arr + qBittorrent stacks, that respects your seed.**
 

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" role="img" aria-label="Triagearr">
+  <title>Triagearr</title>
+
+  <!-- ============================================================
+       Reprise du concept double-border, version "instrument" :
+       - palette désaturée (moins saturée, plus mate)
+       - bordures en bleu nuit #2A2D42 au lieu de noir pur
+       - strokes plus fins (1.5–2px) → précision plutôt que sticker
+       - tiers plus élancés (angles plus doux)
+       - cadran épuré : pas de mini-arcs colorés segmentés en
+         demi-cercle, juste une fine bande de pression continue
+         (vert→ambre→rouge) qui se remplit jusqu'à l'aiguille
+       ============================================================ -->
+
+  <!-- FUNNEL — 3 tiers, sans bordures, gaps via fond transparent -->
+  <polygon points="36,40 220,40 198,82 58,82"   fill="#B85551"/>
+  <polygon points="64,94 192,94 170,138 86,138" fill="#C0913C"/>
+  <polygon points="94,150 162,150 128,214"      fill="#4A9962"/>
+
+  <!-- ============================================================
+       GAUGE — instrument de précision
+       Centre (128, 100). Cadran crème r=20, cerclé d'un stroke fin
+       bleu-nuit (1.25px) qui sert de bezel sans alourdir.
+       Arc de pression dessiné à r=15.
+       ============================================================ -->
+
+  <!-- Cadran crème + bezel fine en un seul élément -->
+  <circle cx="128" cy="100" r="20" fill="#EFE6D0"
+          stroke="#2A2D42" stroke-width="1.25"/>
+
+  <!-- ============================================================
+       ARC DE PRESSION — bande continue qui se "remplit"
+       r=15, semicircle supérieur. Endpoints :
+         180° → (113, 100)
+         120° → (120.5, 87.01)
+          60° → (135.5, 87.01)
+          45° → (138.61, 89.39)   ← needle tip (red zone)
+           0° → (143, 100)
+       Bande non éclairée dessinée d'abord, puis arcs remplis par couleur.
+       ============================================================ -->
+
+  <!-- Track non éclairé — ton sombre désaturé, lisible sur cadran crème -->
+  <path d="M 113,100 A 15,15 0 0 1 143,100"
+        stroke="#9C8E6E" stroke-width="3" fill="none" stroke-linecap="butt" opacity="0.35"/>
+
+  <!-- Segments éclairés jusqu'à l'aiguille -->
+  <path d="M 113,100 A 15,15 0 0 1 120.5,87.01"
+        stroke="#4A9962" stroke-width="3" fill="none" stroke-linecap="butt"/>
+  <path d="M 120.5,87.01 A 15,15 0 0 1 135.5,87.01"
+        stroke="#C0913C" stroke-width="3" fill="none" stroke-linecap="butt"/>
+  <path d="M 135.5,87.01 A 15,15 0 0 1 138.61,89.39"
+        stroke="#B85551" stroke-width="3" fill="none" stroke-linecap="butt"/>
+
+  <!-- Trois tick marks discrets sur le pourtour intérieur du cadran -->
+  <!-- 180° / 90° / 0° à r=18 → r=16.5 -->
+  <line x1="111.5" y1="100" x2="110" y2="100"
+        stroke="#2A2D42" stroke-width="1" stroke-linecap="butt" opacity="0.6"/>
+  <line x1="128" y1="83.5" x2="128" y2="82"
+        stroke="#2A2D42" stroke-width="1" stroke-linecap="butt" opacity="0.6"/>
+  <line x1="144.5" y1="100" x2="146" y2="100"
+        stroke="#2A2D42" stroke-width="1" stroke-linecap="butt" opacity="0.6"/>
+
+  <!-- Aiguille — pivot (128,100), pointe au milieu de la zone rouge (45°) -->
+  <line x1="128" y1="100" x2="138.61" y2="89.39"
+        stroke="#2A2D42" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="128" cy="100" r="2" fill="#2A2D42"/>
+</svg>
