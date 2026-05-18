@@ -42,8 +42,8 @@ tidy: ## go mod tidy
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR) $(COVER_OUT) dist/
 
-docker: ## Build docker image locally
-	docker build -t ghcr.io/triagearr/triagearr:$(VERSION) .
+docker: ## Build docker image locally via goreleaser snapshot
+	goreleaser release --snapshot --clean --skip=publish
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "Targets:\n"} /^[a-zA-Z_-]+:.*##/ { printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
