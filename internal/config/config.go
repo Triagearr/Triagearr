@@ -108,6 +108,9 @@ type PollingConfig struct {
 type RetentionConfig struct {
 	SnapshotsRaw   time.Duration `koanf:"snapshots_raw"`
 	SnapshotsDaily time.Duration `koanf:"snapshots_daily"`
+	// Torrents is the grace before a torrent absent from qBit gets pruned
+	// (cascade on snapshots + trackers). 0 disables. Default 7d.
+	Torrents time.Duration `koanf:"torrents"`
 }
 
 // VacuumConfig gates the post-retention SQLite VACUUM.
@@ -130,5 +133,6 @@ const (
 	defaultDownsampleCron     = "0 3 * * *"
 	defaultRetentionRaw       = 7 * 24 * time.Hour
 	defaultRetentionDaily     = 365 * 24 * time.Hour
+	defaultRetentionTorrents  = 7 * 24 * time.Hour
 	defaultVacuumMinReclaimMB = int64(50)
 )

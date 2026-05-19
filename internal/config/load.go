@@ -138,6 +138,9 @@ func applyDefaults(c *Config) {
 	if c.Storage.Retention.SnapshotsDaily == 0 {
 		c.Storage.Retention.SnapshotsDaily = defaultRetentionDaily
 	}
+	if c.Storage.Retention.Torrents == 0 {
+		c.Storage.Retention.Torrents = defaultRetentionTorrents
+	}
 	if c.Storage.Vacuum.MinReclaimMB == 0 {
 		c.Storage.Vacuum.MinReclaimMB = defaultVacuumMinReclaimMB
 	}

@@ -469,6 +469,53 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 	return len(aggs), int(deleted), nil
 }
 
+// PruneStaleTorrents deletes torrents whose last_seen is older than `olderThan`
+// ago, plus the dependent rows in snapshots_raw, snapshots_daily, and
+// torrent_trackers. Returns the count of torrent rows removed.
+//
+// arr_imports is intentionally NOT pruned: it records *arr-side history (which
+// download_id brought in which file_id) and remains valid even when the qBit
+// torrent is gone — the mapper joins it through media_files, not torrents.
+//
+// last_seen is refreshed on every qbit tick (UpsertTorrent), so a torrent
+// absent from qBit keeps its frozen last_seen and ages out after the grace.
+func (s *Store) PruneStaleTorrents(ctx context.Context, olderThan time.Duration) (int, error) {
+	if olderThan <= 0 {
+		return 0, nil
+	}
+	cutoff := ts(time.Now().UTC().Add(-olderThan))
+
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin prune tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Cascade: dependents first, then torrents themselves. Using a subquery
+	// against torrents (rather than a separate SELECT) keeps the whole cascade
+	// driven by one cutoff inside the transaction.
+	hashFilter := `torrent_hash IN (SELECT hash FROM torrents WHERE last_seen < ?)`
+	if _, err := tx.ExecContext(ctx, `DELETE FROM snapshots_raw    WHERE `+hashFilter, cutoff); err != nil {
+		return 0, fmt.Errorf("prune snapshots_raw: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM snapshots_daily  WHERE `+hashFilter, cutoff); err != nil {
+		return 0, fmt.Errorf("prune snapshots_daily: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM torrent_trackers WHERE `+hashFilter, cutoff); err != nil {
+		return 0, fmt.Errorf("prune torrent_trackers: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM torrents WHERE last_seen < ?`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("prune torrents: %w", err)
+	}
+	n, _ := res.RowsAffected()
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit prune: %w", err)
+	}
+	return int(n), nil
+}
+
 // EnforceRetention drops snapshots_raw and snapshots_daily rows older than
 // their respective horizons. Returns the count of rows deleted per table.
 func (s *Store) EnforceRetention(ctx context.Context, rawHorizon, dailyHorizon time.Duration) (rawDeleted, dailyDeleted int, err error) {

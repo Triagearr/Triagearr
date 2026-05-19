@@ -221,6 +221,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 			DownsampleAge:         48 * time.Hour,
 			RawRetention:          cfg.Storage.Retention.SnapshotsRaw,
 			DailyRetention:        cfg.Storage.Retention.SnapshotsDaily,
+			TorrentRetention:      cfg.Storage.Retention.Torrents,
 			VacuumEnabled:         cfg.Storage.Vacuum.Enabled,
 			VacuumMinReclaimBytes: cfg.Storage.Vacuum.MinReclaimMB * 1024 * 1024,
 		},

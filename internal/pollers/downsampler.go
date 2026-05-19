@@ -13,6 +13,7 @@ import (
 type MaintenanceStore interface {
 	DownsampleRange(ctx context.Context, before time.Time) (dailyWritten, rawDeleted int, err error)
 	EnforceRetention(ctx context.Context, rawHorizon, dailyHorizon time.Duration) (rawDeleted, dailyDeleted int, err error)
+	PruneStaleTorrents(ctx context.Context, olderThan time.Duration) (int, error)
 	Vacuum(ctx context.Context, minReclaimBytes int64) (ran bool, reclaimable int64, err error)
 }
 
@@ -29,6 +30,11 @@ type MaintenanceConfig struct {
 	RawRetention time.Duration
 	// DailyRetention drops snapshots_daily rows older than this (default 365d).
 	DailyRetention time.Duration
+	// TorrentRetention drops torrents (and their snapshots/trackers) whose
+	// last_seen is older than this. Default 7d — large enough to absorb qBit
+	// flaps, small enough that the M3 scorer never evaluates a ghost. arr_imports
+	// is kept (it's *arr-side history, independent of qBit lifecycle).
+	TorrentRetention time.Duration
 	// VacuumEnabled gates the post-cleanup VACUUM.
 	VacuumEnabled bool
 	// VacuumMinReclaimBytes skips VACUUM when freelist*page_size is smaller.
@@ -91,6 +97,15 @@ func (m *Maintenance) runOnce(ctx context.Context) {
 		logger.Error("retention failed", "err", err)
 	} else {
 		logger.Info("retention complete", "raw_deleted", rawRet, "daily_deleted", dailyRet)
+	}
+
+	if m.Config.TorrentRetention > 0 {
+		pruned, err := m.Store.PruneStaleTorrents(ctx, m.Config.TorrentRetention)
+		if err != nil {
+			logger.Error("torrent prune failed", "err", err)
+		} else if pruned > 0 {
+			logger.Info("torrent prune complete", "pruned", pruned, "grace", m.Config.TorrentRetention.String())
+		}
 	}
 
 	if m.Config.VacuumEnabled {

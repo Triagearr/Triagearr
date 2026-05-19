@@ -118,6 +118,106 @@ func TestDownsampleRange_AggregatesAndDeletes(t *testing.T) {
 	require.Equal(t, 0, rawDeleted2)
 }
 
+func TestPruneStaleTorrents_CascadeAndKeepFresh(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Stale torrent: last_seen is set by UpsertTorrent itself, so we override
+	// via a direct UPDATE after the upsert. AddedOn is irrelevant for prune.
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "stale", Name: "Stale", AddedOn: now.Add(-30 * 24 * time.Hour),
+	}))
+	stalePast := now.Add(-30 * 24 * time.Hour).Format(time.RFC3339Nano)
+	_, err := s.DB().ExecContext(ctx, `UPDATE torrents SET last_seen = ? WHERE hash = 'stale'`, stalePast)
+	require.NoError(t, err)
+
+	// Fresh torrent: keep default last_seen (now).
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "fresh", Name: "Fresh", AddedOn: now,
+	}))
+
+	// Dependents on both, to verify cascade only hits stale.
+	for _, h := range []triagearr.Hash{"stale", "fresh"} {
+		require.NoError(t, s.InsertSnapshot(ctx, triagearr.Snapshot{
+			Hash: h, Timestamp: now.Add(-time.Hour),
+			Ratio: 1, Seeders: 1, State: "uploading", LastActivity: now,
+		}))
+		require.NoError(t, s.ReplaceTrackers(ctx, h, []triagearr.TrackerInfo{
+			{URL: "https://t.example/announce", Host: "t.example", Status: triagearr.TrackerWorking},
+		}))
+	}
+	// Seed snapshots_daily directly (downsample path is its own test).
+	_, err = s.DB().ExecContext(ctx, `
+		INSERT INTO snapshots_daily(torrent_hash, day, ratio_avg, ratio_min, ratio_max, seeders_avg, seeders_min, seeders_max, samples)
+		VALUES ('stale', '2026-04-01', 1,1,1, 1,1,1, 1), ('fresh', '2026-04-01', 1,1,1, 1,1,1, 1)
+	`)
+	require.NoError(t, err)
+
+	pruned, err := s.PruneStaleTorrents(ctx, 7*24*time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, 1, pruned)
+
+	// torrents: only fresh remains.
+	hashes, err := s.ListTorrentHashes(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []triagearr.Hash{"fresh"}, hashes)
+
+	// Cascade landed: stale rows gone, fresh rows kept.
+	type cnt struct {
+		Stale int `db:"stale"`
+		Fresh int `db:"fresh"`
+	}
+	var c cnt
+	require.NoError(t, s.DB().GetContext(ctx, &c, `
+		SELECT
+			(SELECT COUNT(*) FROM snapshots_raw    WHERE torrent_hash = 'stale')
+		  + (SELECT COUNT(*) FROM snapshots_daily  WHERE torrent_hash = 'stale')
+		  + (SELECT COUNT(*) FROM torrent_trackers WHERE torrent_hash = 'stale') AS stale,
+			(SELECT COUNT(*) FROM snapshots_raw    WHERE torrent_hash = 'fresh')
+		  + (SELECT COUNT(*) FROM snapshots_daily  WHERE torrent_hash = 'fresh')
+		  + (SELECT COUNT(*) FROM torrent_trackers WHERE torrent_hash = 'fresh') AS fresh
+	`))
+	require.Equal(t, 0, c.Stale, "all dependents of stale must be gone")
+	require.Equal(t, 3, c.Fresh, "all dependents of fresh must survive (1 snap + 1 daily + 1 tracker)")
+
+	// Idempotent: second call is a no-op.
+	pruned2, err := s.PruneStaleTorrents(ctx, 7*24*time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, 0, pruned2)
+
+	// Zero grace disables.
+	pruned3, err := s.PruneStaleTorrents(ctx, 0)
+	require.NoError(t, err)
+	require.Equal(t, 0, pruned3)
+}
+
+func TestPruneStaleTorrents_KeepsArrImports(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{Hash: "stale", Name: "Stale", AddedOn: now}))
+	_, err := s.DB().ExecContext(ctx, `UPDATE torrents SET last_seen = ? WHERE hash = 'stale'`,
+		now.Add(-30*24*time.Hour).Format(time.RFC3339Nano))
+	require.NoError(t, err)
+
+	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, triagearr.ImportRecord{
+		FileID: 42, DownloadID: "stale", DroppedPath: "/dl/x", ImportedPath: "/files/tv/x.mkv",
+		Size: 100, HistoryID: 1, ImportedAt: now.Add(-30 * 24 * time.Hour),
+	}))
+
+	pruned, err := s.PruneStaleTorrents(ctx, 7*24*time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, 1, pruned)
+
+	// arr_imports must survive: it's *arr-side history, independent of qBit lifecycle.
+	var n int
+	require.NoError(t, s.DB().GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM arr_imports WHERE download_id = 'stale'`))
+	require.Equal(t, 1, n)
+}
+
 func TestEnforceRetention(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
