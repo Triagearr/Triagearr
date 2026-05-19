@@ -123,6 +123,30 @@ func applyDefaults(c *Config) {
 	if c.Polling.DiskInterval == 0 {
 		c.Polling.DiskInterval = defaultDiskInterval
 	}
+	if c.Polling.ArrFileMinInterval == 0 {
+		c.Polling.ArrFileMinInterval = defaultArrFileMinInterval
+	}
+	if c.Polling.TrackerInterval == 0 {
+		c.Polling.TrackerInterval = defaultTrackerInterval
+	}
+	if c.Polling.DownsampleCron == "" {
+		c.Polling.DownsampleCron = defaultDownsampleCron
+	}
+	if c.Storage.Retention.SnapshotsRaw == 0 {
+		c.Storage.Retention.SnapshotsRaw = defaultRetentionRaw
+	}
+	if c.Storage.Retention.SnapshotsDaily == 0 {
+		c.Storage.Retention.SnapshotsDaily = defaultRetentionDaily
+	}
+	if c.Storage.Vacuum.MinReclaimMB == 0 {
+		c.Storage.Vacuum.MinReclaimMB = defaultVacuumMinReclaimMB
+	}
+	if c.Mapper.IndexMaxEntries == 0 {
+		c.Mapper.IndexMaxEntries = defaultMapperIndexMaxEntries
+	}
+	if c.Mapper.SampleCount == 0 {
+		c.Mapper.SampleCount = defaultMapperSampleCount
+	}
 	if c.Qbit.Timeout == 0 {
 		c.Qbit.Timeout = defaultQbitTimeout
 	}

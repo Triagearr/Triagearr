@@ -5,6 +5,7 @@ package triagearr
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -34,6 +35,19 @@ type MediaItem struct {
 	Size     int64
 	Tags     []string
 	LastSeen time.Time
+}
+
+// MediaFile is one on-disk file owned by an *arr media item. Sonarr maps these
+// to `episodeFile.id`, Radarr to `movieFile.id`. The mapper (M2) uses the path
+// for remap inference; the actor (M5) uses the file_id to issue granular DELETEs
+// without touching siblings of the same series/movie.
+type MediaFile struct {
+	ArrName string
+	ArrType ArrType
+	FileID  int64
+	MediaID MediaID
+	Path    string
+	Size    int64
 }
 
 // DeleteOpts controls the behaviour of a delete call.
@@ -68,12 +82,53 @@ type Torrent struct {
 	SavePath     string
 	Size         int64
 	AddedOn      time.Time
+	CompletionOn time.Time
 	Ratio        float64
 	Uploaded     int64
 	Seeders      int
 	Leechers     int
 	State        TorrentState
 	LastActivity time.Time
+}
+
+// TrackerStatus mirrors qBit's tracker.status enum (0..4).
+type TrackerStatus int
+
+// TrackerStatus values from qBit's `/api/v2/torrents/trackers`.
+const (
+	TrackerDisabled     TrackerStatus = 0
+	TrackerNotContacted TrackerStatus = 1
+	TrackerWorking      TrackerStatus = 2
+	TrackerUpdating     TrackerStatus = 3
+	TrackerNotWorking   TrackerStatus = 4
+)
+
+// String returns the qBit-documented label for the enum value.
+func (s TrackerStatus) String() string {
+	switch s {
+	case TrackerDisabled:
+		return "disabled"
+	case TrackerNotContacted:
+		return "not_contacted"
+	case TrackerWorking:
+		return "working"
+	case TrackerUpdating:
+		return "updating"
+	case TrackerNotWorking:
+		return "not_working"
+	default:
+		return fmt.Sprintf("unknown(%d)", int(s))
+	}
+}
+
+// TrackerInfo is one tracker attached to a torrent. The host is parsed from
+// the URL to match `scoring.per_tracker` policy keys; the scorer (M3) reads
+// the parsed host, not the raw URL.
+type TrackerInfo struct {
+	URL    string
+	Host   string
+	Status TrackerStatus
+	Msg    string
 }
 
 // TorrentFile is one file within a torrent. Used by the mapper (M2) to resolve inodes.
@@ -110,5 +165,13 @@ type DiskUsage struct {
 type QbitClient interface {
 	ListTorrents(ctx context.Context) ([]Torrent, error)
 	TorrentFiles(ctx context.Context, h Hash) ([]TorrentFile, error)
+	ListTrackers(ctx context.Context, h Hash) ([]TrackerInfo, error)
 	Delete(ctx context.Context, h Hash, opts DeleteOpts) error
+}
+
+// FileLister is the optional capability for *arr clients that expose per-file
+// metadata (Sonarr episode files, Radarr movie files). Stub clients omit it.
+// The arr poller (M2) type-asserts on this interface to fan out file calls.
+type FileLister interface {
+	ListMediaFiles(ctx context.Context, mediaID MediaID) ([]MediaFile, error)
 }

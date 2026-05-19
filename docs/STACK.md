@@ -70,6 +70,14 @@ This document captures every dependency Triagearr commits to, the version pin, a
 
 **Why bundled inside the Go binary:** zero second deployment, no CORS, single image to ship. The Vite build outputs to `web/dist/`, which `embed.FS` slurps into the binary.
 
+## Scheduling
+
+| | Choice | Version | Alternatives considered |
+|---|---|---|---|
+| Cron scheduler | `github.com/robfig/cron/v3` | **v3.0.1** | hand-rolled 5-field parser, `time.Ticker` 24 h |
+
+**Why robfig/cron/v3:** the downsampler (M2) and any future cron-driven jobs (M4 disk-pressure scan candidate) need time-of-day predictability. A 24 h `Ticker` drifts on every restart; a hand-rolled parser is ~200 LOC for a solved problem. robfig/cron/v3 is the de-facto Go cron lib (Caddy, Loki, k6). API is trivial, ship surface is small. See [ADR-0011](adr/0011-cron-library.md).
+
 ## Testing
 
 | | Choice | Version |

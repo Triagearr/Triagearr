@@ -29,12 +29,11 @@ http:
 storage:
   sqlite_path: /data/triagearr.db
   retention:
-    snapshots_raw: 30d       # high-resolution snapshots kept this long
-    snapshots_daily: 365d    # downsampled daily aggregates kept this long
-    audit_log: 365d
+    snapshots_raw: 168h      # 7d — high-resolution snapshots kept this long
+    snapshots_daily: 8760h   # 365d — downsampled daily aggregates kept this long
   vacuum:
     enabled: true
-    min_reclaim_mb: 100      # skip VACUUM if reclaimable space < this
+    min_reclaim_mb: 50       # skip VACUUM if reclaimable space < this
 
 # -----------------------------------------------------------------------------
 # *arr instances
@@ -105,6 +104,15 @@ volumes:
       threshold_free_percent: 15   # fire if free < 15%
       target_free_percent: 25      # aim to restore to 25% free
       max_run_size_gb: 50          # cap deletions per run
+    # Optional manual path remap (escape hatch — see ADR-0010).
+    # Leave empty to let Triagearr infer the rule from a one-shot index walk
+    # at boot. Set explicitly when the auto-inference can't reach the 80%
+    # confidence gate (mixed stacks, weird binds, etc.).
+    #
+    # Example: qBit/*arr report `/files/...`, Triagearr sees `/share/files/...`.
+    # path_remap:
+    #   - from: /files/
+    #     to:   /share/files/
 
 # -----------------------------------------------------------------------------
 # Polling cadences
@@ -112,9 +120,18 @@ volumes:
 polling:
   qbit_interval: 30m
   arr_interval: 1h
+  arr_file_min_interval: 200ms     # spacing between per-file *arr calls (~5 req/s)
+  tracker_interval: 6h             # qBit tracker statuses (ADR-0009)
   disk_interval: 5m
   maintainerr_interval: 1h
-  downsample_cron: "0 3 * * *"     # daily 3 AM
+  downsample_cron: "0 3 * * *"     # daily 3 AM UTC
+
+# -----------------------------------------------------------------------------
+# Mapper (hardlink path translation — ADR-0010)
+# -----------------------------------------------------------------------------
+mapper:
+  index_max_entries: 200000    # cap the boot-time walk of volumes[].path
+  sample_count: 20             # source paths sampled per system for inference
 
 # -----------------------------------------------------------------------------
 # Scoring (see docs/SCORING.md for the algorithm)

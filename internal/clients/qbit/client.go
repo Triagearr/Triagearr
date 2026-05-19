@@ -137,6 +137,7 @@ type torrentInfo struct {
 	SavePath      string  `json:"save_path"`
 	Size          int64   `json:"size"`
 	AddedOn       int64   `json:"added_on"`
+	CompletionOn  int64   `json:"completion_on"`
 	Ratio         float64 `json:"ratio"`
 	Uploaded      int64   `json:"uploaded"`
 	NumSeeds      int     `json:"num_seeds"`
@@ -165,6 +166,10 @@ func (c *Client) ListTorrents(ctx context.Context) ([]triagearr.Torrent, error) 
 		if leechers == 0 {
 			leechers = t.NumLeechs
 		}
+		var completion time.Time
+		if t.CompletionOn > 0 {
+			completion = time.Unix(t.CompletionOn, 0).UTC()
+		}
 		out[i] = triagearr.Torrent{
 			Hash:         triagearr.Hash(t.Hash),
 			Name:         t.Name,
@@ -172,6 +177,7 @@ func (c *Client) ListTorrents(ctx context.Context) ([]triagearr.Torrent, error) 
 			SavePath:     t.SavePath,
 			Size:         t.Size,
 			AddedOn:      time.Unix(t.AddedOn, 0).UTC(),
+			CompletionOn: completion,
 			Ratio:        t.Ratio,
 			Uploaded:     t.Uploaded,
 			Seeders:      seeders,
@@ -200,6 +206,58 @@ func (c *Client) TorrentFiles(ctx context.Context, h triagearr.Hash) ([]triagear
 		out[i] = triagearr.TorrentFile{Name: f.Name, Size: f.Size, Progress: f.Progress}
 	}
 	return out, nil
+}
+
+// trackerInfo mirrors /api/v2/torrents/trackers entries. The `status` field
+// is qBit's enum (0=disabled, 1=not_contacted, 2=working, 3=updating, 4=not_working).
+// qBit prepends three synthetic "trackers" for DHT / PEX / LSD with empty URLs;
+// we drop those — they aren't real announce endpoints.
+type trackerInfo struct {
+	URL    string `json:"url"`
+	Status int    `json:"status"`
+	Msg    string `json:"msg"`
+}
+
+// ListTrackers returns the trackers attached to a torrent, excluding the
+// synthetic DHT/PEX/LSD pseudo-trackers (URL `**` etc.).
+func (c *Client) ListTrackers(ctx context.Context, h triagearr.Hash) ([]triagearr.TrackerInfo, error) {
+	var raw []trackerInfo
+	if err := c.getJSON(ctx, "/api/v2/torrents/trackers?hash="+url.QueryEscape(string(h)), &raw); err != nil {
+		return nil, err
+	}
+	out := make([]triagearr.TrackerInfo, 0, len(raw))
+	for _, t := range raw {
+		if !looksLikeURL(t.URL) {
+			continue
+		}
+		host := parseTrackerHost(t.URL)
+		out = append(out, triagearr.TrackerInfo{
+			URL:    t.URL,
+			Host:   host,
+			Status: triagearr.TrackerStatus(t.Status),
+			Msg:    t.Msg,
+		})
+	}
+	return out, nil
+}
+
+// looksLikeURL rejects qBit's synthetic ** ** ** DHT/PEX/LSD entries.
+func looksLikeURL(s string) bool {
+	if s == "" {
+		return false
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	return u.Scheme != "" && u.Host != ""
+}
+
+// parseTrackerHost returns the lowercased host (no port) of a tracker URL.
+// Inputs are pre-filtered by looksLikeURL, so url.Parse always succeeds here.
+func parseTrackerHost(raw string) string {
+	u, _ := url.Parse(raw)
+	return strings.ToLower(u.Hostname())
 }
 
 // Delete is not implemented in M1 — destructive ops land in M5 (the Actor milestone).

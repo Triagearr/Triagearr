@@ -162,9 +162,43 @@ func (c *Client) fetchTags(ctx context.Context) (map[int]string, error) {
 	return out, nil
 }
 
+// movieFile mirrors Radarr's /api/v3/moviefile entry. Only the fields used
+// by the mapper (M2) and the actor (M5) are captured.
+type movieFile struct {
+	ID      int64  `json:"id"`
+	MovieID int64  `json:"movieId"`
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+}
+
+// ListMediaFiles returns the movie file(s) attached to a movie. Radarr
+// typically has exactly one file per movie, but the API returns an array;
+// we propagate every row to keep the per-file shape consistent with Sonarr.
+func (c *Client) ListMediaFiles(ctx context.Context, movieID triagearr.MediaID) ([]triagearr.MediaFile, error) {
+	var raw []movieFile
+	if err := c.get(ctx, fmt.Sprintf("/api/v3/moviefile?movieId=%d", int64(movieID)), &raw); err != nil {
+		return nil, err
+	}
+	out := make([]triagearr.MediaFile, len(raw))
+	for i, m := range raw {
+		out[i] = triagearr.MediaFile{
+			ArrName: c.name,
+			ArrType: triagearr.ArrTypeRadarr,
+			FileID:  m.ID,
+			MediaID: triagearr.MediaID(m.MovieID),
+			Path:    m.Path,
+			Size:    m.Size,
+		}
+	}
+	return out, nil
+}
+
 // DeleteMedia is not wired in M1 — destructive ops live in the M5 Actor milestone.
 func (c *Client) DeleteMedia(_ context.Context, _ triagearr.MediaID, _ triagearr.DeleteOpts) error {
 	return errors.New("radarr: DeleteMedia not implemented in M1")
 }
 
-var _ triagearr.ArrInstance = (*Client)(nil)
+var (
+	_ triagearr.ArrInstance = (*Client)(nil)
+	_ triagearr.FileLister  = (*Client)(nil)
+)

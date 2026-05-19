@@ -26,6 +26,7 @@ type Config struct {
 	Qbit    QbitConfig     `koanf:"qbit"`
 	Volumes []VolumeConfig `koanf:"volumes"`
 	Polling PollingConfig  `koanf:"polling"`
+	Mapper  MapperConfig   `koanf:"mapper"`
 }
 
 // HTTPConfig is unused by M1 but kept here so unknown-key warnings stay quiet.
@@ -37,7 +38,9 @@ type HTTPConfig struct {
 
 // StorageConfig groups storage-related settings.
 type StorageConfig struct {
-	SQLitePath string `koanf:"sqlite_path"`
+	SQLitePath string          `koanf:"sqlite_path"`
+	Retention  RetentionConfig `koanf:"retention"`
+	Vacuum     VacuumConfig    `koanf:"vacuum"`
 }
 
 // ArrsConfig holds the configured *arr instances per type.
@@ -80,6 +83,14 @@ type VolumeConfig struct {
 	Name         string             `koanf:"name"`
 	Path         string             `koanf:"path"`
 	DiskPressure DiskPressureConfig `koanf:"disk_pressure"`
+	PathRemap    []PathRemapEntry   `koanf:"path_remap"`
+}
+
+// PathRemapEntry is one manual prefix substitution (escape hatch per ADR-0010).
+// When empty, the mapper infers rules from the live volume index at boot.
+type PathRemapEntry struct {
+	From string `koanf:"from"`
+	To   string `koanf:"to"`
 }
 
 // DiskPressureConfig is partially populated in M1 (only `enabled` is used by the
@@ -95,18 +106,47 @@ type DiskPressureConfig struct {
 type PollingConfig struct {
 	QbitInterval        time.Duration `koanf:"qbit_interval"`
 	ArrInterval         time.Duration `koanf:"arr_interval"`
+	ArrFileMinInterval  time.Duration `koanf:"arr_file_min_interval"`
+	TrackerInterval     time.Duration `koanf:"tracker_interval"`
 	DiskInterval        time.Duration `koanf:"disk_interval"`
 	MaintainerrInterval time.Duration `koanf:"maintainerr_interval"`
 	DownsampleCron      string        `koanf:"downsample_cron"`
 }
 
+// RetentionConfig bounds the lifetime of historical observations.
+type RetentionConfig struct {
+	SnapshotsRaw   time.Duration `koanf:"snapshots_raw"`
+	SnapshotsDaily time.Duration `koanf:"snapshots_daily"`
+}
+
+// VacuumConfig gates the post-retention SQLite VACUUM.
+type VacuumConfig struct {
+	Enabled      bool  `koanf:"enabled"`
+	MinReclaimMB int64 `koanf:"min_reclaim_mb"`
+}
+
+// MapperConfig groups mapper-wide knobs. The boot-time inference (ADR-0010)
+// is on by default; manual `path_remap` per volume always wins.
+type MapperConfig struct {
+	IndexMaxEntries int `koanf:"index_max_entries"`
+	SampleCount     int `koanf:"sample_count"`
+}
+
 // Defaults applied when a field is left zero by the user.
 const (
-	defaultBind         = ":9494"
-	defaultSQLitePath   = "/data/triagearr.db"
-	defaultArrTimeout   = 30 * time.Second
-	defaultQbitTimeout  = 30 * time.Second
-	defaultQbitInterval = 30 * time.Minute
-	defaultArrInterval  = time.Hour
-	defaultDiskInterval = 5 * time.Minute
+	defaultBind                  = ":9494"
+	defaultSQLitePath            = "/data/triagearr.db"
+	defaultArrTimeout            = 30 * time.Second
+	defaultQbitTimeout           = 30 * time.Second
+	defaultQbitInterval          = 30 * time.Minute
+	defaultArrInterval           = time.Hour
+	defaultArrFileMinInterval    = 200 * time.Millisecond // ≈ 5 req/s
+	defaultTrackerInterval       = 6 * time.Hour
+	defaultDiskInterval          = 5 * time.Minute
+	defaultDownsampleCron        = "0 3 * * *"
+	defaultRetentionRaw          = 7 * 24 * time.Hour
+	defaultRetentionDaily        = 365 * 24 * time.Hour
+	defaultVacuumMinReclaimMB    = int64(50)
+	defaultMapperIndexMaxEntries = 200000
+	defaultMapperSampleCount     = 20
 )

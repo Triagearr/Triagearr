@@ -23,6 +23,9 @@ func (f *fakeQbit) ListTorrents(_ context.Context) ([]triagearr.Torrent, error) 
 func (f *fakeQbit) TorrentFiles(_ context.Context, _ triagearr.Hash) ([]triagearr.TorrentFile, error) {
 	return nil, nil
 }
+func (f *fakeQbit) ListTrackers(_ context.Context, _ triagearr.Hash) ([]triagearr.TrackerInfo, error) {
+	return nil, nil
+}
 func (f *fakeQbit) Delete(_ context.Context, _ triagearr.Hash, _ triagearr.DeleteOpts) error {
 	return nil
 }

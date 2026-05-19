@@ -69,21 +69,41 @@ func (s *Store) ListArrInstances(ctx context.Context) ([]ArrInstanceRow, error) 
 // UpsertTorrent records (or refreshes) the current state of a torrent.
 func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 	now := time.Now().UTC()
+	var completion any
+	if !t.CompletionOn.IsZero() {
+		completion = ts(t.CompletionOn)
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO torrents(hash, name, category, save_path, size, added_on, last_seen)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO torrents(hash, name, category, save_path, size, added_on, completion_on, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(hash) DO UPDATE SET
 			name=excluded.name,
 			category=excluded.category,
 			save_path=excluded.save_path,
 			size=excluded.size,
 			added_on=excluded.added_on,
+			completion_on=excluded.completion_on,
 			last_seen=excluded.last_seen
-	`, string(t.Hash), t.Name, t.Category, t.SavePath, t.Size, ts(t.AddedOn), ts(now))
+	`, string(t.Hash), t.Name, t.Category, t.SavePath, t.Size, ts(t.AddedOn), completion, ts(now))
 	if err != nil {
 		return fmt.Errorf("upserting torrent %s: %w", t.Hash, err)
 	}
 	return nil
+}
+
+// ListTorrentHashes returns every torrent hash currently tracked. Used by the
+// tracker poller and the mapper to enumerate known torrents without loading
+// the full row payload.
+func (s *Store) ListTorrentHashes(ctx context.Context) ([]triagearr.Hash, error) {
+	var raw []string
+	if err := s.db.SelectContext(ctx, &raw, `SELECT hash FROM torrents ORDER BY hash`); err != nil {
+		return nil, fmt.Errorf("listing torrent hashes: %w", err)
+	}
+	out := make([]triagearr.Hash, len(raw))
+	for i, h := range raw {
+		out[i] = triagearr.Hash(h)
+	}
+	return out, nil
 }
 
 // InsertSnapshot appends a point-in-time observation for a torrent.
@@ -243,4 +263,250 @@ func (s *Store) LatestDiskUsage(ctx context.Context) ([]triagearr.DiskUsage, err
 		}
 	}
 	return out, nil
+}
+
+// -----------------------------------------------------------------------------
+// torrent_trackers (ADR-0009)
+// -----------------------------------------------------------------------------
+
+// ReplaceTrackers atomically replaces the set of trackers for one torrent.
+// Trackers disappear from qBit (user removed one) — without this, stale rows
+// would survive forever.
+func (s *Store) ReplaceTrackers(ctx context.Context, hash triagearr.Hash, infos []triagearr.TrackerInfo) error {
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for trackers %s: %w", hash, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM torrent_trackers WHERE torrent_hash = ?`, string(hash)); err != nil {
+		return fmt.Errorf("clearing trackers %s: %w", hash, err)
+	}
+	now := time.Now().UTC()
+	for _, info := range infos {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO torrent_trackers(torrent_hash, tracker_url, tracker_host, status, last_msg, last_checked)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, string(hash), info.URL, info.Host, int(info.Status), info.Msg, ts(now)); err != nil {
+			return fmt.Errorf("inserting tracker %s/%s: %w", hash, info.URL, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit trackers %s: %w", hash, err)
+	}
+	return nil
+}
+
+// TrackerRow is the persisted view used by `inspect trackers`.
+type TrackerRow struct {
+	TorrentHash string                  `db:"torrent_hash"`
+	URL         string                  `db:"tracker_url"`
+	Host        string                  `db:"tracker_host"`
+	Status      triagearr.TrackerStatus `db:"status"`
+	Msg         string                  `db:"last_msg"`
+	LastChecked time.Time               `db:"last_checked"`
+}
+
+// ListTrackers returns all trackers attached to a torrent.
+func (s *Store) ListTrackers(ctx context.Context, hash triagearr.Hash) ([]TrackerRow, error) {
+	var rows []TrackerRow
+	if err := s.db.SelectContext(ctx, &rows, `
+		SELECT torrent_hash, tracker_url, tracker_host, status, last_msg, last_checked
+		FROM torrent_trackers
+		WHERE torrent_hash = ?
+		ORDER BY tracker_host, tracker_url
+	`, string(hash)); err != nil {
+		return nil, fmt.Errorf("listing trackers for %s: %w", hash, err)
+	}
+	return rows, nil
+}
+
+// -----------------------------------------------------------------------------
+// media_files
+// -----------------------------------------------------------------------------
+
+// UpsertMediaFile records (or refreshes) one *arr-owned file. The file_id is
+// the *arr-side primary key (episodeFile.id / movieFile.id), reused by M5
+// Actor for granular DELETEs.
+func (s *Store) UpsertMediaFile(ctx context.Context, f triagearr.MediaFile) error {
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO media_files(arr_name, arr_type, file_id, media_id, path, size, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(arr_name, arr_type, file_id) DO UPDATE SET
+			media_id=excluded.media_id,
+			path=excluded.path,
+			size=excluded.size,
+			last_seen=excluded.last_seen
+	`, f.ArrName, string(f.ArrType), f.FileID, int64(f.MediaID), f.Path, f.Size, ts(now))
+	if err != nil {
+		return fmt.Errorf("upserting media_file %s/%s/%d: %w", f.ArrType, f.ArrName, f.FileID, err)
+	}
+	return nil
+}
+
+// MediaFileRow is the persisted view used by `inspect media` and the mapper.
+type MediaFileRow struct {
+	ArrName  string    `db:"arr_name"`
+	ArrType  string    `db:"arr_type"`
+	FileID   int64     `db:"file_id"`
+	MediaID  int64     `db:"media_id"`
+	Path     string    `db:"path"`
+	Size     int64     `db:"size"`
+	LastSeen time.Time `db:"last_seen"`
+}
+
+// ListMediaFilesByMedia returns the files attached to one media item.
+func (s *Store) ListMediaFilesByMedia(ctx context.Context, arrName string, arrType triagearr.ArrType, mediaID triagearr.MediaID) ([]MediaFileRow, error) {
+	var rows []MediaFileRow
+	if err := s.db.SelectContext(ctx, &rows, `
+		SELECT arr_name, arr_type, file_id, media_id, path, size, last_seen
+		FROM media_files
+		WHERE arr_name = ? AND arr_type = ? AND media_id = ?
+		ORDER BY path
+	`, arrName, string(arrType), int64(mediaID)); err != nil {
+		return nil, fmt.Errorf("listing media_files: %w", err)
+	}
+	return rows, nil
+}
+
+// SampleMediaFilePaths returns up to `limit` recently-seen media file paths
+// across all *arr instances. Used by the mapper inference (ADR-0010) to sample
+// source paths against the local volume index.
+func (s *Store) SampleMediaFilePaths(ctx context.Context, limit int) ([]string, error) {
+	var paths []string
+	if err := s.db.SelectContext(ctx, &paths, `
+		SELECT path FROM media_files
+		WHERE path != ''
+		ORDER BY last_seen DESC
+		LIMIT ?
+	`, limit); err != nil {
+		return nil, fmt.Errorf("sampling media_files paths: %w", err)
+	}
+	return paths, nil
+}
+
+// -----------------------------------------------------------------------------
+// snapshots_daily
+// -----------------------------------------------------------------------------
+
+// DownsampleRange aggregates snapshots_raw rows older than `before` into
+// snapshots_daily (one row per torrent per day), then deletes the consumed
+// raw rows. Returns the count of (daily rows written, raw rows deleted).
+//
+// Safe to call repeatedly; idempotent on the upsert side, and the delete is
+// bounded by the same `before` cutoff. AVG is statistically sound because
+// snapshots_raw is sampled at a regular interval per torrent (project memory
+// "snapshots_pk_design").
+func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWritten, rawDeleted int, err error) {
+	cutoff := ts(before)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT torrent_hash,
+		       date(ts) AS day,
+		       AVG(ratio), MIN(ratio), MAX(ratio),
+		       AVG(seeders), MIN(seeders), MAX(seeders),
+		       COUNT(*)
+		FROM snapshots_raw
+		WHERE ts < ?
+		GROUP BY torrent_hash, date(ts)
+	`, cutoff)
+	if err != nil {
+		return 0, 0, fmt.Errorf("aggregating snapshots_raw: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	type agg struct {
+		hash                                     string
+		day                                      string
+		ratioAvg, ratioMin, ratioMax, seedersAvg float64
+		seedersMin, seedersMax, samples          int
+	}
+	var aggs []agg
+	for rows.Next() {
+		var a agg
+		if err := rows.Scan(&a.hash, &a.day, &a.ratioAvg, &a.ratioMin, &a.ratioMax,
+			&a.seedersAvg, &a.seedersMin, &a.seedersMax, &a.samples); err != nil {
+			return 0, 0, fmt.Errorf("scanning aggregate: %w", err)
+		}
+		aggs = append(aggs, a)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, fmt.Errorf("iterating aggregate rows: %w", err)
+	}
+
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, 0, fmt.Errorf("begin downsample tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, a := range aggs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO snapshots_daily(torrent_hash, day, ratio_avg, ratio_min, ratio_max, seeders_avg, seeders_min, seeders_max, samples)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(torrent_hash, day) DO UPDATE SET
+				ratio_avg=excluded.ratio_avg,
+				ratio_min=excluded.ratio_min,
+				ratio_max=excluded.ratio_max,
+				seeders_avg=excluded.seeders_avg,
+				seeders_min=excluded.seeders_min,
+				seeders_max=excluded.seeders_max,
+				samples=excluded.samples
+		`, a.hash, a.day, a.ratioAvg, a.ratioMin, a.ratioMax, a.seedersAvg, a.seedersMin, a.seedersMax, a.samples); err != nil {
+			return 0, 0, fmt.Errorf("inserting daily %s/%s: %w", a.hash, a.day, err)
+		}
+	}
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM snapshots_raw WHERE ts < ?`, cutoff)
+	if err != nil {
+		return 0, 0, fmt.Errorf("deleting raw rows: %w", err)
+	}
+	deleted, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, 0, fmt.Errorf("commit downsample: %w", err)
+	}
+	return len(aggs), int(deleted), nil
+}
+
+// EnforceRetention drops snapshots_raw and snapshots_daily rows older than
+// their respective horizons. Returns the count of rows deleted per table.
+func (s *Store) EnforceRetention(ctx context.Context, rawHorizon, dailyHorizon time.Duration) (rawDeleted, dailyDeleted int, err error) {
+	now := time.Now().UTC()
+	if rawHorizon > 0 {
+		res, err := s.db.ExecContext(ctx, `DELETE FROM snapshots_raw WHERE ts < ?`, ts(now.Add(-rawHorizon)))
+		if err != nil {
+			return 0, 0, fmt.Errorf("retention on snapshots_raw: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		rawDeleted = int(n)
+	}
+	if dailyHorizon > 0 {
+		res, err := s.db.ExecContext(ctx, `DELETE FROM snapshots_daily WHERE day < ?`, now.Add(-dailyHorizon).Format("2006-01-02"))
+		if err != nil {
+			return 0, 0, fmt.Errorf("retention on snapshots_daily: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		dailyDeleted = int(n)
+	}
+	return rawDeleted, dailyDeleted, nil
+}
+
+// Vacuum runs PRAGMA-gated VACUUM. The caller passes a minimum reclaim
+// threshold in bytes; if the freelist holds less than that, VACUUM is skipped
+// (it rewrites the whole DB and is expensive). Returns whether VACUUM ran.
+func (s *Store) Vacuum(ctx context.Context, minReclaimBytes int64) (ran bool, reclaimable int64, err error) {
+	var freelist, pageSize int64
+	if err := s.db.GetContext(ctx, &freelist, `PRAGMA freelist_count`); err != nil {
+		return false, 0, fmt.Errorf("reading freelist_count: %w", err)
+	}
+	if err := s.db.GetContext(ctx, &pageSize, `PRAGMA page_size`); err != nil {
+		return false, 0, fmt.Errorf("reading page_size: %w", err)
+	}
+	reclaimable = freelist * pageSize
+	if reclaimable < minReclaimBytes {
+		return false, reclaimable, nil
+	}
+	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
+		return false, reclaimable, fmt.Errorf("vacuum: %w", err)
+	}
+	return true, reclaimable, nil
 }

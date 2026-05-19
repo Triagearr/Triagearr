@@ -166,9 +166,42 @@ func (c *Client) fetchTags(ctx context.Context) (map[int]string, error) {
 	return out, nil
 }
 
+// episodeFile mirrors Sonarr's /api/v3/episodefile entry. Only the fields used
+// by the mapper (M2) and the actor (M5) are captured.
+type episodeFile struct {
+	ID       int64  `json:"id"`
+	SeriesID int64  `json:"seriesId"`
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+}
+
+// ListMediaFiles returns the episode files attached to a series.
+// Implements triagearr.FileLister, type-asserted by the arr poller for fan-out.
+func (c *Client) ListMediaFiles(ctx context.Context, seriesID triagearr.MediaID) ([]triagearr.MediaFile, error) {
+	var raw []episodeFile
+	if err := c.get(ctx, fmt.Sprintf("/api/v3/episodefile?seriesId=%d", int64(seriesID)), &raw); err != nil {
+		return nil, err
+	}
+	out := make([]triagearr.MediaFile, len(raw))
+	for i, e := range raw {
+		out[i] = triagearr.MediaFile{
+			ArrName: c.name,
+			ArrType: triagearr.ArrTypeSonarr,
+			FileID:  e.ID,
+			MediaID: triagearr.MediaID(e.SeriesID),
+			Path:    e.Path,
+			Size:    e.Size,
+		}
+	}
+	return out, nil
+}
+
 // DeleteMedia is not wired in M1 — destructive ops live in the M5 Actor milestone.
 func (c *Client) DeleteMedia(_ context.Context, _ triagearr.MediaID, _ triagearr.DeleteOpts) error {
 	return errors.New("sonarr: DeleteMedia not implemented in M1")
 }
 
-var _ triagearr.ArrInstance = (*Client)(nil)
+var (
+	_ triagearr.ArrInstance = (*Client)(nil)
+	_ triagearr.FileLister  = (*Client)(nil)
+)
