@@ -89,6 +89,11 @@ type Torrent struct {
 	Leechers     int
 	State        TorrentState
 	LastActivity time.Time
+	// Private mirrors qBit's `private` flag. The scorer (M3) gates several
+	// factors on this regime (ratio-obligation vs swarm-only); see SCORING.md.
+	Private bool
+	// Tags is qBit's comma-separated tag string, preserved verbatim.
+	Tags string
 }
 
 // TrackerStatus mirrors qBit's tracker.status enum (0..4).

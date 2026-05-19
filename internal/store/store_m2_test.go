@@ -47,6 +47,46 @@ func TestUpsertMediaFile_RoundTrip(t *testing.T) {
 	require.Equal(t, int64(2000), rows[0].Size)
 }
 
+func TestUpsertTorrent_PersistsPrivateAndTags(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "priv", Name: "P", AddedOn: now, Private: false, Tags: "hd,french",
+	}))
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "pub", Name: "Q", AddedOn: now, Private: true, Tags: "",
+	}))
+
+	type row struct {
+		Hash    string `db:"hash"`
+		Private bool   `db:"private"`
+		Tags    string `db:"tags"`
+	}
+	var rows []row
+	require.NoError(t, s.DB().SelectContext(ctx, &rows,
+		`SELECT hash, private, tags FROM torrents ORDER BY hash`))
+	require.Len(t, rows, 2)
+	require.Equal(t, "priv", rows[0].Hash)
+	require.False(t, rows[0].Private)
+	require.Equal(t, "hd,french", rows[0].Tags)
+	require.Equal(t, "pub", rows[1].Hash)
+	require.True(t, rows[1].Private)
+	require.Empty(t, rows[1].Tags)
+
+	// Updating a row must overwrite private and tags (not stale-read defaults).
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "priv", Name: "P", AddedOn: now, Private: true, Tags: "archive",
+	}))
+	rows = nil
+	require.NoError(t, s.DB().SelectContext(ctx, &rows,
+		`SELECT hash, private, tags FROM torrents WHERE hash = 'priv'`))
+	require.Len(t, rows, 1)
+	require.True(t, rows[0].Private)
+	require.Equal(t, "archive", rows[0].Tags)
+}
+
 func TestDownsampleRange_AggregatesAndDeletes(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

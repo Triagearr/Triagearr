@@ -27,7 +27,12 @@ func TestListTorrents_NoAuthBypass(t *testing.T) {
 			_, _ = w.Write([]byte(`[
 				{"hash":"abc","name":"Foo","category":"tv","save_path":"/dl","size":100,
 				 "added_on":1700000000,"ratio":2.5,"uploaded":250,"num_complete":12,
-				 "num_incomplete":3,"state":"uploading","last_activity":1700001000}
+				 "num_incomplete":3,"state":"uploading","last_activity":1700001000,
+				 "private":true,"tags":"hd,french"},
+				{"hash":"def","name":"Bar","category":"movies","save_path":"/dl","size":50,
+				 "added_on":1700000000,"ratio":0.4,"uploaded":20,"num_complete":0,
+				 "num_incomplete":0,"state":"stalledUP","last_activity":1700001000,
+				 "private":false,"tags":""}
 			]`))
 		default:
 			http.NotFound(w, r)
@@ -38,11 +43,15 @@ func TestListTorrents_NoAuthBypass(t *testing.T) {
 	require.NoError(t, err)
 	tors, err := c.ListTorrents(context.Background())
 	require.NoError(t, err)
-	require.Len(t, tors, 1)
+	require.Len(t, tors, 2)
 	require.Equal(t, "abc", string(tors[0].Hash))
 	require.Equal(t, 12, tors[0].Seeders)
 	require.Equal(t, 3, tors[0].Leechers)
 	require.InDelta(t, 2.5, tors[0].Ratio, 1e-9)
+	require.True(t, tors[0].Private)
+	require.Equal(t, "hd,french", tors[0].Tags)
+	require.False(t, tors[1].Private)
+	require.Empty(t, tors[1].Tags)
 }
 
 func TestLogin_HappyPath(t *testing.T) {

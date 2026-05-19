@@ -146,6 +146,8 @@ type torrentInfo struct {
 	NumIncomplete int     `json:"num_incomplete"`
 	State         string  `json:"state"`
 	LastActivity  int64   `json:"last_activity"`
+	Private       bool    `json:"private"`
+	Tags          string  `json:"tags"`
 }
 
 // ListTorrents returns the current set of torrents tracked by qBit.
@@ -184,6 +186,8 @@ func (c *Client) ListTorrents(ctx context.Context) ([]triagearr.Torrent, error) 
 			Leechers:     leechers,
 			State:        triagearr.TorrentState(t.State),
 			LastActivity: time.Unix(t.LastActivity, 0).UTC(),
+			Private:      t.Private,
+			Tags:         t.Tags,
 		}
 	}
 	return out, nil

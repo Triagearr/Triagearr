@@ -74,8 +74,8 @@ func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 		completion = ts(t.CompletionOn)
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO torrents(hash, name, category, save_path, size, added_on, completion_on, last_seen)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO torrents(hash, name, category, save_path, size, added_on, completion_on, private, tags, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(hash) DO UPDATE SET
 			name=excluded.name,
 			category=excluded.category,
@@ -83,8 +83,10 @@ func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 			size=excluded.size,
 			added_on=excluded.added_on,
 			completion_on=excluded.completion_on,
+			private=excluded.private,
+			tags=excluded.tags,
 			last_seen=excluded.last_seen
-	`, string(t.Hash), t.Name, t.Category, t.SavePath, t.Size, ts(t.AddedOn), completion, ts(now))
+	`, string(t.Hash), t.Name, t.Category, t.SavePath, t.Size, ts(t.AddedOn), completion, t.Private, t.Tags, ts(now))
 	if err != nil {
 		return fmt.Errorf("upserting torrent %s: %w", t.Hash, err)
 	}
