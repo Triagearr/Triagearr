@@ -50,9 +50,11 @@ The app polls everything, persists snapshots, and exposes a basic CLI to inspect
 
 Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. Validate that data shape supports the planned scoring math.
 
-## M2 — Mapping (hardlink-aware)
+## M2 — Mapping & storage maintenance
 
-**Estimated**: 4-6 h · **Tag**: `v0.3.0`
+**Estimated**: 8-10 h · **Tag**: `v0.3.0`
+
+### Mapping (hardlink-aware)
 
 - [ ] `internal/mapper` package
 - [ ] Inode resolution via `syscall.Stat_t` (Linux)
@@ -60,6 +62,15 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 - [ ] CLI: `triagearr inspect mapping <hash>` shows all paths linked to a torrent
 - [ ] Detect cross-seed conflicts in mapping (multiple torrents → same inode)
 - [ ] Tests on real filesystem with `os.TempDir` + hardlinks
+
+### Storage maintenance (prerequisite for M3 scorer)
+
+- [ ] `snapshots_daily` table (downsampled aggregates: avg/min/max per torrent per day)
+- [ ] Daily downsampler job: `snapshots_raw` (>D-2) → `snapshots_daily`
+- [ ] Retention enforcement: drop `snapshots_raw` past `retention.snapshots_raw`, `snapshots_daily` past `retention.snapshots_daily`
+- [ ] Periodic `VACUUM` gated by `vacuum.enabled` + `vacuum.min_reclaim_mb`
+- [ ] Cron-driven via `polling.downsample_cron`, executed by the existing pollers manager
+- [ ] Tests with synthetic time-series spanning the retention window
 
 ## M3 — Scoring engine
 
@@ -81,6 +92,7 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 - [ ] `POST /api/v1/runs` (dry-run only at this stage) wired up
 - [ ] Decider selects candidates based on scores + target free percent
 - [ ] CLI: `triagearr run --now --dry-run` triggers a one-shot decision
+- [ ] `SIGHUP` hot-reloads the config without restarting the daemon (re-validates, rebuilds the registry, re-arms intervals)
 
 ## M5 — Actor (destructive)
 
@@ -97,6 +109,8 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 - [ ] Rate limiting (`max_deletions_per_run`, `inter_action_delay`)
 - [ ] Retry with backoff on transient *arr/qbit failures
 - [ ] Smoke test against a throwaway Sonarr+qBit pair in CI (testcontainers)
+- [ ] Log redaction: never write `api_key`, `password`, or auth-bearing query strings to slog output
+- [ ] New SQLite file created with `0640` mode (umask-respected via `os.OpenFile`); existing-file perms left alone — Docker UID/GID mismatches across homelab NAS setups are real and a strict enforcement would break more deployments than it would harden. Document the host-side recommendation (`chmod 600`, restrict the parent directory) in `DEPLOYMENT.md`.
 
 ### Personal acceptance
 
@@ -116,6 +130,11 @@ Run for 2 weeks in `live` mode on my own homelab. Zero accidental deletions. Aud
   - [ ] Settings (read-only view of effective config, redacted secrets)
 - [ ] Static bundle embedded via `embed.FS`
 - [ ] Auth via API key header (delegable to upstream reverse proxy)
+- [ ] `X-API-Key` validated with `crypto/subtle.ConstantTimeCompare` (timing-attack resistance)
+- [ ] Rate limit `POST /api/v1/runs` (destructive trigger; e.g. 1/min/IP via `golang.org/x/time/rate`)
+- [ ] Security headers on UI responses: `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy: ()`
+- [ ] Default bind `127.0.0.1:9494`; refuse to start with non-loopback bind unless `api_key` is set (already enforced in config validation — re-verify under tests)
+- [ ] `/api/v1/config` redaction audit: every secret-bearing field (api_keys, qbit password, telegram bot_token) returns `"***"`; integration test asserts no leak
 
 ## M7 — Notifications
 
@@ -131,8 +150,13 @@ Run for 2 weeks in `live` mode on my own homelab. Zero accidental deletions. Aud
 **Estimated**: 1 weekend · **Tag**: `v1.0.0`
 
 - [ ] Test coverage ≥70% on `scorer`, `mapper`, `decider`, `actor`
-- [ ] `govulncheck` clean
+- [ ] `govulncheck` clean (and added to CI `test` workflow, not just release)
 - [ ] Goreleaser produces signed artifacts (cosign)
+- [ ] SBOM generation via `syft` in the goreleaser pipeline (CycloneDX + SPDX)
+- [ ] SLSA build provenance attestation via `actions/attest-build-provenance`
+- [ ] Container image: distroless or `scratch` base, runs as non-root (`USER 65532:65532`), read-only root filesystem
+- [ ] `SECURITY.md` at repo root: supported versions, disclosure policy, contact
+- [ ] Renovate (or Dependabot) configured for weekly dep bumps, grouped by ecosystem
 - [ ] Documentation reviewed for accuracy against final code
 - [ ] Demo GIF in README
 - [ ] Announcement post drafted (r/sonarr, r/Plex, Discord communities)
