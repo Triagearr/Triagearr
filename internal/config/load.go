@@ -141,12 +141,6 @@ func applyDefaults(c *Config) {
 	if c.Storage.Vacuum.MinReclaimMB == 0 {
 		c.Storage.Vacuum.MinReclaimMB = defaultVacuumMinReclaimMB
 	}
-	if c.Mapper.IndexMaxEntries == 0 {
-		c.Mapper.IndexMaxEntries = defaultMapperIndexMaxEntries
-	}
-	if c.Mapper.SampleCount == 0 {
-		c.Mapper.SampleCount = defaultMapperSampleCount
-	}
 	if c.Qbit.Timeout == 0 {
 		c.Qbit.Timeout = defaultQbitTimeout
 	}

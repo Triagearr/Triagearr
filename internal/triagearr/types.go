@@ -175,3 +175,38 @@ type QbitClient interface {
 type FileLister interface {
 	ListMediaFiles(ctx context.Context, mediaID MediaID) ([]MediaFile, error)
 }
+
+// ImportRecord is one *arr import-history entry (ADR-0012). It pairs a qBit
+// torrent (DownloadID, the V1 info-hash lowercased) with the *arr file_id that
+// was created when *arr hard-linked the torrent into its library.
+type ImportRecord struct {
+	HistoryID    int64  // *arr-side history.id, used as the delta cursor
+	FileID       int64  // *arr file_id (episodeFile.id / movieFile.id) — DELETE target for M5
+	DownloadID   Hash   // qBit info-hash, lowercased
+	DroppedPath  string // source path as reported by *arr at import time
+	ImportedPath string // destination path inside the *arr library
+	Size         int64
+	ImportedAt   time.Time
+}
+
+// ImportLister is the optional capability for *arr clients that expose import
+// history. The arr poller type-asserts on this interface to keep arr_imports
+// in sync.
+type ImportLister interface {
+	ListImports(ctx context.Context, sinceHistoryID int64) ([]ImportRecord, error)
+}
+
+// Link is one resolved (*arr file ↔ qBit torrent) edge, joining what *arr
+// recorded at import time with the current media_files snapshot. Returned by
+// the linker (ADR-0012) and consumed by the M5 actor as the per-file DELETE
+// target list.
+type Link struct {
+	ArrName      string
+	ArrType      ArrType
+	FileID       int64
+	DownloadID   Hash
+	DroppedPath  string // *arr-side source path at import (diagnostic only)
+	ImportedPath string // *arr-side library path at import (diagnostic only)
+	LivePath     string // current path from media_files (M5 actor source of truth)
+	Size         int64
+}

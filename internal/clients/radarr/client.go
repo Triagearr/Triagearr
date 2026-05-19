@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Triagearr/Triagearr/internal/clients/arrhistory"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
@@ -193,12 +194,19 @@ func (c *Client) ListMediaFiles(ctx context.Context, movieID triagearr.MediaID) 
 	return out, nil
 }
 
+// ListImports paginates Radarr's history endpoint for `downloadFolderImported`
+// events (eventType=3) — see Sonarr.ListImports for the shared semantics.
+func (c *Client) ListImports(ctx context.Context, sinceHistoryID int64) ([]triagearr.ImportRecord, error) {
+	return arrhistory.Fetch(ctx, c.get, sinceHistoryID)
+}
+
 // DeleteMedia is not wired in M1 — destructive ops live in the M5 Actor milestone.
 func (c *Client) DeleteMedia(_ context.Context, _ triagearr.MediaID, _ triagearr.DeleteOpts) error {
 	return errors.New("radarr: DeleteMedia not implemented in M1")
 }
 
 var (
-	_ triagearr.ArrInstance = (*Client)(nil)
-	_ triagearr.FileLister  = (*Client)(nil)
+	_ triagearr.ArrInstance  = (*Client)(nil)
+	_ triagearr.FileLister   = (*Client)(nil)
+	_ triagearr.ImportLister = (*Client)(nil)
 )

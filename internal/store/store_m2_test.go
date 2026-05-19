@@ -97,6 +97,56 @@ func TestEnforceRetention(t *testing.T) {
 	require.Equal(t, 1, rawDel, "the 30-day-old row must be dropped")
 }
 
+func TestArrImports_JoinFiltersOrphanedFileIDs(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Two imports under the same download_id (season pack: 2 episodes).
+	rec1 := triagearr.ImportRecord{
+		HistoryID: 100, FileID: 10, DownloadID: "abcd1234",
+		DroppedPath:  "/files/torrents/pack/E01.mkv",
+		ImportedPath: "/files/media/E01.mkv", Size: 1000, ImportedAt: now,
+	}
+	rec2 := triagearr.ImportRecord{
+		HistoryID: 101, FileID: 11, DownloadID: "abcd1234",
+		DroppedPath:  "/files/torrents/pack/E02.mkv",
+		ImportedPath: "/files/media/E02.mkv", Size: 2000, ImportedAt: now,
+	}
+	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, rec1))
+	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, rec2))
+
+	// Only the first fileId still exists in media_files (the second was deleted/upgraded).
+	require.NoError(t, s.UpsertMediaFile(ctx, triagearr.MediaFile{
+		ArrName: "main", ArrType: triagearr.ArrTypeSonarr,
+		FileID: 10, MediaID: 7, Path: "/files/media/E01.mkv", Size: 1000,
+	}))
+
+	got, err := s.LinksByHash(ctx, "abcd1234")
+	require.NoError(t, err)
+	require.Len(t, got, 1, "the orphaned arr_imports row (fileId=11 absent from media_files) must be filtered out")
+	require.Equal(t, int64(10), got[0].FileID)
+	require.Equal(t, "/files/media/E01.mkv", got[0].LivePath)
+}
+
+func TestMaxHistoryID_ReturnsZeroWhenEmpty(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	max, err := s.MaxHistoryID(ctx, "main", triagearr.ArrTypeSonarr)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), max)
+
+	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, triagearr.ImportRecord{
+		HistoryID: 42, FileID: 1, DownloadID: "deadbeef", ImportedAt: time.Now().UTC(),
+	}))
+	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, triagearr.ImportRecord{
+		HistoryID: 17, FileID: 2, DownloadID: "deadbeef", ImportedAt: time.Now().UTC(),
+	}))
+	max, err = s.MaxHistoryID(ctx, "main", triagearr.ArrTypeSonarr)
+	require.NoError(t, err)
+	require.Equal(t, int64(42), max)
+}
+
 func TestVacuum_SkipsBelowThreshold(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

@@ -2,7 +2,18 @@
 
 ## Status
 
-Accepted — 2026-05-19
+Superseded by [ADR-0012](0012-api-only-mapping.md) — 2026-05-19.
+
+The path-remap inference described below was implemented and shipped in v0.3.0 (M2),
+then immediately retired when the M2 deployment surfaced operational friction with
+filesystem access on QNAP (UID/GID + ACL mismatches on the bind-mounted media root).
+ADR-0012 replaces filesystem `stat()` with *arr import-history lookup; the mapper
+no longer needs to translate paths because it no longer reads files. This ADR is
+kept for historical context only.
+
+---
+
+(Original status: Accepted — 2026-05-19.)
 
 ## Context
 

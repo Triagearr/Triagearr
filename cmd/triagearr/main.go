@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path"
 	"strconv"
 	"syscall"
 	"text/tabwriter"
@@ -19,8 +18,8 @@ import (
 	"github.com/Triagearr/Triagearr/internal/clients/qbit"
 	"github.com/Triagearr/Triagearr/internal/clients/registry"
 	"github.com/Triagearr/Triagearr/internal/config"
+	"github.com/Triagearr/Triagearr/internal/linker"
 	"github.com/Triagearr/Triagearr/internal/logging"
-	"github.com/Triagearr/Triagearr/internal/mapper"
 	"github.com/Triagearr/Triagearr/internal/pollers"
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
@@ -108,16 +107,16 @@ func main() {
 					},
 					{
 						Name:      "mapping",
-						Usage:     "show per-file path translation, inode and hardlink count for a torrent",
+						Usage:     "show *arr-side files linked to a torrent (per ADR-0012 import history)",
 						ArgsUsage: "<torrent-hash>",
 						Flags:     []cli.Flag{configFlag},
 						Action:    inspectMappingAction,
 					},
 					{
-						Name:   "remap",
-						Usage:  "print the active path_remap rules per volume",
+						Name:   "imports",
+						Usage:  "summary of arr_imports cached per *arr instance",
 						Flags:  []cli.Flag{configFlag},
-						Action: inspectRemapAction,
+						Action: inspectImportsAction,
 					},
 				},
 			},
@@ -241,94 +240,8 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Inference waits on the first *arr fan-out to populate media_files (its
-	// sample source), so it can't block startup.
-	go runBootInference(signalCtx, cfg, s)
-
 	mgr := pollers.NewManager(ps...)
 	return mgr.Run(signalCtx)
-}
-
-// runBootInference waits for the first *arr fan-out to populate media_files,
-// then runs the ADR-0010 boot procedure per configured volume and logs the
-// result. Manual overrides are validated immediately.
-func runBootInference(ctx context.Context, cfg *config.Config, s *store.Store) {
-	const (
-		pollEvery  = 5 * time.Second
-		maxWait    = 10 * time.Minute
-		minSamples = 5
-	)
-
-	deadline := time.Now().Add(maxWait)
-	ticker := time.NewTicker(pollEvery)
-	defer ticker.Stop()
-
-	for _, v := range cfg.Volumes {
-		manual := manualRulesFor(v.PathRemap)
-		if len(manual) > 0 {
-			rules, err := mapper.ValidateManual(manual)
-			if err != nil {
-				slog.Error("mapper manual path_remap invalid", "volume", v.Name, "err", err)
-				continue
-			}
-			for _, r := range rules {
-				slog.Info("path_remap_active", "volume", v.Name, "origin", string(r.Origin), "from", r.From, "to", r.To)
-			}
-			continue
-		}
-
-		// Wait for samples to be available, then run inference.
-		for {
-			if ctx.Err() != nil {
-				return
-			}
-			samples, err := s.SampleMediaFilePaths(ctx, cfg.Mapper.SampleCount)
-			if err != nil {
-				slog.Warn("mapper sampling failed", "volume", v.Name, "err", err)
-			}
-			if len(samples) >= minSamples || time.Now().After(deadline) {
-				bootRunInference(ctx, cfg, v, samples)
-				break
-			}
-			slog.Debug("mapper waiting for samples", "volume", v.Name, "got", len(samples), "want", minSamples)
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}
-}
-
-func bootRunInference(ctx context.Context, cfg *config.Config, v config.VolumeConfig, samples []string) {
-	in := mapper.BootInputs{
-		VolumeName:      v.Name,
-		Root:            v.Path,
-		IndexMaxEntries: cfg.Mapper.IndexMaxEntries,
-	}
-	for _, p := range samples {
-		in.ArrSamples = append(in.ArrSamples, mapper.Sample{SourcePath: p, Size: -1})
-	}
-	res, err := mapper.Boot(ctx, in)
-	if err != nil {
-		slog.Error("path_remap_inference_failed", "volume", v.Name, "err", err)
-		if res.Inference != nil {
-			for _, c := range res.Inference.Candidates {
-				slog.Warn("inference_candidate", "volume", v.Name, "from", c.From, "to", c.To, "votes", c.Votes)
-			}
-		}
-		return
-	}
-	for _, r := range res.Rules {
-		slog.Info("path_remap_inferred",
-			"volume", v.Name,
-			"origin", string(r.Origin),
-			"from", r.From,
-			"to", r.To,
-			"samples_matched", r.SampleMatches,
-			"samples_total", r.SampleTotal,
-		)
-	}
 }
 
 func arrURLMap(cfg *config.Config) map[string]string {
@@ -556,61 +469,26 @@ func inspectMappingAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer func() { _ = s.Close() }()
-	resolver, err := buildResolverFromStore(ctx, cfg, s)
-	if err != nil {
-		return fmt.Errorf("building mapper: %w", err)
-	}
 
-	if !cfg.Qbit.Enabled {
-		return errors.New("qbit.enabled must be true to run inspect mapping (need live torrent files)")
-	}
-	qb, err := qbit.New(qbit.Options{
-		BaseURL:  cfg.Qbit.URL,
-		Username: cfg.Qbit.Username,
-		Password: cfg.Qbit.Password,
-		Timeout:  cfg.Qbit.Timeout,
-	})
+	links, err := linker.New(s).Links(ctx, hash)
 	if err != nil {
-		return fmt.Errorf("building qbit client: %w", err)
+		return err
 	}
-	files, err := qb.TorrentFiles(ctx, hash)
-	if err != nil {
-		return fmt.Errorf("fetching torrent files: %w", err)
+	if len(links) == 0 {
+		fmt.Printf("no *arr-side links for %s — orphan qbit-only torrent or import history not synced yet\n", hash)
+		return nil
 	}
-	// qBit's file.name is relative to save_path. Resolve absolute paths by
-	// joining with the torrent's save_path (read from the latest qBit poll).
-	tors, err := qb.ListTorrents(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching torrents: %w", err)
-	}
-	var savePath string
-	for _, t := range tors {
-		if t.Hash == hash {
-			savePath = t.SavePath
-			break
-		}
-	}
-	if savePath == "" {
-		return fmt.Errorf("torrent %s not found in current qBit list", hash)
-	}
-
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "QBIT_PATH\tLOCAL_PATH\tINODE\tNLINK\tRULE\tNOTE")
-	for _, f := range files {
-		ref := resolver.StatFile(path.Join(savePath, f.Name))
-		ruleDesc := "<none>"
-		if ref.Rule.Origin != "" {
-			ruleDesc = mapper.Describe(ref.Rule)
-		}
-		note := ref.StatErr
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%s\t%s\n",
-			ref.QbitPath, ref.LocalPath, ref.Inode, ref.Nlink, ruleDesc, note,
+	_, _ = fmt.Fprintln(tw, "ARR\tNAME\tFILE_ID\tSIZE\tLIVE_PATH\tDROPPED_PATH")
+	for _, l := range links {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\n",
+			l.ArrType, l.ArrName, l.FileID, humanBytes(l.Size), l.LivePath, l.DroppedPath,
 		)
 	}
 	return tw.Flush()
 }
 
-func inspectRemapAction(ctx context.Context, cmd *cli.Command) error {
+func inspectImportsAction(ctx context.Context, cmd *cli.Command) error {
 	cfg, err := loadConfigFromCmd(cmd)
 	if err != nil {
 		return err
@@ -620,70 +498,29 @@ func inspectRemapAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer func() { _ = s.Close() }()
-	resolver, err := buildResolverFromStore(ctx, cfg, s)
-	if err != nil {
-		return fmt.Errorf("building mapper: %w", err)
-	}
-	for _, v := range resolver.VolumeRules() {
-		fmt.Printf("volume %q:\n", v.VolumeName)
-		if len(v.Rules) == 0 {
-			fmt.Println("  (no rules)")
-			continue
-		}
-		for _, r := range v.Rules {
-			fmt.Printf("  - %s\n", mapper.Describe(r))
-		}
-	}
-	return nil
-}
-
-// buildResolverFromStore re-runs the boot procedure synchronously (manual
-// override OR boot inference from snapshots in the store). Used by the CLI
-// inspect commands so they don't depend on the running daemon.
-func buildResolverFromStore(ctx context.Context, cfg *config.Config, s *store.Store) (*mapper.Resolver, error) {
-	resolver := mapper.NewResolver()
-	var allVolumes []mapper.VolumeRules
-	for _, v := range cfg.Volumes {
-		in := mapper.BootInputs{
-			VolumeName:      v.Name,
-			Root:            v.Path,
-			ManualRules:     manualRulesFor(v.PathRemap),
-			IndexMaxEntries: cfg.Mapper.IndexMaxEntries,
-		}
-		if len(in.ManualRules) == 0 {
-			paths, err := s.SampleMediaFilePaths(ctx, cfg.Mapper.SampleCount)
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ARR\tNAME\tIMPORTS\tMAX_HISTORY_ID")
+	for _, group := range []struct {
+		typ   triagearr.ArrType
+		insts []config.ArrInstanceConfig
+	}{
+		{triagearr.ArrTypeSonarr, cfg.Arrs.Sonarr},
+		{triagearr.ArrTypeRadarr, cfg.Arrs.Radarr},
+	} {
+		for _, inst := range group.insts {
+			if !inst.Enabled {
+				continue
+			}
+			n, err := s.CountArrImports(ctx, inst.Name, group.typ)
 			if err != nil {
-				return nil, fmt.Errorf("sampling media_files: %w", err)
+				return err
 			}
-			for _, p := range paths {
-				in.ArrSamples = append(in.ArrSamples, mapper.Sample{SourcePath: p, Size: -1})
+			max, err := s.MaxHistoryID(ctx, inst.Name, group.typ)
+			if err != nil {
+				return err
 			}
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%d\n", group.typ, inst.Name, n, max)
 		}
-		res, err := mapper.Boot(ctx, in)
-		if err != nil {
-			if res.Inference != nil {
-				logInferenceCandidates(v.Name, res.Inference)
-			}
-			return nil, err
-		}
-		allVolumes = append(allVolumes, mapper.VolumeRules{VolumeName: v.Name, Rules: res.Rules})
 	}
-	resolver.Set(allVolumes)
-	return resolver, nil
-}
-
-func manualRulesFor(entries []config.PathRemapEntry) []mapper.ManualRule {
-	out := make([]mapper.ManualRule, len(entries))
-	for i, e := range entries {
-		out[i] = mapper.ManualRule{From: e.From, To: e.To}
-	}
-	return out
-}
-
-func logInferenceCandidates(volume string, inf *mapper.InferenceResult) {
-	slog.Error("path_remap_inference_failed",
-		"volume", volume,
-		"samples_total", inf.SamplesTotal,
-		"samples_matched", inf.SamplesMatched,
-	)
+	return tw.Flush()
 }

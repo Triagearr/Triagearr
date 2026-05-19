@@ -14,6 +14,8 @@ type ArrStore interface {
 	UpsertArrInstance(ctx context.Context, name string, typ triagearr.ArrType, url string, healthy bool, lastErr string) error
 	UpsertMedia(ctx context.Context, m triagearr.MediaItem) error
 	UpsertMediaFile(ctx context.Context, f triagearr.MediaFile) error
+	UpsertArrImport(ctx context.Context, arrName string, arrType triagearr.ArrType, rec triagearr.ImportRecord) error
+	MaxHistoryID(ctx context.Context, arrName string, arrType triagearr.ArrType) (int64, error)
 }
 
 // ArrPoller iterates the configured *arr instances and refreshes media + health.
@@ -112,7 +114,39 @@ func (p *ArrPoller) pollOne(ctx context.Context, inst triagearr.ArrInstance) {
 			filesTotal++
 		}
 	}
+	imports, importsFailed := p.syncImports(ctx, inst)
 	slog.Info("arr tick complete",
 		"arr", inst.Type(), "name", inst.Name(),
-		"media", len(items), "files", filesTotal, "files_failed", filesFailed)
+		"media", len(items),
+		"files", filesTotal, "files_failed", filesFailed,
+		"imports_new", imports, "imports_failed", importsFailed)
+}
+
+// syncImports pulls the *arr-side import history delta (since the highest
+// history_id we've already stored) and upserts arr_imports. Skipped silently
+// when the client doesn't implement ImportLister (stub clients).
+func (p *ArrPoller) syncImports(ctx context.Context, inst triagearr.ArrInstance) (ok, failed int) {
+	lister, hasImportLister := inst.(triagearr.ImportLister)
+	if !hasImportLister {
+		return 0, 0
+	}
+	since, err := p.Store.MaxHistoryID(ctx, inst.Name(), inst.Type())
+	if err != nil {
+		slog.Warn("max history_id failed", "arr", inst.Type(), "name", inst.Name(), "err", err)
+		return 0, 0
+	}
+	recs, err := lister.ListImports(ctx, since)
+	if err != nil {
+		slog.Warn("list imports failed", "arr", inst.Type(), "name", inst.Name(), "err", err)
+		return 0, 0
+	}
+	for _, r := range recs {
+		if err := p.Store.UpsertArrImport(ctx, inst.Name(), inst.Type(), r); err != nil {
+			slog.Warn("upsert arr_import failed", "arr", inst.Type(), "name", inst.Name(), "file_id", r.FileID, "err", err)
+			failed++
+			continue
+		}
+		ok++
+	}
+	return ok, failed
 }
