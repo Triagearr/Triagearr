@@ -107,15 +107,66 @@ A media file moved by *arr (e.g. rename after metadata refresh) breaks the cache
 - If an expected inode is no longer found at the recorded path, the mapper triggers a full re-scan of that *arr's library
 - During the re-scan window, that media is excluded from scoring (we don't act on stale data)
 
-### Multiple files per torrent (TV season packs)
+### Multiple files per torrent (TV season packs, music albums, packs)
 
-Sonarr imports a season pack episode-by-episode. The torrent has 10 .mkv files; each gets hardlinked into `/media/Show/Season X/`. If Triagearr decides to delete the show:
+This is the **norm**, not the edge case: season packs, multi-CD albums, anthology packs all produce one qBit torrent containing N files, each hardlinked individually into the *arr-managed library.
 
-- *arr API call removes all 10 hardlinks one by one
-- Triagearr then verifies that for *each* torrent file in `/torrents/`, `nlink == 1`
-- Only then does the qBit delete proceed
+#### Granularity by layer
 
-If even one file still has `nlink > 1` (cross-seeded), the cross-seed conflict logic kicks in for the whole torrent.
+| Layer | Unit |
+|---|---|
+| Scoring / decision | 1 **torrent** (qBit `hash`) |
+| Mapper | 1 torrent → **N files** → **0..N** `arr_file_id` |
+| Actor — *arr step (T3) | 1 *arr **file** at a time (`episodeFile.id` / `movieFile.id`) |
+| Actor — qBit step (T4) | 1 **torrent** as a whole (`deleteFiles=true`) |
+
+The score is taken at the torrent level — qBit does not let you seed half a torrent. The mapper and Actor must handle the N→1 fan-in/fan-out without dropping safety.
+
+#### Concrete loop
+
+```
+candidate = torrent H
+qbit_files     = mapper.QbitFiles(H)         # [f1, f2, ..., fN]
+arr_targets    = mapper.ArrTargets(H)        # [{instance, file_id} ...] — often < N
+                                              # (some f may NOT be *arr-imported)
+
+# T3 — fan out *arr deletes
+for (instance, file_id) in arr_targets:
+  POST {instance} DELETE /api/v3/{episodefile|moviefile}/{file_id}
+  → on failure: retry, then ABORT the whole candidate
+     (already-deleted *arr files are NOT rolled back — but nlink stays ≥1
+      thanks to the surviving torrent, so disk is untouched. *arr will just
+      re-monitor and re-grab those episodes.)
+
+# T3.5 — per-file nlink check (not a single torrent-level stat)
+for f in qbit_files:
+  nlink = stat(translate(f.path)).nlink
+  if nlink > 1:
+    apply on_conflict   # cross-seed, upgrade, or external hardlink we don't own
+                        # skip → ABORT the qbit-delete, keep the torrent alive
+
+# T4 — qBit delete is whole-torrent
+POST qbit /api/v2/torrents/delete?hashes=H&deleteFiles=true
+```
+
+The per-file stat is the safety net. A torrent-level "is nlink right?" question doesn't exist — you have to check each file.
+
+#### Real-world cases
+
+1. **Partial import.** 10-episode pack, *arr imported 8 (2 skipped for quality). `arr_targets` has 8 entries; the other 2 files were already `nlink=1`. T3 deletes 8 *arr-side → all 10 reach `nlink=1`. T4 frees everything. ✅
+2. **Upgrade.** Sonarr replaced S01E03 with a higher-quality grab from a different release. The original file in the pack is no longer linked to anything in `/media/`. `arr_targets` simply has no entry for that file (the mapper finds no `media_files` row). Its nlink was already 1. Same path as case 1. ✅
+3. **Cross-seed.** Pack S01 exists on tracker A (torrent H1) AND tracker B (torrent H2), same inodes. Files start at `nlink=3` (qbit×2 + arr×1). T3 *arr deletes → `nlink=2`. The T3.5 re-stat sees `nlink=2`, `on_conflict: skip` (default) → ABORT, H1 stays alive. Marked `skipped_cross_seed` in `audit_log`. H2 will be scored independently on a later run. ✅
+4. **Partial *arr failure.** 8/10 deletes OK, the 9th returns 500. Retry ×3, hard fail. ABORT. Resulting state: 8 *arr files removed (`nlink=1`), 2 still linked (`nlink=2`), qBit torrent intact and seeding. Disk: **zero bytes freed** (every nlink ≥ 1). `audit_log` notes `partial_arr_delete, aborted`. *arr re-monitors the 8 missing episodes and re-grabs them — not pretty, but no data loss and no broken seed obligation.
+5. **Multi-instance.** Same file imported by Sonarr AND a second "Sonarr 4K" instance. `arr_targets` has 2 entries pointing at one qbit file. T3 deletes both. If only one succeeds, you fall through to case 4.
+6. **Music album / multi-CD.** Identical mechanics to season packs, just 12 tracks instead of 10 episodes. No special-casing.
+
+#### Conflict policy is per-file, not per-torrent
+
+If 9/10 files have `nlink=1` and a single file has `nlink=2` (cross-seed on just one track), `on_conflict: skip` aborts the **whole torrent**. There is no half-delete primitive at the qBit layer — `deleteFiles=true` is all-or-nothing. The conservative semantic is "if any file would harm someone else, leave the torrent alone."
+
+#### Audit log granularity
+
+The audit log records **per-file** outcomes (8 OK + 1 failed + 1 not-attempted), not just per-torrent ("aborted"). Case 4 is unreadable in post-mortem without that granularity — the schema must reflect this when M5 lands.
 
 ### "Episodes only" deletions
 

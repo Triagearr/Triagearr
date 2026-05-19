@@ -139,7 +139,8 @@ The volumes Triagearr watches for disk pressure. Each volume can have its own th
 ```yaml
 volumes:
   - name: media
-    path: /share/files
+    path: /share/files               # path as Triagearr sees it (used by disk poller AND
+                                     # as the root for path-remap inference)
     disk_pressure:
       enabled: true
       threshold_free_percent: 15    # fire if free < 15%
@@ -149,6 +150,23 @@ volumes:
 
 Multiple volumes can be declared (e.g. SSD cache + spinning array).
 
+### Path remap (auto-inferred by default)
+
+Triagearr needs to translate paths reported by qBit/*arr (e.g. `/files/torrents/...` as seen from within their container) into paths it can `stat()` locally (e.g. `/share/files/torrents/...` as bound into the Triagearr container). **This is inferred at startup** by sampling source paths against the local `volumes[].path` index — no config needed for the common cases. See `docs/adr/0010-path-remapping-for-mapper.md`.
+
+If inference fails or is ambiguous (the daemon will refuse to start and log a diagnostic), or you simply want to pin the rules explicitly, add a `path_remap` block:
+
+```yaml
+volumes:
+  - name: media
+    path: /share/files
+    path_remap:                      # optional override — skips inference when set
+      - from: /files/
+        to:   /share/files/
+```
+
+Rules are evaluated in order, first match wins. Each `to:` is stat-ed at startup; a missing directory is a hard error. To inspect what's active at runtime: `triagearr inspect remap`.
+
 ## `polling`
 
 ```yaml
@@ -157,6 +175,7 @@ polling:
   arr_interval: 1h
   disk_interval: 5m
   maintainerr_interval: 1h
+  tracker_interval: 6h           # ADR-0009 — refresh per-tracker status from qBit
   downsample_cron: "0 3 * * *"   # daily 3 AM, after most user activity
 ```
 
@@ -172,9 +191,11 @@ scoring:
     age_days:              +0.1   # per day of seed age
     seeders_low_guard:     -1000  # near-veto when seeders ≤ rare_threshold
     swarm_health_bonus:    +5     # if many seeders, we matter less
+    tracker_dead_bonus:    +40    # ADR-0009 — fires when all trackers are dead for a sustained window
 
   rare_content_threshold: 3       # seeders avg 7d ≤ 3 → protected (override absolute)
-  hnr_window_days: 14             # never delete within this window of torrent add
+  hnr_window_days: 14             # never delete within this window of completion (or add, if unknown)
+  tracker_dead_grace: 7d          # ADR-0009 — all trackers must be status=not_working for this long before bonus fires
 
   per_tracker:
     "tracker-prive.example.org":

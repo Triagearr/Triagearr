@@ -15,13 +15,14 @@ For every torrent, the scorer reads:
 
 | Source | Field | Used for |
 |---|---|---|
-| `torrents` (current) | tracker, category, tags, state | exclusion filters |
+| `torrents` (current) | category, tags, state, added_on, completion_on | exclusion filters, age, HnR |
+| `torrent_trackers` (current, ADR-0009) | tracker_host, status, last_checked | per-tracker policy, dead-tracker bonus, HnR degradation |
 | `snapshots_raw` (last 30d) | ratio, uploaded, seeders, leechers | velocity, swarm health |
 | `snapshots_daily` (last 365d) | aggregates | long-term trends |
 | `media` (joined via inode) | tags, *arr type, monitor status | exclusion filters |
 | `arr_instances` config | per-instance tags_exclude | exclusion filters |
-| `scoring.per_tracker` config | min_seed_days, min_ratio, rare_threshold | tracker-specific rules |
-| filesystem | torrent age (added_on), last_activity_on | core math |
+| `scoring.per_tracker` config | min_seed_days, min_ratio, rare_threshold | tracker-specific rules (keyed on tracker_host) |
+| filesystem | torrent age (added_on / completion_on), last_activity_on | core math |
 
 ## The formula
 
@@ -89,14 +90,39 @@ If the swarm is healthy (many seeders), Triagearr is more willing to step back. 
 ### Factor 6 — HnR window veto
 
 ```
-if (now - added_on).days < scoring.hnr_window_days:
+seed_start = completion_on if known, else added_on
+any_tracker_alive = any(t.status != 4 for t in trackers)   # qBit status 4 = not_working
+                    OR all trackers' last_checked is stale (< grace window of working state)
+
+if (now - seed_start).days < scoring.hnr_window_days AND any_tracker_alive:
     value  = 1.0
     weight = -10000      (hard veto, not configurable)
+elif (now - seed_start).days < scoring.hnr_window_days AND NOT any_tracker_alive:
+    value  = 0           (veto degraded — no counterparty to enforce HnR)
 ```
 
-A torrent within the HnR (hit-and-run) window is **never** deleted, regardless of any other factor. This is non-configurable: getting flagged for HnR has consequences (account warning, ratio penalty, ban). Triagearr's safety contract guarantees this.
+A torrent within the HnR (hit-and-run) window is **never** deleted while any tracker is alive — getting flagged for HnR has consequences (account warning, ratio penalty, ban). Triagearr's safety contract guarantees this.
 
-### Factor 7 — Exclusion overrides
+The veto silently downgrades to `0` only when **every** tracker attached to the torrent reports `status = 4 (not_working)` for sustained periods (see ADR-0009 and Factor 7). In that case there is no counterparty to enforce the seed obligation; the HnR contract has lapsed. This is the only documented exception to "HnR is non-configurable". It is conditional on observable state, not on user config.
+
+The window is measured from `completion_on` when available (qBit reports it), falling back to `added_on` for legacy rows. Measuring from `added_on` over-counts the window on slow downloads.
+
+### Factor 7 — Tracker dead bonus (ADR-0009)
+
+```
+all_dead    = every tracker for this hash has status == 4 (not_working)
+sustained   = min(t.last_checked) for all trackers with status==4 ≥ scoring.tracker_dead_grace ago
+value       = 1.0 if all_dead AND sustained, else 0
+weight      = scoring.weights.tracker_dead_bonus       (default +40)
+```
+
+A torrent whose every tracker has been unreachable for at least `tracker_dead_grace` (default `7d`) carries no seed obligation. It bubbles up the deletion queue without needing user intervention.
+
+**Interaction with `seeders_low_guard`.** When trackers are dead, `seeders=0` is the normal observation, so `seeders_low_guard (-1000)` fires alongside this bonus. Their sum (`-1000 + 40 = -960`) stays vetoed *by design* — the dead-tracker bonus on its own is not strong enough to override rare-content protection. A user who specifically wants dead-tracker torrents to become deletion candidates must relax `seeders_low_guard` for matched trackers via `per_tracker` policy. The HnR degradation in Factor 6 already covers the "obligation" half of the problem; this factor covers the "preference" half.
+
+### Factor 8 — Exclusion overrides
+
+### Factor 8 — Exclusion overrides
 
 If the torrent matches any of:
 - `qbit.category_exclude` category

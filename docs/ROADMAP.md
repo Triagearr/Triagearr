@@ -50,18 +50,43 @@ The app polls everything, persists snapshots, and exposes a basic CLI to inspect
 
 Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. Validate that data shape supports the planned scoring math.
 
-## M2 — Mapping & storage maintenance
+## M2 — Mapping, tracker capture & storage maintenance
 
-**Estimated**: 8-10 h · **Tag**: `v0.3.0`
+**Estimated**: 10-12 h · **Tag**: `v0.3.0`
 
 ### Mapping (hardlink-aware)
 
 - [ ] `internal/mapper` package
 - [ ] Inode resolution via `syscall.Stat_t` (Linux)
-- [ ] Cache of `torrent_hash ↔ inode ↔ arr_media_id`, invalidated on *arr poll diffs
-- [ ] CLI: `triagearr inspect mapping <hash>` shows all paths linked to a torrent
+- [ ] Path remap auto-inference at boot per ADR-0010 (sample qBit + *arr paths against local volume index, derive prefix substitution, ≥80 % confidence on ≥5 samples to accept)
+- [ ] Mapper gate: hold queries until first qBit + *arr poll completes and inference settles
+- [ ] Manual override via `volumes[*].path_remap` skips inference; each `to:` stat-ed at startup, missing dir = refuse to start
+- [ ] Refuse-to-start with candidate distribution logged when inference produces no dominant rule
+- [ ] Cache of `torrent_hash ↔ inode ↔ arr_file_id`, invalidated on *arr poll diffs
+- [ ] Mapper exposes per-torrent resolution: `QbitFiles(hash) → []FileRef` AND `ArrTargets(hash) → [{instance, file_id, inode}]` (multi-file torrents per `docs/HARDLINK_TOPOLOGY.md`)
+- [ ] CLI: `triagearr inspect mapping <hash>` shows EVERY file (qbit path, translated local path, inode, nlink, matched arr_file_id or "orphan") AND remap-rule origin
+- [ ] CLI: `triagearr inspect remap` prints active rules per volume + their origin (inferred N/M vs config)
 - [ ] Detect cross-seed conflicts in mapping (multiple torrents → same inode)
 - [ ] Tests on real filesystem with `os.TempDir` + hardlinks
+- [ ] Tests on inference: identity, simple prefix mismatch, ambiguous (refuse), per-category split
+
+### Tracker capture (ADR-0009)
+
+- [ ] Schema migration `0002`: add `torrent_trackers` table, add `media_files` table, add `completion_on` column to `torrents`
+- [ ] qBit client: `ListTrackers(ctx, hash)` against `/api/v2/torrents/trackers`
+- [ ] qBit client: capture `completion_on` in `ListTorrents` (one-field extension)
+- [ ] New `tracker` poller (default `tracker_interval: 6h`); fan-out one call per torrent
+- [ ] Persist parsed `tracker_host` alongside raw `tracker_url`
+- [ ] CLI: `triagearr inspect trackers <hash>` prints current tracker statuses
+
+### *arr per-file capture (prerequisite for mapper + M5 Actor)
+
+- [ ] Sonarr client: `ListEpisodeFiles(ctx, seriesID)` against `/api/v3/episodefile?seriesId={id}`
+- [ ] Radarr client: `ListMovieFiles(ctx, movieID)` against `/api/v3/moviefile?movieId={id}`
+- [ ] Extend `arr` poller to fan out file calls per media item (rate-limited; default 5 req/s burst)
+- [ ] Persist `{file_id, path, size}` per file into `media_files` — `file_id` is reused by M5 Actor for granular `DELETE`
+- [ ] CLI: `triagearr inspect media <id>` includes the file list with sizes and ages
+- [ ] Inference (ADR-0010) prefers `media_files.path` over `media.path` for sampling — deeper suffixes, sharper matches
 
 ### Storage maintenance (prerequisite for M3 scorer)
 
@@ -103,9 +128,10 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 - [ ] `internal/actor` package
 - [ ] `mode: live` config requirement
 - [ ] Per-*arr-instance `act: true` requirement (defense in depth)
-- [ ] `arr-then-qbit` deletion pipeline per `docs/HARDLINK_TOPOLOGY.md`
-- [ ] Cross-seed conflict handling (skip / warn_only / force_delete)
-- [ ] `actions` + `audit_log` tables populated atomically
+- [ ] `arr-then-qbit` deletion pipeline per `docs/HARDLINK_TOPOLOGY.md`, including the multi-file fan-out (T3 per `arr_file_id`, T3.5 per-file nlink re-stat, T4 whole-torrent)
+- [ ] Cross-seed conflict handling (skip / warn_only / force_delete), evaluated per-file but aborting the whole torrent on any conflict (qBit `deleteFiles=true` is all-or-nothing)
+- [ ] Partial *arr failure handling: hard fail aborts the candidate, deletes already done are NOT rolled back, disk impact = 0 (every nlink remains ≥1 thanks to surviving torrent), state logged for *arr re-grab
+- [ ] `actions` + `audit_log` tables populated atomically — `audit_log` granularity is **per-file** (case "8 OK + 1 failed + 1 not-attempted" must be reconstructible post-mortem)
 - [ ] Rate limiting (`max_deletions_per_run`, `inter_action_delay`)
 - [ ] Retry with backoff on transient *arr/qbit failures
 - [ ] Smoke test against a throwaway Sonarr+qBit pair in CI (testcontainers)
