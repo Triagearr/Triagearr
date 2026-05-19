@@ -15,11 +15,11 @@ For every torrent, the scorer reads:
 
 | Source | Field | Used for |
 |---|---|---|
-| `torrents` (current) | category, tags, state, added_on, completion_on | exclusion filters, age, HnR |
+| `torrents` (current) | category, tags, state, added_on, completion_on, private | exclusion filters, age, HnR, private gating |
 | `torrent_trackers` (current, ADR-0009) | tracker_host, status, last_checked | per-tracker policy, dead-tracker bonus, HnR degradation |
 | `snapshots_raw` (last 30d) | ratio, uploaded, seeders, leechers | velocity, swarm health |
 | `snapshots_daily` (last 365d) | aggregates | long-term trends |
-| `media` (joined via inode) | tags, *arr type, monitor status | exclusion filters |
+| `media` (joined via `arr_imports` per ADR-0012) | tags, *arr type, monitor status | exclusion filters |
 | `arr_instances` config | per-instance tags_exclude | exclusion filters |
 | `scoring.per_tracker` config | min_seed_days, min_ratio, rare_threshold | tracker-specific rules (keyed on tracker_host) |
 | filesystem | torrent age (added_on / completion_on), last_activity_on | core math |
@@ -35,12 +35,15 @@ where each factor = weight × value, computed as follows:
 ### Factor 1 — Ratio obligation met
 
 ```
-value  = 1.0 if (ratio ≥ min_ratio_for_tracker) AND (seed_days ≥ min_seed_days_for_tracker)
-       = 0.0 otherwise
+if NOT torrent.private:
+    value = 0            (public trackers have no enforceable ratio obligation)
+else:
+    value  = 1.0 if (ratio ≥ min_ratio_for_tracker) AND (seed_days ≥ min_seed_days_for_tracker)
+           = 0.0 otherwise
 weight = scoring.weights.ratio_obligation_met   (default +50)
 ```
 
-Boolean. Either we've met the tracker's stated requirements or we haven't. When unmet, this factor contributes 0 (not a penalty — penalty comes from other factors).
+Boolean, **gated on `private:true`**. Public trackers don't enforce ratio (no account, no penalty), so satisfying or not satisfying a ratio on a public torrent has no economic meaning — this factor contributes 0. For private torrents, either we've met the tracker's stated requirements or we haven't. When unmet, this factor contributes 0 (not a penalty — penalty comes from other factors).
 
 ### Factor 2 — Upload velocity (inverse)
 
@@ -65,10 +68,11 @@ Old torrents are slightly preferred for deletion, ceteris paribus. The weight is
 ### Factor 4 — Rare content guard (the big veto)
 
 ```
-seeders_avg_7d = average seeders count over last 7 days
-threshold      = tracker-specific override OR scoring.rare_content_threshold (default 3)
+seeders_avg_7d    = average seeders count over last 7 days
+threshold         = tracker-specific override OR scoring.rare_content_threshold (default 3)
+any_tracker_alive = any(t.status != 4 for t in trackers)
 
-if seeders_avg_7d ≤ threshold:
+if any_tracker_alive AND seeders_avg_7d ≤ threshold:
     value  = 1.0
     weight = scoring.weights.seeders_low_guard   (default -1000)
 else:
@@ -76,6 +80,8 @@ else:
 ```
 
 This is the swarm-health guard. When a torrent has few seeders, Triagearr essentially refuses to delete it — `-1000` overwhelms any positive contribution. The guard is configurable per tracker (private trackers may want a more conservative threshold).
+
+**Critical gate: `any_tracker_alive`.** When every tracker attached to the torrent reports `status = 4 (not_working)`, the swarm signal becomes meaningless — `seeders=0` is no longer evidence of rare content, it is evidence of dead infrastructure. The guard would mis-fire and sanctuarize precisely the torrents Triagearr exists to reap (dead-tracker graveyards). The `any_tracker_alive` gate ensures the rare-content protection only applies when there is a living counterparty whose swarm count is observable. This is symmetric with Factor 6 (HnR), which also degrades when all trackers are dead.
 
 ### Factor 5 — Swarm health bonus
 
@@ -94,14 +100,16 @@ seed_start = completion_on if known, else added_on
 any_tracker_alive = any(t.status != 4 for t in trackers)   # qBit status 4 = not_working
                     OR all trackers' last_checked is stale (< grace window of working state)
 
-if (now - seed_start).days < scoring.hnr_window_days AND any_tracker_alive:
+if NOT torrent.private:
+    value = 0            (public trackers have no HnR concept — no account, no penalty)
+elif (now - seed_start).days < scoring.hnr_window_days AND any_tracker_alive:
     value  = 1.0
     weight = -10000      (hard veto, not configurable)
 elif (now - seed_start).days < scoring.hnr_window_days AND NOT any_tracker_alive:
     value  = 0           (veto degraded — no counterparty to enforce HnR)
 ```
 
-A torrent within the HnR (hit-and-run) window is **never** deleted while any tracker is alive — getting flagged for HnR has consequences (account warning, ratio penalty, ban). Triagearr's safety contract guarantees this.
+A torrent within the HnR (hit-and-run) window is **never** deleted while any tracker is alive **and the torrent is private** — getting flagged for HnR has consequences (account warning, ratio penalty, ban). Triagearr's safety contract guarantees this for private torrents. Public torrents do not have HnR semantics: no account is at stake, no penalty can be incurred, the factor is inert (`value=0`).
 
 The veto silently downgrades to `0` only when **every** tracker attached to the torrent reports `status = 4 (not_working)` for sustained periods (see ADR-0009 and Factor 7). In that case there is no counterparty to enforce the seed obligation; the HnR contract has lapsed. This is the only documented exception to "HnR is non-configurable". It is conditional on observable state, not on user config.
 
@@ -118,9 +126,7 @@ weight      = scoring.weights.tracker_dead_bonus       (default +40)
 
 A torrent whose every tracker has been unreachable for at least `tracker_dead_grace` (default `7d`) carries no seed obligation. It bubbles up the deletion queue without needing user intervention.
 
-**Interaction with `seeders_low_guard`.** When trackers are dead, `seeders=0` is the normal observation, so `seeders_low_guard (-1000)` fires alongside this bonus. Their sum (`-1000 + 40 = -960`) stays vetoed *by design* — the dead-tracker bonus on its own is not strong enough to override rare-content protection. A user who specifically wants dead-tracker torrents to become deletion candidates must relax `seeders_low_guard` for matched trackers via `per_tracker` policy. The HnR degradation in Factor 6 already covers the "obligation" half of the problem; this factor covers the "preference" half.
-
-### Factor 8 — Exclusion overrides
+**Interaction with `seeders_low_guard`.** Factor 4 (`seeders_low_guard`) is gated on `any_tracker_alive`, so when every tracker is dead, the rare-content guard does not fire — `seeders=0` on a dead infrastructure is not evidence of rarity. This means dead-tracker torrents naturally surface as candidates (positive net score from age + velocity + dead_bonus), without needing per-tracker policy overrides. The HnR degradation in Factor 6 covers the "obligation" half (no counterparty to punish HnR); the present factor covers the "preference" half (these torrents bubble up the queue). Dead-tracker reaping is the **primary** Triagearr use case, not an opt-in escape hatch.
 
 ### Factor 8 — Exclusion overrides
 
@@ -134,8 +140,11 @@ Then the torrent is **filtered out before scoring** — it doesn't appear in can
 
 ## Worked example
 
+### Example A — public, healthy swarm
+
 Torrent: `Ubuntu.22.04.iso`
-- Tracker: `archive.example` (public, `min_seed_days: 0`, `min_ratio: 0`, `rare_threshold: 0`)
+- Tracker: `archive.example` (**public**, `min_seed_days: 0`, `min_ratio: 0`, `rare_threshold: 0`)
+- `private`: false
 - Added: 180 days ago
 - Ratio: 12.3
 - Uploaded last 30d: ~0 bytes (already saturated, nobody downloads it anymore)
@@ -145,30 +154,72 @@ Score breakdown with default weights:
 
 | Factor | Value | Weight | Contribution |
 |---|---|---|---|
-| Ratio obligation met | 1.0 | +50 | **+50** |
+| Ratio obligation met | 0 (public — gate) | +50 | **0** |
 | Velocity inverse | ~1.0 (no uploads) | +30 | **+30** |
 | Age | 180 | +0.1 | **+18** |
-| Rare guard | seeders > 0 threshold → not triggered | n/a | **0** |
+| Rare guard | seeders > threshold → not triggered | n/a | **0** |
 | Swarm health bonus | log10(288) ≈ 2.46 | +5 | **+12.3** |
-| HnR window veto | 180 > 14 → not triggered | n/a | **0** |
-| **Total** | | | **+110.3** |
+| HnR window veto | 0 (public — gate) | n/a | **0** |
+| **Total** | | | **+60.3** |
 
-This torrent ranks high. The library is saturated for this content (300 seeders), the user has paid their dues (ratio 12), and they're not contributing fresh uploads. Safe to delete.
+This torrent ranks high. The library is saturated for this content (~300 seeders), no fresh upload activity, public so no ratio obligation. Safe to delete.
 
-Counter-example: `Obscure.Documentary.2019.mkv`
+### Example B — public, rare content
+
+`Obscure.Documentary.2019.mkv`
 - Same tracker, same age, same ratio
-- But seeders avg 7d: **2**
+- `private`: false
+- But seeders avg 7d: **2** (and tracker is alive — `any_tracker_alive = true`)
 
 | Factor | Value | Weight | Contribution |
 |---|---|---|---|
-| Ratio obligation met | 1.0 | +50 | +50 |
+| Ratio obligation met | 0 (public — gate) | +50 | 0 |
 | Velocity inverse | ~1.0 | +30 | +30 |
 | Age | 180 | +0.1 | +18 |
-| **Rare guard** | **1.0** (seeders ≤ 3) | **-1000** | **−1000** |
+| **Rare guard** | **1.0** (tracker alive AND seeders ≤ 3) | **-1000** | **−1000** |
 | Swarm health bonus | log10(3) ≈ 0.48 | +5 | +2.4 |
-| **Total** | | | **−899.6** |
+| HnR window veto | 0 (public — gate) | n/a | 0 |
+| **Total** | | | **−949.6** |
 
 The rare-content guard vetoes deletion. Even though everything else suggests "delete," the swarm health argument wins. This is the design intent.
+
+### Example C — private, ratio met, HnR cleared
+
+`Severance.S02.MULTi.1080p.WEB.H265.mkv` on a private tracker with active swarm.
+- Tracker: `private.example` (**private**, `min_seed_days: 7`, `min_ratio: 1.0`, `rare_threshold: 5`)
+- `private`: true, `any_tracker_alive`: true
+- Added: 120 days ago, completion 119 days ago (HnR window cleared at 14d)
+- Ratio: 2.4, seed_days: 119
+- Seeders avg 7d: 38
+
+| Factor | Value | Weight | Contribution |
+|---|---|---|---|
+| Ratio obligation met | 1.0 (private, ratio≥1, seed_days≥7) | +50 | **+50** |
+| Velocity inverse | ~0.9 (slowing) | +30 | +27 |
+| Age | 120 | +0.1 | +12 |
+| Rare guard | seeders > threshold (38 > 5) | n/a | 0 |
+| Swarm health bonus | log10(39) ≈ 1.59 | +5 | +7.9 |
+| HnR window veto | 120 > 14 → not triggered | n/a | 0 |
+| **Total** | | | **+96.9** |
+
+Ratio paid, HnR cleared, swarm healthy. Candidate.
+
+### Example D — private, dead tracker (graveyard)
+
+Same torrent as C, but the private tracker has been offline for 30+ days. `any_tracker_alive = false`.
+
+| Factor | Value | Weight | Contribution |
+|---|---|---|---|
+| Ratio obligation met | 0 (no live counterparty to honor) | +50 | 0 |
+| Velocity inverse | 1.0 (no uploads — dead swarm) | +30 | **+30** |
+| Age | 120 | +0.1 | +12 |
+| Rare guard | 0 (gate: not any_tracker_alive) | n/a | **0** |
+| Swarm health bonus | log10(1) = 0 | +5 | 0 |
+| HnR window veto | 0 (gate: not any_tracker_alive) | n/a | 0 |
+| Tracker dead bonus | 1.0 (sustained dead) | +40 | **+40** |
+| **Total** | | | **+82** |
+
+The graveyard case. No obligation, no swarm to protect, dead_bonus fires. Top-tier candidate — exactly what Triagearr exists to reap.
 
 ## Score thresholds
 
@@ -195,22 +246,27 @@ Returns the full breakdown:
 ```json
 {
   "torrent_hash": "abc123...",
-  "score": 110.3,
+  "score": 60.3,
   "verdict": "candidate",
   "computed_at": "2026-05-17T14:30:00Z",
+  "private": false,
+  "any_tracker_alive": true,
   "factors": [
-    { "name": "ratio_obligation_met", "value": 1.0, "weight": 50.0, "contribution": 50.0 },
+    { "name": "ratio_obligation_met", "value": 0, "weight": 50.0, "contribution": 0, "gate": "public — inert" },
     { "name": "upload_velocity_inv", "value": 1.0, "weight": 30.0, "contribution": 30.0 },
     { "name": "age_days", "value": 180, "weight": 0.1, "contribution": 18.0 },
     { "name": "seeders_low_guard", "value": 0, "weight": -1000, "contribution": 0 },
     { "name": "swarm_health_bonus", "value": 2.46, "weight": 5.0, "contribution": 12.3 },
-    { "name": "hnr_window_veto", "value": 0, "weight": -10000, "contribution": 0 }
+    { "name": "hnr_window_veto", "value": 0, "weight": -10000, "contribution": 0, "gate": "public — inert" },
+    { "name": "tracker_dead_bonus", "value": 0, "weight": 40, "contribution": 0 }
   ],
   "exclusions_applied": [],
   "tracker": "archive.example",
   "tracker_policy": { "min_seed_days": 0, "min_ratio": 0.0, "rare_threshold": 0 }
 }
 ```
+
+The `gate` field on a factor indicates that a gating condition (private/public, any_tracker_alive) zeroed out the contribution before the value/weight math. The UI surfaces these gates to make it obvious *why* a factor is silent.
 
 The UI renders this as a horizontal bar chart with positive/negative contributions side by side, making it visually obvious why a torrent is or isn't a candidate.
 
