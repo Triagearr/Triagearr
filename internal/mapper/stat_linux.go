@@ -16,5 +16,6 @@ func statInode(path string) (ino uint64, nlink uint64, err error) {
 	if err := unix.Stat(path, &s); err != nil {
 		return 0, 0, fmt.Errorf("stat %q: %w", path, err)
 	}
-	return s.Ino, s.Nlink, nil
+	// Nlink is uint64 on amd64 but uint32 on arm64 — keep the explicit widen.
+	return s.Ino, uint64(s.Nlink), nil //nolint:unconvert // platform-dependent type
 }
