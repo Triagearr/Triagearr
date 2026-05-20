@@ -108,12 +108,12 @@ func TestScoreAll_PublicHealthyVsRareVsGraveyard(t *testing.T) {
 		AddedOn: now.Add(-120 * 24 * time.Hour), CompletionOn: now.Add(-5 * 24 * time.Hour),
 		Private: true,
 	}))
-	// Tracker dead, last_checked sustained beyond the 7d grace.
+	// Tracker dead, first_seen_dead sustained beyond the 7d grace.
 	require.NoError(t, s.ReplaceTrackers(ctx, "graveyard", []triagearr.TrackerInfo{
 		{URL: "https://dead/announce", Host: "dead", Status: triagearr.TrackerNotWorking},
 	}))
 	_, err := s.DB().ExecContext(ctx, `
-		UPDATE torrent_trackers SET last_checked = ? WHERE torrent_hash = 'graveyard'
+		UPDATE torrent_trackers SET first_seen_dead = ? WHERE torrent_hash = 'graveyard'
 	`, now.Add(-30*24*time.Hour).Format(time.RFC3339Nano))
 	require.NoError(t, err)
 	seedSnapshots(t, s, "graveyard", now, 0, 0)

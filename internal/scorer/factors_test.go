@@ -154,21 +154,30 @@ func TestFactor_HnRVeto(t *testing.T) {
 func TestFactor_TrackerDead(t *testing.T) {
 	const w = 40.0
 	const grace = 7 * 24 * time.Hour
+	old := fixedNow.Add(-30 * 24 * time.Hour)
+	recent := fixedNow.Add(-time.Hour)
 
 	sustained := []trackerView{
-		{Host: "a", Status: triagearr.TrackerNotWorking, LastChecked: fixedNow.Add(-30 * 24 * time.Hour)},
+		{Host: "a", Status: triagearr.TrackerNotWorking, FirstSeenDead: &old},
 	}
 	mixed := []trackerView{
-		{Host: "a", Status: triagearr.TrackerNotWorking, LastChecked: fixedNow.Add(-30 * 24 * time.Hour)},
-		{Host: "b", Status: triagearr.TrackerWorking, LastChecked: fixedNow},
+		{Host: "a", Status: triagearr.TrackerNotWorking, FirstSeenDead: &old},
+		{Host: "b", Status: triagearr.TrackerWorking},
 	}
 	recentDead := []trackerView{
-		{Host: "a", Status: triagearr.TrackerNotWorking, LastChecked: fixedNow.Add(-time.Hour)},
+		{Host: "a", Status: triagearr.TrackerNotWorking, FirstSeenDead: &recent},
+	}
+	// status=4 observed but first_seen_dead never recorded (e.g. pre-0007 row
+	// that wasn't backfilled because last_checked was missing): treat as
+	// not-yet-sustained.
+	deadNoTimestamp := []trackerView{
+		{Host: "a", Status: triagearr.TrackerNotWorking, FirstSeenDead: nil},
 	}
 
 	require.Equal(t, w, factorTrackerDead(sustained, fixedNow, grace, w).Contribution)
 	require.Equal(t, 0.0, factorTrackerDead(mixed, fixedNow, grace, w).Contribution)
 	require.Equal(t, 0.0, factorTrackerDead(recentDead, fixedNow, grace, w).Contribution)
+	require.Equal(t, 0.0, factorTrackerDead(deadNoTimestamp, fixedNow, grace, w).Contribution)
 	require.Equal(t, 0.0, factorTrackerDead(nil, fixedNow, grace, w).Contribution)
 }
 

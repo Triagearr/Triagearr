@@ -119,12 +119,14 @@ The window is measured from `completion_on` when available (qBit reports it), fa
 
 ```
 all_dead    = every tracker for this hash has status == 4 (not_working)
-sustained   = min(t.last_checked) for all trackers with status==4 ≥ scoring.tracker_dead_grace ago
+sustained   = max(t.first_seen_dead) for all trackers with status==4 ≤ now − scoring.tracker_dead_grace
 value       = 1.0 if all_dead AND sustained, else 0
 weight      = scoring.weights.tracker_dead_bonus       (default +40)
 ```
 
 A torrent whose every tracker has been unreachable for at least `tracker_dead_grace` (default `7d`) carries no seed obligation. It bubbles up the deletion queue without needing user intervention.
+
+`first_seen_dead` is set by the tracker poller the first tick a tracker reports `status=4`, preserved as long as the tracker stays in `not_working`, and cleared on recovery (ADR-0013). qBit does not expose this timestamp directly; `last_checked` is rewritten every poll (default 6h) and therefore cannot be used to measure "sustained dead".
 
 **Interaction with `seeders_low_guard`.** Factor 4 (`seeders_low_guard`) is gated on `any_tracker_alive`, so when every tracker is dead, the rare-content guard does not fire — `seeders=0` on a dead infrastructure is not evidence of rarity. This means dead-tracker torrents naturally surface as candidates (positive net score from age + velocity + dead_bonus), without needing per-tracker policy overrides. The HnR degradation in Factor 6 covers the "obligation" half (no counterparty to punish HnR); the present factor covers the "preference" half (these torrents bubble up the queue). Dead-tracker reaping is the **primary** Triagearr use case, not an opt-in escape hatch.
 

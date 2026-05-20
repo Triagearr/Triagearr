@@ -14,15 +14,16 @@ import (
 // store row type from the factor functions so tests can synthesise inputs
 // without round-tripping through SQLite.
 type trackerView struct {
-	Host        string
-	Status      triagearr.TrackerStatus
-	LastChecked time.Time
+	Host          string
+	Status        triagearr.TrackerStatus
+	LastChecked   time.Time
+	FirstSeenDead *time.Time
 }
 
 func trackerViewsFromRows(rows []store.TrackerRow) []trackerView {
 	out := make([]trackerView, len(rows))
 	for i, r := range rows {
-		out[i] = trackerView{Host: r.Host, Status: r.Status, LastChecked: r.LastChecked}
+		out[i] = trackerView{Host: r.Host, Status: r.Status, LastChecked: r.LastChecked, FirstSeenDead: r.FirstSeenDead}
 	}
 	return out
 }
@@ -49,6 +50,11 @@ func anyTrackerAlive(trackers []trackerView) bool {
 // allTrackersDeadSustained returns true if every tracker has been not_working
 // at least `grace` ago. Used by Factor 7 (the tracker_dead bonus) to avoid
 // rewarding transient outages.
+//
+// "Sustained" is measured against first_seen_dead — the moment the tracker
+// first reported not_working in a contiguous run. last_checked is rewritten
+// every tracker tick (default 6h) and would never cross the grace window;
+// first_seen_dead is preserved across polls until the tracker recovers.
 func allTrackersDeadSustained(trackers []trackerView, now time.Time, grace time.Duration) bool {
 	if len(trackers) == 0 {
 		return false
@@ -58,8 +64,7 @@ func allTrackersDeadSustained(trackers []trackerView, now time.Time, grace time.
 		if t.Status != triagearr.TrackerNotWorking {
 			return false
 		}
-		// last_checked still inside the grace = not sustained yet.
-		if t.LastChecked.After(cutoff) {
+		if t.FirstSeenDead == nil || t.FirstSeenDead.After(cutoff) {
 			return false
 		}
 	}
