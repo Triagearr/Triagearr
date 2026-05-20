@@ -18,12 +18,15 @@ import (
 	"github.com/Triagearr/Triagearr/internal/clients/qbit"
 	"github.com/Triagearr/Triagearr/internal/clients/registry"
 	"github.com/Triagearr/Triagearr/internal/config"
+	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/linker"
 	"github.com/Triagearr/Triagearr/internal/logging"
 	"github.com/Triagearr/Triagearr/internal/pollers"
 	"github.com/Triagearr/Triagearr/internal/scorer"
+	"github.com/Triagearr/Triagearr/internal/server"
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
+	"github.com/Triagearr/Triagearr/internal/triggers"
 )
 
 var (
@@ -73,6 +76,7 @@ func main() {
 				Action: migrateAction,
 			},
 			scoreCommand(configFlag),
+			runCommand(configFlag),
 			{
 				Name:  "inspect",
 				Usage: "inspect the local Triagearr state",
@@ -167,9 +171,10 @@ func migrateAction(_ context.Context, cmd *cli.Command) error {
 }
 
 func serveAction(ctx context.Context, cmd *cli.Command) error {
-	cfg, err := loadConfigFromCmd(cmd)
+	path := cmd.String("config")
+	cfg, err := config.Load(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("loading config from %q: %w", path, err)
 	}
 	s, err := openStoreAndMigrate(cfg)
 	if err != nil {
@@ -177,6 +182,49 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer func() { _ = s.Close() }()
 
+	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+
+	for {
+		runCtx, cancel := context.WithCancel(signalCtx)
+		done := make(chan error, 1)
+		go func(c *config.Config) {
+			done <- runDaemon(runCtx, s, c)
+		}(cfg)
+
+	inner:
+		for {
+			select {
+			case <-signalCtx.Done():
+				cancel()
+				return <-done
+			case <-hup:
+				newCfg, err := config.Load(path)
+				if err != nil {
+					slog.Error("SIGHUP reload failed; keeping current config", "err", err)
+					continue inner
+				}
+				slog.Info("SIGHUP — restarting daemon with new config")
+				cancel()
+				<-done
+				cfg = newCfg
+				break inner
+			case err := <-done:
+				cancel()
+				return err
+			}
+		}
+	}
+}
+
+// runDaemon assembles the poller set + HTTP server from cfg and blocks until
+// ctx is cancelled. Reused by serveAction's SIGHUP loop to spawn a fresh
+// daemon when config changes.
+func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 	reg, err := registry.BuildFromConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("building client registry: %w", err)
@@ -241,18 +289,101 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	})
 	ps = append(ps, &scorer.Loop{Scorer: sc, Interval: cfg.Scoring.Interval})
 
+	dec := decider.New(s)
+	if rules := pressureRules(cfg); len(rules) > 0 {
+		ps = append(ps, &triggers.DiskWatcher{
+			Rules:    rules,
+			Decider:  dec,
+			Store:    s,
+			Interval: cfg.Polling.DiskInterval,
+		})
+	}
+
+	// HTTP server runs as a sibling goroutine to the Manager; cancellation
+	// of ctx triggers shutdown on both sides.
+	var httpSrv *server.Server
+	if cfg.HTTP.Bind != "" {
+		httpSrv = server.New(server.Options{
+			Bind:    cfg.HTTP.Bind,
+			APIKey:  cfg.HTTP.APIKey,
+			Store:   s,
+			Decider: dec,
+			Volume:  volumeLookup(cfg),
+			Volumes: func() []decider.Volume { return allVolumes(cfg) },
+		})
+	}
+
 	slog.Info("daemon starting",
 		"mode", string(cfg.Mode),
 		"pollers", len(ps),
+		"http", cfg.HTTP.Bind,
 		"sqlite", cfg.Storage.SQLitePath,
 		"version", version,
 	)
 
-	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	mgr := pollers.NewManager(ps...)
-	return mgr.Run(signalCtx)
+	errCh := make(chan error, 2)
+	go func() { errCh <- mgr.Run(ctx) }()
+	if httpSrv != nil {
+		go func() { errCh <- httpSrv.Start(ctx) }()
+	}
+
+	var firstErr error
+	expect := 1
+	if httpSrv != nil {
+		expect = 2
+	}
+	for i := 0; i < expect; i++ {
+		if err := <-errCh; err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func pressureRules(cfg *config.Config) []triggers.VolumeRule {
+	var out []triggers.VolumeRule
+	for _, v := range cfg.Volumes {
+		if !v.DiskPressure.Enabled {
+			continue
+		}
+		if v.DiskPressure.ThresholdFreePercent <= 0 {
+			continue
+		}
+		out = append(out, triggers.VolumeRule{
+			Name:                 v.Name,
+			Path:                 v.Path,
+			ThresholdFreePercent: v.DiskPressure.ThresholdFreePercent,
+			TargetFreePercent:    v.DiskPressure.TargetFreePercent,
+			MaxRunSizeGB:         v.DiskPressure.MaxRunSizeGB,
+		})
+	}
+	return out
+}
+
+func allVolumes(cfg *config.Config) []decider.Volume {
+	out := make([]decider.Volume, 0, len(cfg.Volumes))
+	for _, v := range cfg.Volumes {
+		out = append(out, decider.Volume{
+			Name:              v.Name,
+			Path:              v.Path,
+			TargetFreePercent: v.DiskPressure.TargetFreePercent,
+			MaxRunSizeGB:      v.DiskPressure.MaxRunSizeGB,
+		})
+	}
+	return out
+}
+
+func volumeLookup(cfg *config.Config) func(string) (decider.Volume, bool) {
+	all := allVolumes(cfg)
+	return func(name string) (decider.Volume, bool) {
+		for _, v := range all {
+			if v.Name == name {
+				return v, true
+			}
+		}
+		return decider.Volume{}, false
+	}
 }
 
 func arrURLMap(cfg *config.Config) map[string]string {

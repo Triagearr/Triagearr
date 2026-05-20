@@ -16,10 +16,11 @@ mode: dry-run
 # HTTP server
 # -----------------------------------------------------------------------------
 http:
-  bind: ":9494"
-  # Required if bind is not 127.0.0.1.
+  # Default is 127.0.0.1:9494 (loopback only). To expose on another interface
+  # you MUST also set api_key — Triagearr refuses to start otherwise.
+  bind: "127.0.0.1:9494"
   # Generate one with: openssl rand -hex 32
-  api_key: "${TRIAGEARR_API_KEY}"
+  api_key: "${TRIAGEARR_API_KEY:-}"
   # CORS — leave empty unless serving the UI from a different origin (dev only).
   cors_origins: []
 

@@ -201,6 +201,50 @@ type ImportLister interface {
 	ListImports(ctx context.Context, sinceHistoryID int64) ([]ImportRecord, error)
 }
 
+// RunTrigger identifies what caused a Decider run to fire.
+type RunTrigger string
+
+// Supported RunTrigger values.
+const (
+	RunTriggerDiskPressure RunTrigger = "disk_pressure"
+	RunTriggerHTTP         RunTrigger = "http"
+	RunTriggerCLI          RunTrigger = "cli"
+)
+
+// RunStopReason explains why the Decider stopped accumulating candidates.
+type RunStopReason string
+
+// Supported RunStopReason values.
+const (
+	StopTargetReached     RunStopReason = "target_reached"
+	StopSizeCap           RunStopReason = "size_cap"
+	StopNoMoreCandidates  RunStopReason = "no_more_candidates"
+)
+
+// Run is the persisted record of one Decider invocation.
+type Run struct {
+	ID                  int64
+	TriggeredBy         RunTrigger
+	TriggeredAt         time.Time
+	Mode                string
+	VolumeName          string
+	FreePctAtFire       float64
+	TargetFreePct       float64
+	EstimatedFreedBytes int64
+	StopReason          RunStopReason
+	Status              string
+}
+
+// RunItem is one candidate in a Run's ordered plan.
+type RunItem struct {
+	RunID          int64
+	Rank           int
+	TorrentHash    Hash
+	Score          float64
+	SizeBytes      int64
+	WouldFreeBytes int64
+}
+
 // Link is one resolved (*arr file ↔ qBit torrent) edge, joining what *arr
 // recorded at import time with the current media_files snapshot. Returned by
 // the linker (ADR-0012) and consumed by the M5 actor as the per-file DELETE

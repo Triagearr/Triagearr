@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"regexp"
@@ -250,7 +251,48 @@ func Validate(c *Config) error {
 		}
 	}
 
+	// http.bind binding to a non-loopback address requires an api_key. Defense
+	// in depth: the daemon exposes destructive triggers (M4+), so a public bind
+	// without auth is a footgun, not a configuration choice.
+	if c.HTTP.Bind != "" && c.HTTP.APIKey == "" && !isLoopbackBind(c.HTTP.Bind) {
+		return fmt.Errorf("http.bind: %q is not loopback — http.api_key is required", c.HTTP.Bind)
+	}
+
+	for i, v := range c.Volumes {
+		dp := v.DiskPressure
+		if !dp.Enabled {
+			continue
+		}
+		if dp.ThresholdFreePercent < 0 || dp.ThresholdFreePercent > 100 {
+			return fmt.Errorf("volumes[%d=%s].disk_pressure.threshold_free_percent: must be in [0,100], got %v", i, v.Name, dp.ThresholdFreePercent)
+		}
+		if dp.TargetFreePercent < 0 || dp.TargetFreePercent > 100 {
+			return fmt.Errorf("volumes[%d=%s].disk_pressure.target_free_percent: must be in [0,100], got %v", i, v.Name, dp.TargetFreePercent)
+		}
+		if dp.ThresholdFreePercent > 0 && dp.TargetFreePercent <= dp.ThresholdFreePercent {
+			return fmt.Errorf("volumes[%d=%s].disk_pressure: target_free_percent (%v) must be greater than threshold_free_percent (%v)", i, v.Name, dp.TargetFreePercent, dp.ThresholdFreePercent)
+		}
+	}
+
 	return nil
+}
+
+// isLoopbackBind reports whether bind targets a loopback address. Accepts
+// hostnames "localhost" and any 127.x.x.x or [::1] form. A bare ":port"
+// means "all interfaces" — not loopback.
+func isLoopbackBind(bind string) bool {
+	host, _, err := net.SplitHostPort(bind)
+	if err != nil {
+		return false
+	}
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // AnyArrEnabledForPolling returns true if at least one *arr is enabled+poll.

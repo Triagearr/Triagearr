@@ -151,7 +151,7 @@ type VacuumConfig struct {
 
 // Defaults applied when a field is left zero by the user.
 const (
-	defaultBind               = ":9494"
+	defaultBind               = "127.0.0.1:9494"
 	defaultSQLitePath         = "/data/triagearr.db"
 	defaultArrTimeout         = 30 * time.Second
 	defaultQbitTimeout        = 30 * time.Second

@@ -26,7 +26,7 @@ storage:
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, config.ModeDryRun, cfg.Mode)
-	require.Equal(t, ":9494", cfg.HTTP.Bind)
+	require.Equal(t, "127.0.0.1:9494", cfg.HTTP.Bind)
 	require.Equal(t, 30*time.Minute, cfg.Polling.QbitInterval)
 	require.Equal(t, time.Hour, cfg.Polling.ArrInterval)
 	require.Equal(t, 5*time.Minute, cfg.Polling.DiskInterval)
