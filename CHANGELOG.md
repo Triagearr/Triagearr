@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+M3 — Scoring engine. The daemon now computes a `DeleteScore` per torrent from passively-collected snapshots/trackers/imports, persists the per-factor breakdown, and exposes it via CLI. Still observation-only — no destructive actions.
+
+### Added
+- `internal/scorer`: 7-factor scorer implementing `docs/SCORING.md` (ratio obligation, upload velocity inverse, age, seeders-low guard, swarm health, HnR veto, tracker-dead bonus). Gates `private` and `any_tracker_alive` are recorded explicitly on every factor so the explain output names the reason rather than emitting silent zeros. HnR veto weight is hard-coded `-10000` (non-configurable per the safety contract).
+- `internal/store/migrations/0005_scores.sql`: `scores(hash PK, score, private, any_tracker_alive, excluded, exclusion_reasons, factors_json, computed_at)` with a partial index on eligible rows for the upcoming M4 Decider.
+- `internal/store/migrations/0006_snapshots_daily_uploaded.sql`: `snapshots_daily.uploaded_max` so Factor 2 honours the 30-day SCORING.md window by blending raw + daily across the downsample boundary.
+- Scoring loop: periodic recompute (default `scoring.interval: 1h`) wired next to the existing pollers; two-pass design caches per-torrent snapshot stats to build the global velocity normaliser without a dedicated SQL aggregate.
+- Exclusions evaluated up front (`qbit.{category,tags}_exclude`, `arrs.<type>.<name>.tags_exclude`) but torrents are scored anyway and flagged `excluded=true` with reasons — UI visibility now, Decider filters at M4.
+- CLI: `triagearr score explain <hash> [--json|--recompute]`, `score recompute <hash>`, `score top [--limit N] [--include-excluded]`.
+- `PruneStaleTorrents` extended to cascade `scores` alongside the existing dependents.
+
+### Changed
+- `internal/store/repos.go` `DownsampleRange` aggregates `MAX(uploaded)` into the new `uploaded_max` column.
+
 ## [0.2.0] - 2026-05-19
 
 M1 — Observation only. The daemon now polls qBittorrent, *arr instances, and watched disks, persisting everything to SQLite. No destructive operations are possible at this stage.

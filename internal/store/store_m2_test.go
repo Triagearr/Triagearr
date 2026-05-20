@@ -95,13 +95,20 @@ func TestDownsampleRange_AggregatesAndDeletes(t *testing.T) {
 	base := time.Date(2026, 5, 14, 12, 0, 0, 0, time.UTC)
 	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{Hash: "h1", Name: "Foo", AddedOn: base}))
 
-	// Three samples on day 1, two on day 2.
+	// Three samples on day 1 (uploaded 100,200,300), two on day 2 (400,500).
 	day1 := base
 	day2 := base.Add(24 * time.Hour)
-	for i, ts := range []time.Time{day1, day1.Add(time.Hour), day1.Add(2 * time.Hour), day2, day2.Add(time.Hour)} {
+	samples := []struct {
+		ts       time.Time
+		uploaded int64
+	}{
+		{day1, 100}, {day1.Add(time.Hour), 200}, {day1.Add(2 * time.Hour), 300},
+		{day2, 400}, {day2.Add(time.Hour), 500},
+	}
+	for i, sm := range samples {
 		require.NoError(t, s.InsertSnapshot(ctx, triagearr.Snapshot{
-			Hash: "h1", Timestamp: ts,
-			Ratio: float64(i + 1), Seeders: i + 1, State: "uploading", LastActivity: ts,
+			Hash: "h1", Timestamp: sm.ts, Uploaded: sm.uploaded,
+			Ratio: float64(i + 1), Seeders: i + 1, State: "uploading", LastActivity: sm.ts,
 		}))
 	}
 
@@ -111,11 +118,57 @@ func TestDownsampleRange_AggregatesAndDeletes(t *testing.T) {
 	require.Equal(t, 2, daily, "expected one daily row per distinct day")
 	require.Equal(t, 5, rawDeleted)
 
+	// uploaded_max must be MAX(uploaded) per day.
+	type dailyRow struct {
+		Day         string `db:"day"`
+		UploadedMax int64  `db:"uploaded_max"`
+	}
+	var drows []dailyRow
+	require.NoError(t, s.DB().SelectContext(ctx, &drows, `
+		SELECT day, uploaded_max FROM snapshots_daily WHERE torrent_hash = 'h1' ORDER BY day
+	`))
+	require.Len(t, drows, 2)
+	require.Equal(t, int64(300), drows[0].UploadedMax, "day1 max(uploaded) = 300")
+	require.Equal(t, int64(500), drows[1].UploadedMax, "day2 max(uploaded) = 500")
+
 	// Calling again must be idempotent: no raw rows left, but daily survives.
 	daily2, rawDeleted2, err := s.DownsampleRange(ctx, cutoff)
 	require.NoError(t, err)
 	require.Equal(t, 0, daily2)
 	require.Equal(t, 0, rawDeleted2)
+}
+
+func TestScoringSnapshotStats_VelocityFromDailyAfterRawExpired(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "h1", Name: "Long-running", AddedOn: now.Add(-60 * 24 * time.Hour),
+	}))
+
+	// Seed one raw sample per day for 30 days with uploaded growing by 1 GB/day.
+	const gb = int64(1 << 30)
+	for d := 30; d >= 0; d-- {
+		ts := now.Add(time.Duration(-d) * 24 * time.Hour)
+		require.NoError(t, s.InsertSnapshot(ctx, triagearr.Snapshot{
+			Hash: "h1", Timestamp: ts, Uploaded: int64(30-d) * gb,
+			Ratio: 2.0, Seeders: 50, State: "uploading", LastActivity: ts,
+		}))
+	}
+
+	// Downsample everything → raw is empty afterwards.
+	_, rawDeleted, err := s.DownsampleRange(ctx, now.Add(time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 31, rawDeleted)
+
+	stats, err := s.ScoringSnapshotStats(ctx, "h1", now)
+	require.NoError(t, err)
+	// Velocity should reconstruct from snapshots_daily.uploaded_max. The span
+	// is ~30 days, delta is 30 GB → 1 GB/day, within tolerance for date-bucket
+	// edge effects.
+	require.InEpsilon(t, float64(gb), stats.VelocityBytesPerDay, 0.05,
+		"velocity should rebuild from snapshots_daily after raw expired")
 }
 
 func TestPruneStaleTorrents_CascadeAndKeepFresh(t *testing.T) {

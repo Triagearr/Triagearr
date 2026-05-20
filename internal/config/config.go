@@ -26,6 +26,36 @@ type Config struct {
 	Qbit    QbitConfig     `koanf:"qbit"`
 	Volumes []VolumeConfig `koanf:"volumes"`
 	Polling PollingConfig  `koanf:"polling"`
+	Scoring ScoringConfig  `koanf:"scoring"`
+}
+
+// ScoringConfig drives the M3 scorer. Weights come from SCORING.md;
+// HnR window weight is hard-coded (-10000) per the safety contract.
+type ScoringConfig struct {
+	Interval             time.Duration            `koanf:"interval"`
+	HnRWindowDays        int                      `koanf:"hnr_window_days"`
+	RareContentThreshold int                      `koanf:"rare_content_threshold"`
+	TrackerDeadGrace     time.Duration            `koanf:"tracker_dead_grace"`
+	Weights              ScoringWeights           `koanf:"weights"`
+	PerTracker           map[string]TrackerPolicy `koanf:"per_tracker"`
+}
+
+// ScoringWeights holds the tunable per-factor weights.
+type ScoringWeights struct {
+	RatioObligationMet float64 `koanf:"ratio_obligation_met"`
+	UploadVelocityInv  float64 `koanf:"upload_velocity_inv"`
+	AgeDays            float64 `koanf:"age_days"`
+	SeedersLowGuard    float64 `koanf:"seeders_low_guard"`
+	SwarmHealthBonus   float64 `koanf:"swarm_health_bonus"`
+	TrackerDeadBonus   float64 `koanf:"tracker_dead_bonus"`
+}
+
+// TrackerPolicy overrides the global scoring rules for one tracker_host.
+// A nil RareThreshold falls back to ScoringConfig.RareContentThreshold.
+type TrackerPolicy struct {
+	MinSeedDays   int     `koanf:"min_seed_days"`
+	MinRatio      float64 `koanf:"min_ratio"`
+	RareThreshold *int    `koanf:"rare_threshold"`
 }
 
 // HTTPConfig is unused by M1 but kept here so unknown-key warnings stay quiet.
@@ -135,4 +165,14 @@ const (
 	defaultRetentionDaily     = 365 * 24 * time.Hour
 	defaultRetentionTorrents  = 7 * 24 * time.Hour
 	defaultVacuumMinReclaimMB = int64(50)
+	defaultScoringInterval    = time.Hour
+	defaultHnRWindowDays      = 14
+	defaultRareThreshold      = 3
+	defaultTrackerDeadGrace   = 7 * 24 * time.Hour
+	defaultWeightRatioObl     = 50.0
+	defaultWeightVelocityInv  = 30.0
+	defaultWeightAgeDays      = 0.1
+	defaultWeightSeedersLow   = -1000.0
+	defaultWeightSwarmBonus   = 5.0
+	defaultWeightTrackerDead  = 40.0
 )

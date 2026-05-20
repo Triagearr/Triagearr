@@ -2,6 +2,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
@@ -27,7 +28,7 @@ func Open(path string) (*Store, error) {
 	// sqlite is happiest with a small pool — WAL allows readers but only one writer.
 	db.SetMaxOpenConns(8)
 	db.SetMaxIdleConns(4)
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(context.Background()); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("pinging sqlite db: %w", err)
 	}

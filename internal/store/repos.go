@@ -406,6 +406,7 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 		       date(ts) AS day,
 		       AVG(ratio), MIN(ratio), MAX(ratio),
 		       AVG(seeders), MIN(seeders), MAX(seeders),
+		       MAX(uploaded),
 		       COUNT(*)
 		FROM snapshots_raw
 		WHERE ts < ?
@@ -421,12 +422,13 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 		day                                      string
 		ratioAvg, ratioMin, ratioMax, seedersAvg float64
 		seedersMin, seedersMax, samples          int
+		uploadedMax                              int64
 	}
 	var aggs []agg
 	for rows.Next() {
 		var a agg
 		if err := rows.Scan(&a.hash, &a.day, &a.ratioAvg, &a.ratioMin, &a.ratioMax,
-			&a.seedersAvg, &a.seedersMin, &a.seedersMax, &a.samples); err != nil {
+			&a.seedersAvg, &a.seedersMin, &a.seedersMax, &a.uploadedMax, &a.samples); err != nil {
 			return 0, 0, fmt.Errorf("scanning aggregate: %w", err)
 		}
 		aggs = append(aggs, a)
@@ -443,8 +445,8 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 
 	for _, a := range aggs {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO snapshots_daily(torrent_hash, day, ratio_avg, ratio_min, ratio_max, seeders_avg, seeders_min, seeders_max, samples)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO snapshots_daily(torrent_hash, day, ratio_avg, ratio_min, ratio_max, seeders_avg, seeders_min, seeders_max, uploaded_max, samples)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(torrent_hash, day) DO UPDATE SET
 				ratio_avg=excluded.ratio_avg,
 				ratio_min=excluded.ratio_min,
@@ -452,8 +454,9 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 				seeders_avg=excluded.seeders_avg,
 				seeders_min=excluded.seeders_min,
 				seeders_max=excluded.seeders_max,
+				uploaded_max=excluded.uploaded_max,
 				samples=excluded.samples
-		`, a.hash, a.day, a.ratioAvg, a.ratioMin, a.ratioMax, a.seedersAvg, a.seedersMin, a.seedersMax, a.samples); err != nil {
+		`, a.hash, a.day, a.ratioAvg, a.ratioMin, a.ratioMax, a.seedersAvg, a.seedersMin, a.seedersMax, a.uploadedMax, a.samples); err != nil {
 			return 0, 0, fmt.Errorf("inserting daily %s/%s: %w", a.hash, a.day, err)
 		}
 	}
@@ -503,6 +506,9 @@ func (s *Store) PruneStaleTorrents(ctx context.Context, olderThan time.Duration)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM torrent_trackers WHERE `+hashFilter, cutoff); err != nil {
 		return 0, fmt.Errorf("prune torrent_trackers: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM scores WHERE `+hashFilter, cutoff); err != nil {
+		return 0, fmt.Errorf("prune scores: %w", err)
 	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM torrents WHERE last_seen < ?`, cutoff)
 	if err != nil {

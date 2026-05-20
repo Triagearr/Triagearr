@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -24,7 +25,8 @@ type migration struct {
 // Each migration runs inside a transaction; partial failures roll back.
 // Safe to call repeatedly — already-applied versions are skipped.
 func (s *Store) Migrate() error {
-	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+	ctx := context.Background()
+	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version    INTEGER PRIMARY KEY,
 		name       TEXT NOT NULL,
 		applied_at TIMESTAMP NOT NULL
@@ -54,7 +56,7 @@ func (s *Store) Migrate() error {
 }
 
 func (s *Store) appliedVersions() (map[int]bool, error) {
-	rows, err := s.db.Query(`SELECT version FROM schema_migrations`)
+	rows, err := s.db.QueryContext(context.Background(), `SELECT version FROM schema_migrations`)
 	if err != nil {
 		return nil, fmt.Errorf("reading schema_migrations: %w", err)
 	}
@@ -74,15 +76,17 @@ func (s *Store) appliedVersions() (map[int]bool, error) {
 }
 
 func (s *Store) applyMigration(m migration) error {
+	ctx := context.Background()
 	tx, err := s.db.Beginx()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(m.sql); err != nil {
+	if _, err := tx.ExecContext(ctx, m.sql); err != nil {
 		return fmt.Errorf("exec sql: %w", err)
 	}
-	if _, err := tx.Exec(
+	if _, err := tx.ExecContext(
+		ctx,
 		`INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)`,
 		m.version, m.name, time.Now().UTC(),
 	); err != nil {

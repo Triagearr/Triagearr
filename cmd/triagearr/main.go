@@ -21,6 +21,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/linker"
 	"github.com/Triagearr/Triagearr/internal/logging"
 	"github.com/Triagearr/Triagearr/internal/pollers"
+	"github.com/Triagearr/Triagearr/internal/scorer"
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
@@ -71,6 +72,7 @@ func main() {
 				Flags:  []cli.Flag{configFlag},
 				Action: migrateAction,
 			},
+			scoreCommand(configFlag),
 			{
 				Name:  "inspect",
 				Usage: "inspect the local Triagearr state",
@@ -230,6 +232,14 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	if len(ps) == 0 {
 		return errors.New("no pollers enabled — check your config (qbit.enabled, arrs.*.enabled, volumes[].disk_pressure.enabled)")
 	}
+
+	sc := scorer.New(scorer.Options{
+		Cfg:   cfg.Scoring,
+		Qbit:  cfg.Qbit,
+		Arrs:  cfg.Arrs,
+		Store: s,
+	})
+	ps = append(ps, &scorer.Loop{Scorer: sc, Interval: cfg.Scoring.Interval})
 
 	slog.Info("daemon starting",
 		"mode", string(cfg.Mode),

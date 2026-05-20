@@ -147,12 +147,46 @@ func applyDefaults(c *Config) {
 	if c.Qbit.Timeout == 0 {
 		c.Qbit.Timeout = defaultQbitTimeout
 	}
+	applyScoringDefaults(&c.Scoring)
 	applyArrDefaults(c.Arrs.Sonarr)
 	applyArrDefaults(c.Arrs.Radarr)
 	applyArrDefaults(c.Arrs.Lidarr)
 	applyArrDefaults(c.Arrs.Readarr)
 	applyArrDefaults(c.Arrs.WhisparrV2)
 	applyArrDefaults(c.Arrs.WhisparrV3)
+}
+
+func applyScoringDefaults(s *ScoringConfig) {
+	if s.Interval == 0 {
+		s.Interval = defaultScoringInterval
+	}
+	if s.HnRWindowDays == 0 {
+		s.HnRWindowDays = defaultHnRWindowDays
+	}
+	if s.RareContentThreshold == 0 {
+		s.RareContentThreshold = defaultRareThreshold
+	}
+	if s.TrackerDeadGrace == 0 {
+		s.TrackerDeadGrace = defaultTrackerDeadGrace
+	}
+	if s.Weights.RatioObligationMet == 0 {
+		s.Weights.RatioObligationMet = defaultWeightRatioObl
+	}
+	if s.Weights.UploadVelocityInv == 0 {
+		s.Weights.UploadVelocityInv = defaultWeightVelocityInv
+	}
+	if s.Weights.AgeDays == 0 {
+		s.Weights.AgeDays = defaultWeightAgeDays
+	}
+	if s.Weights.SeedersLowGuard == 0 {
+		s.Weights.SeedersLowGuard = defaultWeightSeedersLow
+	}
+	if s.Weights.SwarmHealthBonus == 0 {
+		s.Weights.SwarmHealthBonus = defaultWeightSwarmBonus
+	}
+	if s.Weights.TrackerDeadBonus == 0 {
+		s.Weights.TrackerDeadBonus = defaultWeightTrackerDead
+	}
 }
 
 func applyArrDefaults(insts []ArrInstanceConfig) {
