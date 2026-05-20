@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-20
+
 M4 — Triggers. The Decider turns scores into ordered run plans; disk pressure, HTTP, and CLI all fire dry-run runs that are persisted for audit. Still no destructive action — the Actor lands in M5.
 
 ### Added
