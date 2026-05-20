@@ -22,7 +22,11 @@ M4 — Triggers. The Decider turns scores into ordered run plans; disk pressure,
 - ADR-0015: deletion gating contract — pressure auto, humans explicit, cron never. Constrains M5 Actor's allow-list.
 
 ### Changed
-- `http.bind` default `127.0.0.1:9494` (was `:9494`). `config.Validate` refuses non-loopback bind without `api_key`. `disk_pressure.target_free_percent` must be strictly greater than `threshold_free_percent`.
+- `http.bind` default `127.0.0.1:9494` (was `:9494`). `disk_pressure.target_free_percent` must be strictly greater than `threshold_free_percent`.
+- **HTTP API authentication is now always-on**, Sonarr/Radarr-style: the api_key is no longer a config field, it lives in `${data_dir}/api_key` (next to the SQLite DB), auto-generated on first boot with `0600` perms. Operators read the file once after first start. Removes the previous "open API on loopback" bypass and the bind↔api_key cross-validation.
+
+### Migration
+- Deployments that injected `api_key: "${TRIAGEARR_API_KEY}"` in config: drop the line, restart, read the new key from `${data_dir}/api_key`. The `TRIAGEARR_API_KEY` env var becomes orphan.
 
 ## [0.4.0] - 2026-05-20
 
