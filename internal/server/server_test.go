@@ -78,7 +78,7 @@ func buildSrv(t *testing.T, apiKey string) (*server.Server, *store.Store, http.H
 
 func TestPostRun_AuthMissing(t *testing.T) {
 	_, _, h := buildSrv(t, "sekrit")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
@@ -86,7 +86,7 @@ func TestPostRun_AuthMissing(t *testing.T) {
 
 func TestPostRun_AuthOK_InsertsRun(t *testing.T) {
 	_, s, h := buildSrv(t, "sekrit")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
 	req.Header.Set("X-API-Key", "sekrit")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -105,9 +105,9 @@ func TestPostRun_AuthOK_InsertsRun(t *testing.T) {
 func authedReq(method, target string, body string) *http.Request {
 	var r *http.Request
 	if body == "" {
-		r = httptest.NewRequest(method, target, nil)
+		r = httptest.NewRequestWithContext(context.Background(), method, target, nil)
 	} else {
-		r = httptest.NewRequest(method, target, strings.NewReader(body))
+		r = httptest.NewRequestWithContext(context.Background(), method, target, strings.NewReader(body))
 	}
 	r.Header.Set("X-API-Key", testAPIKey)
 	return r
@@ -158,10 +158,9 @@ func TestListRuns(t *testing.T) {
 
 func TestPostRun_RejectsUnknownFields(t *testing.T) {
 	_, _, h := buildSrv(t, "")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runs", bytes.NewReader([]byte(`{"foo":1}`)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", bytes.NewReader([]byte(`{"foo":1}`)))
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
-

@@ -216,9 +216,9 @@ type RunStopReason string
 
 // Supported RunStopReason values.
 const (
-	StopTargetReached     RunStopReason = "target_reached"
-	StopSizeCap           RunStopReason = "size_cap"
-	StopNoMoreCandidates  RunStopReason = "no_more_candidates"
+	StopTargetReached    RunStopReason = "target_reached"
+	StopSizeCap          RunStopReason = "size_cap"
+	StopNoMoreCandidates RunStopReason = "no_more_candidates"
 )
 
 // Run is the persisted record of one Decider invocation.

@@ -105,17 +105,17 @@ type postRunRequest struct {
 }
 
 type runResponse struct {
-	RunID               int64                    `json:"run_id"`
-	TriggeredBy         string                   `json:"triggered_by"`
-	TriggeredAt         time.Time                `json:"triggered_at"`
-	Mode                string                   `json:"mode"`
-	Volume              string                   `json:"volume,omitempty"`
-	FreePctAtFire       float64                  `json:"free_pct_at_fire,omitempty"`
-	TargetFreePct       float64                  `json:"target_free_pct,omitempty"`
-	EstimatedFreedBytes int64                    `json:"estimated_freed_bytes"`
-	StopReason          string                   `json:"stop_reason"`
-	Status              string                   `json:"status"`
-	Candidates          []runItemResponse        `json:"candidates,omitempty"`
+	RunID               int64             `json:"run_id"`
+	TriggeredBy         string            `json:"triggered_by"`
+	TriggeredAt         time.Time         `json:"triggered_at"`
+	Mode                string            `json:"mode"`
+	Volume              string            `json:"volume,omitempty"`
+	FreePctAtFire       float64           `json:"free_pct_at_fire,omitempty"`
+	TargetFreePct       float64           `json:"target_free_pct,omitempty"`
+	EstimatedFreedBytes int64             `json:"estimated_freed_bytes"`
+	StopReason          string            `json:"stop_reason"`
+	Status              string            `json:"status"`
+	Candidates          []runItemResponse `json:"candidates,omitempty"`
 }
 
 type runItemResponse struct {
@@ -268,4 +268,3 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
-

@@ -100,9 +100,9 @@ func TestRunItems_CascadeOnRunDelete(t *testing.T) {
 		{Rank: 0, TorrentHash: "xxx", Score: 10, SizeBytes: 1, WouldFreeBytes: 1},
 	}))
 
-	_, err = s.DB().Exec(`PRAGMA foreign_keys=ON`)
+	_, err = s.DB().ExecContext(ctx, `PRAGMA foreign_keys=ON`)
 	require.NoError(t, err)
-	_, err = s.DB().Exec(`DELETE FROM runs WHERE id = ?`, id)
+	_, err = s.DB().ExecContext(ctx, `DELETE FROM runs WHERE id = ?`, id)
 	require.NoError(t, err)
 
 	var n int

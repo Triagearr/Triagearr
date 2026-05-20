@@ -269,7 +269,6 @@ func Validate(c *Config) error {
 	return nil
 }
 
-
 // AnyArrEnabledForPolling returns true if at least one *arr is enabled+poll.
 // Used by the daemon to decide whether to start the arr poller goroutine.
 func (c *Config) AnyArrEnabledForPolling() bool {
