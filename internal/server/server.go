@@ -91,12 +91,6 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// No key configured = open access. Validation in config.Validate()
-		// already refuses non-loopback bind without a key.
-		if s.opts.APIKey == "" {
-			h(w, r)
-			return
-		}
 		got := r.Header.Get("X-API-Key")
 		if subtle.ConstantTimeCompare([]byte(got), []byte(s.opts.APIKey)) != 1 {
 			writeError(w, http.StatusUnauthorized, "missing or invalid X-API-Key")

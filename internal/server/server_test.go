@@ -46,7 +46,12 @@ func seed(t *testing.T, s *store.Store) {
 	}))
 }
 
+const testAPIKey = "test-key-deadbeef"
+
 func buildSrv(t *testing.T, apiKey string) (*server.Server, *store.Store, http.Handler) {
+	if apiKey == "" {
+		apiKey = testAPIKey
+	}
 	t.Helper()
 	s := testStore(t)
 	seed(t, s)
@@ -97,11 +102,21 @@ func TestPostRun_AuthOK_InsertsRun(t *testing.T) {
 	require.Len(t, runs, 1)
 }
 
+func authedReq(method, target string, body string) *http.Request {
+	var r *http.Request
+	if body == "" {
+		r = httptest.NewRequest(method, target, nil)
+	} else {
+		r = httptest.NewRequest(method, target, strings.NewReader(body))
+	}
+	r.Header.Set("X-API-Key", testAPIKey)
+	return r
+}
+
 func TestPostRun_UnknownVolume(t *testing.T) {
 	_, _, h := buildSrv(t, "")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"nope"}`))
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"volume":"nope"}`))
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
@@ -113,17 +128,15 @@ func TestGetRun_Found(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/runs/"+strconv.FormatInt(id, 10), nil)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+	h.ServeHTTP(w, authedReq(http.MethodGet, "/api/v1/runs/"+strconv.FormatInt(id, 10), ""))
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestGetRun_NotFound(t *testing.T) {
 	_, _, h := buildSrv(t, "")
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/runs/999", nil)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+	h.ServeHTTP(w, authedReq(http.MethodGet, "/api/v1/runs/999", ""))
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
@@ -133,9 +146,8 @@ func TestListRuns(t *testing.T) {
 		TriggeredBy: triagearr.RunTriggerCLI, TriggeredAt: time.Now().UTC(),
 		Mode: "dry-run", StopReason: triagearr.StopNoMoreCandidates, Status: "completed",
 	})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/runs", nil)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+	h.ServeHTTP(w, authedReq(http.MethodGet, "/api/v1/runs", ""))
 	require.Equal(t, http.StatusOK, w.Code)
 	var body struct {
 		Runs []any `json:"runs"`
@@ -147,6 +159,7 @@ func TestListRuns(t *testing.T) {
 func TestPostRun_RejectsUnknownFields(t *testing.T) {
 	_, _, h := buildSrv(t, "")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runs", bytes.NewReader([]byte(`{"foo":1}`)))
+	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"text/tabwriter"
@@ -300,12 +301,22 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 	}
 
 	// HTTP server runs as a sibling goroutine to the Manager; cancellation
-	// of ctx triggers shutdown on both sides.
+	// of ctx triggers shutdown on both sides. The API key lives in
+	// `${data_dir}/api_key` (Sonarr-style), auto-generated if absent.
 	var httpSrv *server.Server
 	if cfg.HTTP.Bind != "" {
+		keyPath := filepath.Join(filepath.Dir(cfg.Storage.SQLitePath), "api_key")
+		apiKey, generated, err := server.LoadOrGenerateAPIKey(keyPath)
+		if err != nil {
+			return fmt.Errorf("loading api_key: %w", err)
+		}
+		if generated {
+			slog.Warn("api_key generated — read it from the file to access the API",
+				"path", keyPath)
+		}
 		httpSrv = server.New(server.Options{
 			Bind:    cfg.HTTP.Bind,
-			APIKey:  cfg.HTTP.APIKey,
+			APIKey:  apiKey,
 			Store:   s,
 			Decider: dec,
 			Volume:  volumeLookup(cfg),

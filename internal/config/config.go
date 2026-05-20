@@ -58,10 +58,12 @@ type TrackerPolicy struct {
 	RareThreshold *int    `koanf:"rare_threshold"`
 }
 
-// HTTPConfig is unused by M1 but kept here so unknown-key warnings stay quiet.
+// HTTPConfig configures the HTTP API. The API key is NOT a config field:
+// it lives in `${data_dir}/api_key` (Sonarr-style), auto-generated on first
+// boot and persisted with 0600 perms. Setting `bind: ""` disables the API
+// entirely.
 type HTTPConfig struct {
 	Bind        string   `koanf:"bind"`
-	APIKey      string   `koanf:"api_key"`
 	CORSOrigins []string `koanf:"cors_origins"`
 }
 
