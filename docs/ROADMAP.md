@@ -128,6 +128,9 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 - [ ] `internal/actor` package
 - [ ] `mode: live` config requirement
 - [ ] Per-*arr-instance `act: true` requirement (defense in depth)
+- [ ] Trigger gating per ADR-0015: Actor executes runs from `disk_pressure` automatically; HTTP/CLI triggers require explicit per-request live opt-in; any future scheduled trigger (cron) stays dry-run forever
+- [ ] `POST /api/v1/runs` accepts a `mode` field in the request body — without it, the resulting run is forced to dry-run even if the daemon is `mode: live`
+- [ ] `triagearr run --live` is unlocked (currently rejected by `runAction`); the flag remains mandatory for any live CLI trigger
 - [ ] `arr-then-qbit` deletion pipeline per `docs/HARDLINK_TOPOLOGY.md`, including the multi-file fan-out (T3 per `arr_file_id`, T3.5 per-file nlink re-stat, T4 whole-torrent)
 - [ ] Cross-seed conflict handling (skip / warn_only / force_delete), evaluated per-file but aborting the whole torrent on any conflict (qBit `deleteFiles=true` is all-or-nothing)
 - [ ] Partial *arr failure handling: hard fail aborts the candidate, deletes already done are NOT rolled back, disk impact = 0 (every nlink remains ≥1 thanks to surviving torrent), state logged for *arr re-grab
