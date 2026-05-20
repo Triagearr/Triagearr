@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+M4 — Triggers. The Decider turns scores into ordered run plans; disk pressure, HTTP, and CLI all fire dry-run runs that are persisted for audit. Still no destructive action — the Actor lands in M5.
+
+### Added
+- `internal/decider`: `Plan(ctx, volume)` selects candidates score-DESC, capped by `target_free_percent` (need_bytes from latest `disk_usage`) and `max_run_size_gb`. Volume attribution is a `save_path` prefix match (ADR-0014), refined per-file in M5.
+- `internal/triggers/disk_watcher`: poller that fires on `threshold_free_percent` cross with a 1h re-fire grace, absorbing free% oscillation around the seuil.
+- `internal/server`: stdlib `net/http` (1.22 patterns) with `POST/GET /api/v1/runs`, `GET /api/v1/runs/{id}`, `/healthz`. `X-API-Key` constant-time auth; config refuses non-loopback bind without `api_key`.
+- `cmd/triagearr/run`: `triagearr run --now --dry-run [--volume X] [--json]`; `--live` rejected with "arrives in M5".
+- `internal/store/migrations/0008_runs.sql`: `runs` (header) + `run_items` (per-rank candidate set). Reused by M5 Actor without schema change.
+- `serveAction` learns SIGHUP: cancels Manager + HTTP, reloads config, respawns the daemon goroutine tree; failed reload keeps the running config (logged, daemon stays up).
+- ADR-0014: Decider attributes torrents to volumes by `save_path` prefix — coarse for M4, refined in M5.
+- ADR-0015: deletion gating contract — pressure auto, humans explicit, cron never. Constrains M5 Actor's allow-list.
+
+### Changed
+- `http.bind` default `127.0.0.1:9494` (was `:9494`). `config.Validate` refuses non-loopback bind without `api_key`. `disk_pressure.target_free_percent` must be strictly greater than `threshold_free_percent`.
+
+## [0.4.0] - 2026-05-20
+
 M3 — Scoring engine. The daemon now computes a `DeleteScore` per torrent from passively-collected snapshots/trackers/imports, persists the per-factor breakdown, and exposes it via CLI. Still observation-only — no destructive actions.
 
 ### Added
