@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -91,6 +92,56 @@ func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 		return fmt.Errorf("upserting torrent %s: %w", t.Hash, err)
 	}
 	return nil
+}
+
+// ErrHashNotFound is returned by ResolveTorrentHash when no torrent matches
+// the given prefix.
+var ErrHashNotFound = errors.New("torrent hash not found")
+
+// ErrHashAmbiguous is returned by ResolveTorrentHash when several torrents
+// share the given prefix. The message lists up to a handful of candidates so
+// the CLI can echo it as-is.
+type ErrHashAmbiguous struct {
+	Prefix     string
+	Candidates []triagearr.Hash
+}
+
+func (e *ErrHashAmbiguous) Error() string {
+	preview := make([]string, 0, len(e.Candidates))
+	for _, h := range e.Candidates {
+		preview = append(preview, string(h))
+	}
+	return fmt.Sprintf("ambiguous hash prefix %q matches %d torrents: %s",
+		e.Prefix, len(e.Candidates), strings.Join(preview, ", "))
+}
+
+// ResolveTorrentHash returns the unique full hash matching the given prefix.
+// Lowercased before matching since qBit stores lowercase. Full 40-char hashes
+// pass through after a single existence check.
+func (s *Store) ResolveTorrentHash(ctx context.Context, prefix string) (triagearr.Hash, error) {
+	p := strings.ToLower(strings.TrimSpace(prefix))
+	if p == "" {
+		return "", ErrHashNotFound
+	}
+	var matches []string
+	if err := s.db.SelectContext(ctx, &matches,
+		`SELECT hash FROM torrents WHERE hash LIKE ? || '%' ORDER BY hash LIMIT 8`,
+		p,
+	); err != nil {
+		return "", fmt.Errorf("resolving hash prefix %q: %w", prefix, err)
+	}
+	switch len(matches) {
+	case 0:
+		return "", ErrHashNotFound
+	case 1:
+		return triagearr.Hash(matches[0]), nil
+	default:
+		cands := make([]triagearr.Hash, len(matches))
+		for i, h := range matches {
+			cands[i] = triagearr.Hash(h)
+		}
+		return "", &ErrHashAmbiguous{Prefix: prefix, Candidates: cands}
+	}
 }
 
 // ListTorrentHashes returns every torrent hash currently tracked. Used by the

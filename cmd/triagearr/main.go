@@ -543,7 +543,6 @@ func inspectTrackersAction(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() < 1 {
 		return errors.New("usage: triagearr inspect trackers <torrent-hash>")
 	}
-	hash := triagearr.Hash(cmd.Args().Get(0))
 	cfg, err := loadConfigFromCmd(cmd)
 	if err != nil {
 		return err
@@ -553,6 +552,10 @@ func inspectTrackersAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer func() { _ = s.Close() }()
+	hash, err := s.ResolveTorrentHash(ctx, cmd.Args().Get(0))
+	if err != nil {
+		return err
+	}
 	rows, err := s.ListTrackers(ctx, hash)
 	if err != nil {
 		return err
@@ -612,7 +615,6 @@ func inspectMappingAction(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() < 1 {
 		return errors.New("usage: triagearr inspect mapping <torrent-hash>")
 	}
-	hash := triagearr.Hash(cmd.Args().Get(0))
 	cfg, err := loadConfigFromCmd(cmd)
 	if err != nil {
 		return err
@@ -623,6 +625,10 @@ func inspectMappingAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer func() { _ = s.Close() }()
 
+	hash, err := s.ResolveTorrentHash(ctx, cmd.Args().Get(0))
+	if err != nil {
+		return err
+	}
 	links, err := linker.New(s).Links(ctx, hash)
 	if err != nil {
 		return err

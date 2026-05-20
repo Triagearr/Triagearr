@@ -110,6 +110,52 @@ func TestListTorrentsLatest_SortAndLimit(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestResolveTorrentHash(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	hashes := []triagearr.Hash{
+		"b1cb9b6ba0a0d15da62c873284f7d6f72d4b8316",
+		"b1cb9b6bffffffffffffffffffffffffffffffff",
+		"fa5b5d3032816abad463563c926d96853a9ce12b",
+	}
+	for _, h := range hashes {
+		require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+			Hash: h, Name: string(h[:6]), AddedOn: now,
+		}))
+	}
+
+	// Unique short prefix.
+	got, err := s.ResolveTorrentHash(ctx, "fa5b5d")
+	require.NoError(t, err)
+	require.Equal(t, hashes[2], got)
+
+	// Full hash passes through.
+	got, err = s.ResolveTorrentHash(ctx, string(hashes[0]))
+	require.NoError(t, err)
+	require.Equal(t, hashes[0], got)
+
+	// Case-insensitive.
+	got, err = s.ResolveTorrentHash(ctx, "FA5B5D")
+	require.NoError(t, err)
+	require.Equal(t, hashes[2], got)
+
+	// Ambiguous prefix returns ErrHashAmbiguous with candidates.
+	_, err = s.ResolveTorrentHash(ctx, "b1cb9b6b")
+	var ambig *store.ErrHashAmbiguous
+	require.ErrorAs(t, err, &ambig)
+	require.Len(t, ambig.Candidates, 2)
+
+	// Not found.
+	_, err = s.ResolveTorrentHash(ctx, "deadbeef")
+	require.ErrorIs(t, err, store.ErrHashNotFound)
+
+	// Empty rejects without DB hit.
+	_, err = s.ResolveTorrentHash(ctx, "   ")
+	require.ErrorIs(t, err, store.ErrHashNotFound)
+}
+
 func TestUpsertMediaAndCount(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
