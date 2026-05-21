@@ -259,3 +259,62 @@ type Link struct {
 	LivePath     string // current path from media_files (M5 actor source of truth)
 	Size         int64
 }
+
+// ActionStatus is the lifecycle state of one Actor action (one candidate
+// torrent processed end-to-end through the *arr → qBit pipeline).
+type ActionStatus string
+
+// Supported ActionStatus values.
+const (
+	ActionPending        ActionStatus = "pending"
+	ActionRunning        ActionStatus = "running"
+	ActionSucceeded      ActionStatus = "succeeded"
+	ActionAbortedArrFail ActionStatus = "aborted_arr_fail"
+	ActionFailedQbit     ActionStatus = "failed_qbit"
+)
+
+// Action is the persisted record of one destructive operation attempted by
+// the Actor on a single candidate (one row per run_items entry consumed).
+type Action struct {
+	ID          int64
+	RunID       int64
+	Rank        int
+	TorrentHash Hash
+	StartedAt   time.Time
+	FinishedAt  time.Time // zero when not yet finished
+	Status      ActionStatus
+	FreedBytes  int64
+}
+
+// AuditStep names one API call class the Actor performs.
+type AuditStep string
+
+// Supported AuditStep values.
+const (
+	AuditStepArrDelete  AuditStep = "arr_delete"
+	AuditStepQbitDelete AuditStep = "qbit_delete"
+)
+
+// AuditOutcome reports the result of one audited API call.
+type AuditOutcome string
+
+// Supported AuditOutcome values.
+const (
+	AuditOutcomeOK           AuditOutcome = "ok"
+	AuditOutcomeFailed       AuditOutcome = "failed"
+	AuditOutcomeSkipped      AuditOutcome = "skipped"
+	AuditOutcomeNotAttempted AuditOutcome = "not_attempted"
+)
+
+// AuditEntry is one row of the per-file audit trail. For an *arr fan-out we
+// expect N rows (one per arr_file_id); the qBit step contributes a single row.
+type AuditEntry struct {
+	ID        int64
+	ActionID  int64
+	Timestamp time.Time
+	Step      AuditStep
+	ArrName   string // empty for non-arr steps
+	ArrFileID int64  // 0 for non-arr steps
+	Outcome   AuditOutcome
+	Detail    string // truncated, redacted free-form context
+}
