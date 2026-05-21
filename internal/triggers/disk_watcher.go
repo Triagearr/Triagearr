@@ -45,6 +45,10 @@ type DiskWatcher struct {
 	Interval time.Duration
 	// ReFireGrace overrides the constant for tests.
 	ReFireGrace time.Duration
+	// DaemonLive mirrors config.Mode == "live". Pressure-driven runs go live
+	// automatically when set; otherwise they stay dry-run regardless of
+	// trigger (ADR-0015).
+	DaemonLive bool
 
 	now      func() time.Time
 	lastFire map[string]time.Time
@@ -121,10 +125,11 @@ func (w *DiskWatcher) fire(ctx context.Context, r VolumeRule, snap triagearr.Dis
 	if err != nil {
 		return fmt.Errorf("planning: %w", err)
 	}
+	mode := triagearr.ResolveRunMode(w.DaemonLive, triagearr.RunTriggerDiskPressure, false)
 	run := triagearr.Run{
 		TriggeredBy:         triagearr.RunTriggerDiskPressure,
 		TriggeredAt:         w.now(),
-		Mode:                "dry-run",
+		Mode:                string(mode),
 		VolumeName:          r.Name,
 		FreePctAtFire:       snap.FreePercent,
 		TargetFreePct:       r.TargetFreePercent,

@@ -49,6 +49,10 @@ func seed(t *testing.T, s *store.Store) {
 const testAPIKey = "test-key-deadbeef"
 
 func buildSrv(t *testing.T, apiKey string) (*server.Server, *store.Store, http.Handler) {
+	return buildSrvWithDaemonLive(t, apiKey, false)
+}
+
+func buildSrvWithDaemonLive(t *testing.T, apiKey string, daemonLive bool) (*server.Server, *store.Store, http.Handler) {
 	if apiKey == "" {
 		apiKey = testAPIKey
 	}
@@ -71,7 +75,8 @@ func buildSrv(t *testing.T, apiKey string) (*server.Server, *store.Store, http.H
 			}
 			return decider.Volume{}, false
 		},
-		Volumes: func() []decider.Volume { return vols },
+		Volumes:    func() []decider.Volume { return vols },
+		DaemonLive: daemonLive,
 	})
 	return srv, s, srv.Handler()
 }
@@ -163,4 +168,34 @@ func TestPostRun_RejectsUnknownFields(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestPostRun_LiveBody_DaemonLive_ResolvesToLive(t *testing.T) {
+	_, _, h := buildSrvWithDaemonLive(t, "", true)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"volume":"data","mode":"live"}`))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Equal(t, "live", body["mode"])
+}
+
+func TestPostRun_NoModeBody_DaemonLive_StaysDryRun(t *testing.T) {
+	_, _, h := buildSrvWithDaemonLive(t, "", true)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"volume":"data"}`))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Equal(t, "dry-run", body["mode"])
+}
+
+func TestPostRun_LiveBody_DaemonDryRun_ForcedDryRun(t *testing.T) {
+	_, _, h := buildSrvWithDaemonLive(t, "", false)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"volume":"data","mode":"live"}`))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Equal(t, "dry-run", body["mode"])
 }

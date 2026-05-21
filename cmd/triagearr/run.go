@@ -34,11 +34,13 @@ func runCommand(configFlag cli.Flag) *cli.Command {
 }
 
 func runAction(ctx context.Context, cmd *cli.Command) error {
-	if cmd.Bool("live") {
-		return errors.New("live mode arrives in M5; use --dry-run for now")
+	live := cmd.Bool("live")
+	dryRun := cmd.Bool("dry-run")
+	if live && dryRun {
+		return errors.New("--live and --dry-run are mutually exclusive")
 	}
-	if !cmd.Bool("dry-run") {
-		return errors.New("--dry-run is required (live mode arrives in M5)")
+	if !live && !dryRun {
+		return errors.New("exactly one of --live or --dry-run is required")
 	}
 	if !cmd.Bool("now") {
 		return errors.New("--now is required for one-shot triggers")
@@ -54,6 +56,12 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer func() { _ = s.Close() }()
 
+	daemonLive := cfg.Mode == config.ModeLive
+	mode := triagearr.ResolveRunMode(daemonLive, triagearr.RunTriggerCLI, live)
+	if live && mode != triagearr.RunModeLive {
+		return errors.New("--live requires the daemon's mode: live (current config is dry-run)")
+	}
+
 	v, err := pickVolume(ctx, cfg, s, cmd.String("volume"))
 	if err != nil {
 		return err
@@ -68,7 +76,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	run := triagearr.Run{
 		TriggeredBy:         triagearr.RunTriggerCLI,
 		TriggeredAt:         time.Now().UTC(),
-		Mode:                "dry-run",
+		Mode:                string(mode),
 		VolumeName:          v.Name,
 		FreePctAtFire:       plan.FreePctAtFire,
 		TargetFreePct:       v.TargetFreePercent,

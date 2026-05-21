@@ -40,6 +40,11 @@ type Options struct {
 	// Volumes returns every configured volume (used when the caller omits the
 	// volume name — picks the most pressed one).
 	Volumes func() []decider.Volume
+	// DaemonLive mirrors config.Mode == "live". The HTTP layer needs it to
+	// resolve the per-request live opt-in against the daemon-wide gate
+	// (ADR-0015): without `mode: live` set on the daemon, request bodies
+	// asking for live are forced back to dry-run.
+	DaemonLive bool
 }
 
 // Server is a wired HTTP server ready to be Started.
@@ -102,6 +107,7 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 
 type postRunRequest struct {
 	Volume string `json:"volume,omitempty"`
+	Mode   string `json:"mode,omitempty"` // "live" opts the request into destructive execution (gated by ADR-0015)
 }
 
 type runResponse struct {
@@ -150,10 +156,11 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	mode := triagearr.ResolveRunMode(s.opts.DaemonLive, triagearr.RunTriggerHTTP, req.Mode == "live")
 	run := triagearr.Run{
 		TriggeredBy:         triagearr.RunTriggerHTTP,
 		TriggeredAt:         time.Now().UTC(),
-		Mode:                "dry-run",
+		Mode:                string(mode),
 		VolumeName:          vol.Name,
 		FreePctAtFire:       plan.FreePctAtFire,
 		TargetFreePct:       vol.TargetFreePercent,

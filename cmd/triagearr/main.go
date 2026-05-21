@@ -291,12 +291,14 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 	ps = append(ps, &scorer.Loop{Scorer: sc, Interval: cfg.Scoring.Interval})
 
 	dec := decider.New(s)
+	daemonLive := cfg.Mode == config.ModeLive
 	if rules := pressureRules(cfg); len(rules) > 0 {
 		ps = append(ps, &triggers.DiskWatcher{
-			Rules:    rules,
-			Decider:  dec,
-			Store:    s,
-			Interval: cfg.Polling.DiskInterval,
+			Rules:      rules,
+			Decider:    dec,
+			Store:      s,
+			Interval:   cfg.Polling.DiskInterval,
+			DaemonLive: daemonLive,
 		})
 	}
 
@@ -315,12 +317,13 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 				"path", keyPath)
 		}
 		httpSrv = server.New(server.Options{
-			Bind:    cfg.HTTP.Bind,
-			APIKey:  apiKey,
-			Store:   s,
-			Decider: dec,
-			Volume:  volumeLookup(cfg),
-			Volumes: func() []decider.Volume { return allVolumes(cfg) },
+			Bind:       cfg.HTTP.Bind,
+			APIKey:     apiKey,
+			Store:      s,
+			Decider:    dec,
+			Volume:     volumeLookup(cfg),
+			Volumes:    func() []decider.Volume { return allVolumes(cfg) },
+			DaemonLive: daemonLive,
 		})
 	}
 
