@@ -29,7 +29,7 @@ type ScoringTorrent struct {
 // if the hash is unknown.
 func (s *Store) GetTorrentForScoring(ctx context.Context, hash triagearr.Hash) (ScoringTorrent, error) {
 	var row ScoringTorrent
-	err := s.db.GetContext(ctx, &row, `
+	err := s.reader.GetContext(ctx, &row, `
 		SELECT hash, name, category, tags, size, added_on, completion_on, private
 		FROM torrents WHERE hash = ?
 	`, string(hash))
@@ -42,7 +42,7 @@ func (s *Store) GetTorrentForScoring(ctx context.Context, hash triagearr.Hash) (
 // ListTorrentsForScoring streams every torrent currently observed.
 func (s *Store) ListTorrentsForScoring(ctx context.Context) ([]ScoringTorrent, error) {
 	var rows []ScoringTorrent
-	if err := s.db.SelectContext(ctx, &rows, `
+	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT hash, name, category, tags, size, added_on, completion_on, private
 		FROM torrents ORDER BY hash
 	`); err != nil {
@@ -75,7 +75,7 @@ func (s *Store) ScoringSnapshotStats(ctx context.Context, hash triagearr.Hash, n
 	// Seeders average over the 7-day window: blends snapshots_raw (recent) with
 	// snapshots_daily (whatever overlaps the window if raw retention < 7d).
 	var seedersAvg sql.NullFloat64
-	if err := s.db.GetContext(ctx, &seedersAvg, `
+	if err := s.reader.GetContext(ctx, &seedersAvg, `
 		WITH combined AS (
 			SELECT CAST(seeders AS REAL) AS s
 			FROM snapshots_raw
@@ -93,7 +93,7 @@ func (s *Store) ScoringSnapshotStats(ctx context.Context, hash triagearr.Hash, n
 	// Latest ratio: most recent snapshots_raw row, falling back to the most
 	// recent snapshots_daily aggregate.
 	var latestRatio sql.NullFloat64
-	if err := s.db.GetContext(ctx, &latestRatio, `
+	if err := s.reader.GetContext(ctx, &latestRatio, `
 		SELECT COALESCE(
 			(SELECT ratio FROM snapshots_raw WHERE torrent_hash = ? ORDER BY ts DESC LIMIT 1),
 			(SELECT ratio_avg FROM snapshots_daily WHERE torrent_hash = ? ORDER BY day DESC LIMIT 1)
@@ -113,7 +113,7 @@ func (s *Store) ScoringSnapshotStats(ctx context.Context, hash triagearr.Hash, n
 	}
 
 	var newest velPoint
-	if err := s.db.GetContext(ctx, &newest, `
+	if err := s.reader.GetContext(ctx, &newest, `
 		SELECT ts, uploaded FROM (
 			SELECT ts, uploaded FROM snapshots_raw WHERE torrent_hash = ?
 			UNION ALL
@@ -125,7 +125,7 @@ func (s *Store) ScoringSnapshotStats(ctx context.Context, hash triagearr.Hash, n
 	}
 
 	var anchor velPoint
-	if err := s.db.GetContext(ctx, &anchor, `
+	if err := s.reader.GetContext(ctx, &anchor, `
 		SELECT ts, uploaded FROM (
 			SELECT ts, uploaded FROM snapshots_raw WHERE torrent_hash = ? AND ts >= ?
 			UNION ALL
@@ -189,7 +189,7 @@ type LinkedMedia struct {
 // (qBit hash) through arr_imports.
 func (s *Store) LinkedMediaForHash(ctx context.Context, hash triagearr.Hash) ([]LinkedMedia, error) {
 	var rows []LinkedMedia
-	if err := s.db.SelectContext(ctx, &rows, `
+	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT DISTINCT m.arr_name, m.arr_type, m.id AS media_id, m.tags
 		FROM arr_imports ai
 		JOIN media_files mf
@@ -222,7 +222,7 @@ type ScoreRow struct {
 
 // UpsertScore writes (or replaces) one score row.
 func (s *Store) UpsertScore(ctx context.Context, row ScoreRow) error {
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.writer.ExecContext(ctx, `
 		INSERT INTO scores(torrent_hash, score, private, any_tracker_alive, excluded, exclusion_reasons, factors_json, computed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(torrent_hash) DO UPDATE SET
@@ -244,7 +244,7 @@ func (s *Store) UpsertScore(ctx context.Context, row ScoreRow) error {
 // when the scorer has not produced a verdict yet.
 func (s *Store) GetScore(ctx context.Context, hash triagearr.Hash) (ScoreRow, error) {
 	var row ScoreRow
-	err := s.db.GetContext(ctx, &row, `
+	err := s.reader.GetContext(ctx, &row, `
 		SELECT torrent_hash, score, private, any_tracker_alive, excluded, exclusion_reasons, factors_json, computed_at
 		FROM scores WHERE torrent_hash = ?
 	`, string(hash))
@@ -280,7 +280,7 @@ func (s *Store) ListScores(ctx context.Context, opts ListScoresOpts) ([]ScoreRow
 		q += fmt.Sprintf(" LIMIT %d", opts.Limit)
 	}
 	var rows []ScoreRow
-	if err := s.db.SelectContext(ctx, &rows, q); err != nil {
+	if err := s.reader.SelectContext(ctx, &rows, q); err != nil {
 		return nil, fmt.Errorf("listing scores: %w", err)
 	}
 	return rows, nil

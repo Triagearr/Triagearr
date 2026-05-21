@@ -13,7 +13,7 @@ import (
 // InsertAction persists a new action row in the `running` state and returns
 // its assigned id. started_at is taken from the input.
 func (s *Store) InsertAction(ctx context.Context, a triagearr.Action) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `
+	res, err := s.writer.ExecContext(ctx, `
 		INSERT INTO actions(run_id, rank, torrent_hash, started_at, status, freed_bytes)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, a.RunID, a.Rank, string(a.TorrentHash), ts(a.StartedAt), string(a.Status), a.FreedBytes)
@@ -29,7 +29,7 @@ func (s *Store) InsertAction(ctx context.Context, a triagearr.Action) (int64, er
 
 // FinishAction sets the action's terminal status, finished_at and freed_bytes.
 func (s *Store) FinishAction(ctx context.Context, id int64, status triagearr.ActionStatus, finishedAt time.Time, freedBytes int64) error {
-	res, err := s.db.ExecContext(ctx, `
+	res, err := s.writer.ExecContext(ctx, `
 		UPDATE actions
 		SET status = ?, finished_at = ?, freed_bytes = ?
 		WHERE id = ?
@@ -61,7 +61,7 @@ func (s *Store) AppendAudit(ctx context.Context, e triagearr.AuditEntry) error {
 	if e.Detail != "" {
 		detail = sql.NullString{String: e.Detail, Valid: true}
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.writer.ExecContext(ctx, `
 		INSERT INTO audit_log(action_id, ts, step, arr_name, arr_file_id, outcome, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, e.ActionID, ts(e.Timestamp), string(e.Step), arrName, arrFileID, string(e.Outcome), detail)
@@ -101,7 +101,7 @@ func (r actionRow) toAction() triagearr.Action {
 // GetAction returns one action by id. Returns sql.ErrNoRows when unknown.
 func (s *Store) GetAction(ctx context.Context, id int64) (triagearr.Action, error) {
 	var row actionRow
-	if err := s.db.GetContext(ctx, &row, `
+	if err := s.reader.GetContext(ctx, &row, `
 		SELECT id, run_id, rank, torrent_hash, started_at, finished_at, status, freed_bytes
 		FROM actions WHERE id = ?
 	`, id); err != nil {
@@ -116,7 +116,7 @@ func (s *Store) GetAction(ctx context.Context, id int64) (triagearr.Action, erro
 // ListActionsByRun returns every action attached to a run, ordered by rank.
 func (s *Store) ListActionsByRun(ctx context.Context, runID int64) ([]triagearr.Action, error) {
 	var rows []actionRow
-	if err := s.db.SelectContext(ctx, &rows, `
+	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT id, run_id, rank, torrent_hash, started_at, finished_at, status, freed_bytes
 		FROM actions WHERE run_id = ? ORDER BY rank ASC
 	`, runID); err != nil {
@@ -163,7 +163,7 @@ func (r auditRow) toEntry() triagearr.AuditEntry {
 // ListAuditByAction returns every audit row for an action, in insertion order.
 func (s *Store) ListAuditByAction(ctx context.Context, actionID int64) ([]triagearr.AuditEntry, error) {
 	var rows []auditRow
-	if err := s.db.SelectContext(ctx, &rows, `
+	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT id, action_id, ts, step, arr_name, arr_file_id, outcome, detail
 		FROM audit_log WHERE action_id = ? ORDER BY id ASC
 	`, actionID); err != nil {

@@ -37,7 +37,7 @@ func (s *Store) UpsertArrInstance(ctx context.Context, name string, typ triagear
 	if lastErr != "" {
 		lastErrCol = lastErr
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.writer.ExecContext(ctx, `
 		INSERT INTO arr_instances(name, type, url, healthy, last_health_check, last_error)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name, type) DO UPDATE SET
@@ -55,7 +55,7 @@ func (s *Store) UpsertArrInstance(ctx context.Context, name string, typ triagear
 // ListArrInstances returns every recorded *arr instance.
 func (s *Store) ListArrInstances(ctx context.Context) ([]ArrInstanceRow, error) {
 	var rows []ArrInstanceRow
-	if err := s.db.SelectContext(ctx, &rows,
+	if err := s.reader.SelectContext(ctx, &rows,
 		`SELECT name, type, url, healthy, last_health_check, last_error FROM arr_instances ORDER BY type, name`,
 	); err != nil {
 		return nil, fmt.Errorf("listing arr_instances: %w", err)
@@ -74,7 +74,7 @@ func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 	if !t.CompletionOn.IsZero() {
 		completion = ts(t.CompletionOn)
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.writer.ExecContext(ctx, `
 		INSERT INTO torrents(hash, name, category, save_path, size, added_on, completion_on, private, tags, last_seen)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(hash) DO UPDATE SET
@@ -124,7 +124,7 @@ func (s *Store) ResolveTorrentHash(ctx context.Context, prefix string) (triagear
 		return "", ErrHashNotFound
 	}
 	var matches []string
-	if err := s.db.SelectContext(ctx, &matches,
+	if err := s.reader.SelectContext(ctx, &matches,
 		`SELECT hash FROM torrents WHERE hash LIKE ? || '%' ORDER BY hash LIMIT 8`,
 		p,
 	); err != nil {
@@ -149,7 +149,7 @@ func (s *Store) ResolveTorrentHash(ctx context.Context, prefix string) (triagear
 // the full row payload.
 func (s *Store) ListTorrentHashes(ctx context.Context) ([]triagearr.Hash, error) {
 	var raw []string
-	if err := s.db.SelectContext(ctx, &raw, `SELECT hash FROM torrents ORDER BY hash`); err != nil {
+	if err := s.reader.SelectContext(ctx, &raw, `SELECT hash FROM torrents ORDER BY hash`); err != nil {
 		return nil, fmt.Errorf("listing torrent hashes: %w", err)
 	}
 	out := make([]triagearr.Hash, len(raw))
@@ -161,7 +161,7 @@ func (s *Store) ListTorrentHashes(ctx context.Context) ([]triagearr.Hash, error)
 
 // InsertSnapshot appends a point-in-time observation for a torrent.
 func (s *Store) InsertSnapshot(ctx context.Context, snap triagearr.Snapshot) error {
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.writer.ExecContext(ctx, `
 		INSERT OR REPLACE INTO snapshots_raw(torrent_hash, ts, ratio, uploaded, seeders, leechers, state, last_activity)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, string(snap.Hash), ts(snap.Timestamp), snap.Ratio, snap.Uploaded, snap.Seeders, snap.Leechers, string(snap.State), ts(snap.LastActivity))
@@ -207,7 +207,7 @@ func (s *Store) ListTorrentsLatest(ctx context.Context, sortBy string, limit int
 		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
 	var rows []TorrentRow
-	if err := s.db.SelectContext(ctx, &rows, q); err != nil {
+	if err := s.reader.SelectContext(ctx, &rows, q); err != nil {
 		return nil, fmt.Errorf("listing torrents: %w", err)
 	}
 	return rows, nil
@@ -237,7 +237,7 @@ func torrentOrderBy(sortBy string) (string, error) {
 // UpsertMedia records a media item from an *arr.
 func (s *Store) UpsertMedia(ctx context.Context, m triagearr.MediaItem) error {
 	now := time.Now().UTC()
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.writer.ExecContext(ctx, `
 		INSERT INTO media(id, arr_name, arr_type, title, path, size, tags, last_seen)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id, arr_name, arr_type) DO UPDATE SET
@@ -256,7 +256,7 @@ func (s *Store) UpsertMedia(ctx context.Context, m triagearr.MediaItem) error {
 // CountMedia returns the number of media rows for the given *arr (for testing/inspect).
 func (s *Store) CountMedia(ctx context.Context, arrName string, arrType triagearr.ArrType) (int, error) {
 	var n int
-	if err := s.db.GetContext(ctx, &n,
+	if err := s.reader.GetContext(ctx, &n,
 		`SELECT COUNT(*) FROM media WHERE arr_name = ? AND arr_type = ?`,
 		arrName, string(arrType),
 	); err != nil {
@@ -271,7 +271,7 @@ func (s *Store) CountMedia(ctx context.Context, arrName string, arrType triagear
 
 // InsertDiskUsage appends a disk-pressure observation.
 func (s *Store) InsertDiskUsage(ctx context.Context, d triagearr.DiskUsage) error {
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.writer.ExecContext(ctx, `
 		INSERT OR REPLACE INTO disk_pressure(volume_name, ts, path, total_bytes, used_bytes, free_bytes, free_percent)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, d.VolumeName, ts(d.Timestamp), d.Path, d.TotalBytes, d.UsedBytes, d.FreeBytes, d.FreePercent)
@@ -293,7 +293,7 @@ func (s *Store) LatestDiskUsage(ctx context.Context) ([]triagearr.DiskUsage, err
 		FreePercent float64   `db:"free_percent"`
 	}
 	var rows []row
-	if err := s.db.SelectContext(ctx, &rows, `
+	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT volume_name, path, ts, total_bytes, used_bytes, free_bytes, free_percent
 		FROM disk_pressure d
 		WHERE ts = (SELECT MAX(ts) FROM disk_pressure WHERE volume_name = d.volume_name)
@@ -332,7 +332,7 @@ func (s *Store) LatestDiskUsage(ctx context.Context) ([]triagearr.DiskUsage, err
 // qBit does not expose a "status changed at" field, so the transition must
 // be observed here.
 func (s *Store) ReplaceTrackers(ctx context.Context, hash triagearr.Hash, infos []triagearr.TrackerInfo) error {
-	tx, err := s.db.BeginTxx(ctx, nil)
+	tx, err := s.writer.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx for trackers %s: %w", hash, err)
 	}
@@ -407,7 +407,7 @@ type TrackerRow struct {
 // ListTrackers returns all trackers attached to a torrent.
 func (s *Store) ListTrackers(ctx context.Context, hash triagearr.Hash) ([]TrackerRow, error) {
 	var rows []TrackerRow
-	if err := s.db.SelectContext(ctx, &rows, `
+	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT torrent_hash, tracker_url, tracker_host, status, last_msg, last_checked, first_seen_dead
 		FROM torrent_trackers
 		WHERE torrent_hash = ?
@@ -427,7 +427,7 @@ func (s *Store) ListTrackers(ctx context.Context, hash triagearr.Hash) ([]Tracke
 // Actor for granular DELETEs.
 func (s *Store) UpsertMediaFile(ctx context.Context, f triagearr.MediaFile) error {
 	now := time.Now().UTC()
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.writer.ExecContext(ctx, `
 		INSERT INTO media_files(arr_name, arr_type, file_id, media_id, path, size, last_seen)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(arr_name, arr_type, file_id) DO UPDATE SET
@@ -456,7 +456,7 @@ type MediaFileRow struct {
 // ListMediaFilesByMedia returns the files attached to one media item.
 func (s *Store) ListMediaFilesByMedia(ctx context.Context, arrName string, arrType triagearr.ArrType, mediaID triagearr.MediaID) ([]MediaFileRow, error) {
 	var rows []MediaFileRow
-	if err := s.db.SelectContext(ctx, &rows, `
+	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT arr_name, arr_type, file_id, media_id, path, size, last_seen
 		FROM media_files
 		WHERE arr_name = ? AND arr_type = ? AND media_id = ?
@@ -472,7 +472,7 @@ func (s *Store) ListMediaFilesByMedia(ctx context.Context, arrName string, arrTy
 // source paths against the local volume index.
 func (s *Store) SampleMediaFilePaths(ctx context.Context, limit int) ([]string, error) {
 	var paths []string
-	if err := s.db.SelectContext(ctx, &paths, `
+	if err := s.reader.SelectContext(ctx, &paths, `
 		SELECT path FROM media_files
 		WHERE path != ''
 		ORDER BY last_seen DESC
@@ -497,7 +497,7 @@ func (s *Store) SampleMediaFilePaths(ctx context.Context, limit int) ([]string, 
 // "snapshots_pk_design").
 func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWritten, rawDeleted int, err error) {
 	cutoff := ts(before)
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader.QueryContext(ctx, `
 		SELECT torrent_hash,
 		       date(ts) AS day,
 		       AVG(ratio), MIN(ratio), MAX(ratio),
@@ -533,7 +533,7 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 		return 0, 0, fmt.Errorf("iterating aggregate rows: %w", err)
 	}
 
-	tx, err := s.db.BeginTxx(ctx, nil)
+	tx, err := s.writer.BeginTxx(ctx, nil)
 	if err != nil {
 		return 0, 0, fmt.Errorf("begin downsample tx: %w", err)
 	}
@@ -584,7 +584,7 @@ func (s *Store) PruneStaleTorrents(ctx context.Context, olderThan time.Duration)
 	}
 	cutoff := ts(time.Now().UTC().Add(-olderThan))
 
-	tx, err := s.db.BeginTxx(ctx, nil)
+	tx, err := s.writer.BeginTxx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin prune tx: %w", err)
 	}
@@ -623,7 +623,7 @@ func (s *Store) PruneStaleTorrents(ctx context.Context, olderThan time.Duration)
 func (s *Store) EnforceRetention(ctx context.Context, rawHorizon, dailyHorizon time.Duration) (rawDeleted, dailyDeleted int, err error) {
 	now := time.Now().UTC()
 	if rawHorizon > 0 {
-		res, err := s.db.ExecContext(ctx, `DELETE FROM snapshots_raw WHERE ts < ?`, ts(now.Add(-rawHorizon)))
+		res, err := s.writer.ExecContext(ctx, `DELETE FROM snapshots_raw WHERE ts < ?`, ts(now.Add(-rawHorizon)))
 		if err != nil {
 			return 0, 0, fmt.Errorf("retention on snapshots_raw: %w", err)
 		}
@@ -631,7 +631,7 @@ func (s *Store) EnforceRetention(ctx context.Context, rawHorizon, dailyHorizon t
 		rawDeleted = int(n)
 	}
 	if dailyHorizon > 0 {
-		res, err := s.db.ExecContext(ctx, `DELETE FROM snapshots_daily WHERE day < ?`, now.Add(-dailyHorizon).Format("2006-01-02"))
+		res, err := s.writer.ExecContext(ctx, `DELETE FROM snapshots_daily WHERE day < ?`, now.Add(-dailyHorizon).Format("2006-01-02"))
 		if err != nil {
 			return 0, 0, fmt.Errorf("retention on snapshots_daily: %w", err)
 		}
@@ -650,7 +650,7 @@ func (s *Store) EnforceRetention(ctx context.Context, rawHorizon, dailyHorizon t
 // update the row; *arr's behaviour is to allocate a fresh fileId on every
 // import, so collisions in practice are rare.
 func (s *Store) UpsertArrImport(ctx context.Context, arrName string, arrType triagearr.ArrType, rec triagearr.ImportRecord) error {
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.writer.ExecContext(ctx, `
 		INSERT INTO arr_imports(arr_name, arr_type, file_id, download_id, dropped_path, imported_path, size, history_id, imported_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(arr_name, arr_type, file_id) DO UPDATE SET
@@ -672,7 +672,7 @@ func (s *Store) UpsertArrImport(ctx context.Context, arrName string, arrType tri
 // instance, so the next poll can fetch only the delta.
 func (s *Store) MaxHistoryID(ctx context.Context, arrName string, arrType triagearr.ArrType) (int64, error) {
 	var v *int64
-	if err := s.db.GetContext(ctx, &v, `
+	if err := s.reader.GetContext(ctx, &v, `
 		SELECT MAX(history_id) FROM arr_imports WHERE arr_name = ? AND arr_type = ?
 	`, arrName, string(arrType)); err != nil {
 		return 0, fmt.Errorf("max history_id for %s/%s: %w", arrType, arrName, err)
@@ -700,7 +700,7 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 		LivePath     string `db:"live_path"`
 	}
 	var rows []row
-	if err := s.db.SelectContext(ctx, &rows, `
+	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT ai.arr_name, ai.arr_type, ai.file_id, ai.download_id,
 		       ai.dropped_path, ai.imported_path, ai.size, mf.path AS live_path
 		FROM arr_imports ai
@@ -733,7 +733,7 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 // surfaced by `inspect imports`.
 func (s *Store) CountArrImports(ctx context.Context, arrName string, arrType triagearr.ArrType) (int, error) {
 	var n int
-	if err := s.db.GetContext(ctx, &n,
+	if err := s.reader.GetContext(ctx, &n,
 		`SELECT COUNT(*) FROM arr_imports WHERE arr_name = ? AND arr_type = ?`,
 		arrName, string(arrType),
 	); err != nil {
@@ -747,17 +747,17 @@ func (s *Store) CountArrImports(ctx context.Context, arrName string, arrType tri
 // (it rewrites the whole DB and is expensive). Returns whether VACUUM ran.
 func (s *Store) Vacuum(ctx context.Context, minReclaimBytes int64) (ran bool, reclaimable int64, err error) {
 	var freelist, pageSize int64
-	if err := s.db.GetContext(ctx, &freelist, `PRAGMA freelist_count`); err != nil {
+	if err := s.reader.GetContext(ctx, &freelist, `PRAGMA freelist_count`); err != nil {
 		return false, 0, fmt.Errorf("reading freelist_count: %w", err)
 	}
-	if err := s.db.GetContext(ctx, &pageSize, `PRAGMA page_size`); err != nil {
+	if err := s.reader.GetContext(ctx, &pageSize, `PRAGMA page_size`); err != nil {
 		return false, 0, fmt.Errorf("reading page_size: %w", err)
 	}
 	reclaimable = freelist * pageSize
 	if reclaimable < minReclaimBytes {
 		return false, reclaimable, nil
 	}
-	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
+	if _, err := s.writer.ExecContext(ctx, `VACUUM`); err != nil {
 		return false, reclaimable, fmt.Errorf("vacuum: %w", err)
 	}
 	return true, reclaimable, nil

@@ -21,7 +21,7 @@ func (s *Store) InsertRun(ctx context.Context, r triagearr.Run) (int64, error) {
 		freePct = sql.NullFloat64{Float64: r.FreePctAtFire, Valid: true}
 		targetPct = sql.NullFloat64{Float64: r.TargetFreePct, Valid: true}
 	}
-	res, err := s.db.ExecContext(ctx, `
+	res, err := s.writer.ExecContext(ctx, `
 		INSERT INTO runs(triggered_by, triggered_at, mode, volume_name,
 		                 free_pct_at_fire, target_free_pct,
 		                 estimated_freed_bytes, stop_reason, status)
@@ -44,7 +44,7 @@ func (s *Store) InsertRunItems(ctx context.Context, runID int64, items []triagea
 	if len(items) == 0 {
 		return nil
 	}
-	tx, err := s.db.BeginTxx(ctx, nil)
+	tx, err := s.writer.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx for run_items: %w", err)
 	}
@@ -70,7 +70,7 @@ func (s *Store) InsertRunItems(ctx context.Context, runID int64, items []triagea
 
 // MarkRunStatus updates only the status column of an existing run.
 func (s *Store) MarkRunStatus(ctx context.Context, id int64, status string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE runs SET status = ? WHERE id = ?`, status, id)
+	res, err := s.writer.ExecContext(ctx, `UPDATE runs SET status = ? WHERE id = ?`, status, id)
 	if err != nil {
 		return fmt.Errorf("updating run %d status: %w", id, err)
 	}
@@ -116,7 +116,7 @@ func (r runRow) toRun() triagearr.Run {
 // GetRun returns a run by id. Returns sql.ErrNoRows when unknown.
 func (s *Store) GetRun(ctx context.Context, id int64) (triagearr.Run, []triagearr.RunItem, error) {
 	var row runRow
-	if err := s.db.GetContext(ctx, &row, `
+	if err := s.reader.GetContext(ctx, &row, `
 		SELECT id, triggered_by, triggered_at, mode, volume_name,
 		       free_pct_at_fire, target_free_pct,
 		       estimated_freed_bytes, stop_reason, status
@@ -135,7 +135,7 @@ func (s *Store) GetRun(ctx context.Context, id int64) (triagearr.Run, []triagear
 		WouldFreeBytes int64   `db:"would_free_bytes"`
 	}
 	var items []itemRow
-	if err := s.db.SelectContext(ctx, &items, `
+	if err := s.reader.SelectContext(ctx, &items, `
 		SELECT rank, torrent_hash, score, size_bytes, would_free_bytes
 		FROM run_items WHERE run_id = ? ORDER BY rank ASC
 	`, id); err != nil {
@@ -167,7 +167,7 @@ type TorrentBasic struct {
 // The result is unordered; the Decider zips it with ListScores by hash.
 func (s *Store) ListTorrentsBasic(ctx context.Context) ([]TorrentBasic, error) {
 	var rows []TorrentBasic
-	if err := s.db.SelectContext(ctx, &rows, `
+	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT hash, save_path, size FROM torrents
 	`); err != nil {
 		return nil, fmt.Errorf("listing torrents basic: %w", err)
@@ -193,7 +193,7 @@ func (s *Store) ListRuns(ctx context.Context, opts ListRunsOpts) ([]triagearr.Ru
 		q += fmt.Sprintf(" LIMIT %d", opts.Limit)
 	}
 	var rows []runRow
-	if err := s.db.SelectContext(ctx, &rows, q); err != nil {
+	if err := s.reader.SelectContext(ctx, &rows, q); err != nil {
 		return nil, fmt.Errorf("listing runs: %w", err)
 	}
 	out := make([]triagearr.Run, len(rows))

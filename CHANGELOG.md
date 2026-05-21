@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-21
+
+Patch release. Same-day fix for SQLite contention observed under prod load.
+
+### Fixed
+- `internal/store`: structural rewrite to the two-pool pattern (writer with `MaxOpenConns(1)`, reader with `MaxOpenConns(8)`, both backed by the same SQLite file via WAL). Eliminates the ~12 % failure rate observed on the tracker poller's `ReplaceTrackers` after v0.6.0 deploy:
+  - `SQLITE_BUSY (5)` becomes structurally impossible (no second writer to compete for the lock).
+  - `SQLITE_BUSY_SNAPSHOT (517)` becomes structurally impossible (no second writer to invalidate the snapshot between read and write).
+  - HTTP API reads no longer wait behind poller writes — WAL pays for itself.
+- `busy_timeout` bumped to 10 s (covers external `sqlite3` CLI hold cases only; not in the inner loop).
+- `temp_store=MEMORY` added (opportunistic CPU win on the daily downsampler's GROUP BY).
+
+### Added
+- ADR-0017 — the two-pool decision and how it relates to ADR-0002.
+- Stress tests `TestConcurrentWritesNoBusy` + `TestReadsConcurrentWithWrites` lock the new invariant in.
+
 ## [0.6.0] - 2026-05-21
 
 M5 — Actor. The release where Triagearr actually deletes things. A run resolved

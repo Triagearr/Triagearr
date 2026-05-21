@@ -9,40 +9,96 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Store is the persistence layer. It owns a single sqlx.DB and exposes
-// typed repository methods. It is safe for concurrent use by multiple
-// goroutines (sqlite WAL allows concurrent readers + a single writer).
+// Store is the persistence layer. It owns TWO sqlx.DB handles pointing at the
+// same SQLite file (WAL allows it):
+//
+//   - writer: MaxOpenConns(1) — every Exec/BeginTxx goes here, so SQLite never
+//     sees more than one writing connection. Eliminates `SQLITE_BUSY (5)` and
+//     `SQLITE_BUSY_SNAPSHOT (517)` at the structural level: there is no second
+//     writer to race against.
+//   - reader: MaxOpenConns(N) — every SELECT/Get goes here. WAL guarantees
+//     readers see a consistent snapshot without blocking the writer, so HTTP
+//     responses don't stall while pollers persist their ticks.
+//
+// This is the two-pool pattern documented by Ben Johnson (Litestream), rqlite,
+// and most production SQLite-in-Go projects. See docs/adr/0017-….md for the
+// decision context.
 type Store struct {
-	db *sqlx.DB
+	writer *sqlx.DB
+	reader *sqlx.DB
 }
 
-// Open opens (or creates) the SQLite database at path and configures it for
-// Triagearr's access patterns (WAL, foreign keys, sane busy timeout).
+const (
+	// readerMaxOpenConns caps the read pool. WAL allows concurrent readers so
+	// this can be generous; 8 matches the previous single-pool limit.
+	readerMaxOpenConns = 8
+)
+
+// commonPragmas applies to every connection in every pool.
+//
+//   - journal_mode=WAL — required for the two-pool to make sense (readers
+//     don't block the writer).
+//   - busy_timeout(10s) — guards against transient lock contention from
+//     external tools (e.g. someone running `sqlite3` against the file).
+//   - synchronous(NORMAL) — durable enough for WAL, faster than FULL.
+//   - foreign_keys(1) — explicit ON DELETE CASCADE on actions/run_items.
+//   - temp_store(MEMORY) — sort/group temp tables stay in RAM.
+const commonPragmas = "_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)"
+
+// Open creates the writer + reader pools backed by the same SQLite file.
 // Callers must invoke (*Store).Close.
 func Open(path string) (*Store, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)", path)
+	writer, err := openPool(path, 1)
+	if err != nil {
+		return nil, fmt.Errorf("opening writer pool: %w", err)
+	}
+	reader, err := openPool(path, readerMaxOpenConns)
+	if err != nil {
+		_ = writer.Close()
+		return nil, fmt.Errorf("opening reader pool: %w", err)
+	}
+	return &Store{writer: writer, reader: reader}, nil
+}
+
+func openPool(path string, maxOpen int) (*sqlx.DB, error) {
+	dsn := fmt.Sprintf("file:%s?%s", path, commonPragmas)
 	db, err := sqlx.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite db %q: %w", path, err)
 	}
-	// sqlite is happiest with a small pool — WAL allows readers but only one writer.
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(4)
+	db.SetMaxOpenConns(maxOpen)
+	// Idle conns track open conns: with maxOpen=1 the writer keeps its single
+	// connection warm; the reader pool keeps half its capacity warm.
+	idle := maxOpen
+	if idle > 4 {
+		idle = 4
+	}
+	db.SetMaxIdleConns(idle)
 	if err := db.PingContext(context.Background()); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("pinging sqlite db: %w", err)
 	}
-	return &Store{db: db}, nil
+	return db, nil
 }
 
-// DB exposes the underlying sqlx handle for callers that need raw access
-// (tests, migrate runner). Production code should prefer the repo methods.
-func (s *Store) DB() *sqlx.DB { return s.db }
+// DB returns the writer handle. Kept for tests and a handful of inspection
+// callers that need raw access; production code should prefer the typed
+// repository methods.
+func (s *Store) DB() *sqlx.DB { return s.writer }
 
-// Close releases the underlying database handle.
+// Close releases both pools. Errors from either pool are returned (writer
+// first).
 func (s *Store) Close() error {
-	if s.db == nil {
-		return nil
+	var firstErr error
+	if s.writer != nil {
+		if err := s.writer.Close(); err != nil {
+			firstErr = err
+		}
 	}
-	return s.db.Close()
+	if s.reader != nil {
+		if err := s.reader.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }

@@ -26,7 +26,7 @@ type migration struct {
 // Safe to call repeatedly — already-applied versions are skipped.
 func (s *Store) Migrate() error {
 	ctx := context.Background()
-	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+	if _, err := s.writer.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version    INTEGER PRIMARY KEY,
 		name       TEXT NOT NULL,
 		applied_at TIMESTAMP NOT NULL
@@ -56,7 +56,7 @@ func (s *Store) Migrate() error {
 }
 
 func (s *Store) appliedVersions() (map[int]bool, error) {
-	rows, err := s.db.QueryContext(context.Background(), `SELECT version FROM schema_migrations`)
+	rows, err := s.writer.QueryContext(context.Background(), `SELECT version FROM schema_migrations`)
 	if err != nil {
 		return nil, fmt.Errorf("reading schema_migrations: %w", err)
 	}
@@ -77,7 +77,7 @@ func (s *Store) appliedVersions() (map[int]bool, error) {
 
 func (s *Store) applyMigration(m migration) error {
 	ctx := context.Background()
-	tx, err := s.db.Beginx()
+	tx, err := s.writer.Beginx()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
