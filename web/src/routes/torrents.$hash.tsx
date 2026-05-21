@@ -14,10 +14,10 @@ function TorrentDetailPage() {
   const torrent = useTorrent(hash);
   const snaps = useSnapshots(hash);
 
-  if (torrent.isLoading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (torrent.isLoading) return <div className="p-4 sm:p-6 text-sm text-muted-foreground">Loading…</div>;
   if (torrent.isError)
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Link to="/torrents" className="text-sm text-muted-foreground flex items-center gap-1">
           <ArrowLeft className="h-4 w-4" /> back to torrents
         </Link>
@@ -33,7 +33,7 @@ function TorrentDetailPage() {
   const seedSeries = (snaps.data?.snapshots ?? []).map((p) => ({ ts: p.ts, value: p.seeders }));
 
   return (
-    <div className="p-6 space-y-4 max-w-5xl">
+    <div className="p-4 sm:p-6 space-y-4 max-w-5xl">
       <Link to="/torrents" className="text-sm text-muted-foreground flex items-center gap-1">
         <ArrowLeft className="h-4 w-4" /> back to torrents
       </Link>

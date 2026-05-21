@@ -4,12 +4,15 @@ import {
   ActionDetail,
   ActionList,
   ArrList,
-  AuthMode,
+  AuthChangePasswordResponse,
+  AuthEnableResponse,
   ConfigShape,
   RunActionList,
   RunList,
   RunResponse,
   ScoreList,
+  SessionStatus,
+  SimpleStatus,
   Summary,
   SnapshotList,
   TorrentDetail,
@@ -20,7 +23,7 @@ import {
 } from "./schemas";
 
 export const queryKeys = {
-  authMode: ["auth-mode"] as const,
+  session: ["session"] as const,
   version: ["version"] as const,
   summary: ["summary"] as const,
   volumes: ["volumes"] as const,
@@ -37,11 +40,76 @@ export const queryKeys = {
   config: ["config"] as const,
 };
 
-export function useAuthMode() {
+export function useSession() {
   return useQuery({
-    queryKey: queryKeys.authMode,
-    queryFn: () => apiFetch("/api/v1/auth-mode", AuthMode),
-    staleTime: Infinity,
+    queryKey: queryKeys.session,
+    queryFn: () => apiFetch("/api/v1/session", SessionStatus),
+    staleTime: 30_000,
+  });
+}
+
+export function useLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ username, password }: { username: string; password: string }) =>
+      apiFetch("/api/v1/session", SessionStatus, {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.session });
+    },
+  });
+}
+
+export function useLogout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch("/api/v1/session", SimpleStatus, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.session });
+    },
+  });
+}
+
+export function useEnableAuth() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ username, password }: { username: string; password?: string }) =>
+      apiFetch("/api/v1/auth/enable", AuthEnableResponse, {
+        method: "POST",
+        body: JSON.stringify(password ? { username, password } : { username }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.session });
+    },
+  });
+}
+
+export function useDisableAuth() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ password }: { password: string }) =>
+      apiFetch("/api/v1/auth/disable", SimpleStatus, {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.session });
+    },
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: ({ current, newPassword }: { current: string; newPassword?: string }) =>
+      apiFetch("/api/v1/auth/password", AuthChangePasswordResponse, {
+        method: "POST",
+        body: JSON.stringify(newPassword ? { current, new: newPassword } : { current }),
+      }),
   });
 }
 

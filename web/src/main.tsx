@@ -5,7 +5,7 @@ import { RouterProvider, createRouter } from "@tanstack/react-router";
 
 import "@/styles/globals.css";
 import { routeTree } from "./routeTree.gen";
-import { ApiKeyGate } from "@/components/ApiKeyGate";
+import { LoginGate } from "@/components/LoginGate";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 5_000 } },
@@ -29,9 +29,9 @@ if (!el) throw new Error("missing #root");
 createRoot(el).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ApiKeyGate>
+      <LoginGate>
         <RouterProvider router={router} />
-      </ApiKeyGate>
+      </LoginGate>
     </QueryClientProvider>
   </StrictMode>,
 );

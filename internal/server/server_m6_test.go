@@ -25,7 +25,6 @@ func buildSrvM6(t *testing.T, cfg *config.Config) http.Handler {
 	srv := server.New(server.Options{
 		Bind:    "127.0.0.1:0",
 		APIKey:  testAPIKey,
-		Auth:    cfg.HTTP.Auth,
 		Store:   s,
 		Config:  cfg,
 		Version: server.VersionInfo{Version: "test", Commit: "abc", Date: "2026-05-21"},
@@ -43,41 +42,8 @@ func buildSrvM6(t *testing.T, cfg *config.Config) http.Handler {
 	return srv.Handler()
 }
 
-func TestAuthMode_None_NoKeyRequired(t *testing.T) {
-	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494", Auth: config.HTTPAuthNone}}
-	h := buildSrvM6(t, cfg)
-
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/summary", nil)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-}
-
-func TestAuthMode_Apikey_RequiresHeader(t *testing.T) {
-	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "0.0.0.0:9494", Auth: config.HTTPAuthAPIKey}}
-	h := buildSrvM6(t, cfg)
-
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/summary", nil)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	require.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
-func TestAuthModeEndpoint_IsUnauthenticated(t *testing.T) {
-	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "0.0.0.0:9494", Auth: config.HTTPAuthAPIKey}}
-	h := buildSrvM6(t, cfg)
-
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/auth-mode", nil)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	var body map[string]string
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	require.Equal(t, "apikey", body["auth"])
-}
-
 func TestSecurityHeaders_Present(t *testing.T) {
-	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494", Auth: config.HTTPAuthNone}}
+	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"}}
 	h := buildSrvM6(t, cfg)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/summary", nil)
@@ -91,7 +57,7 @@ func TestSecurityHeaders_Present(t *testing.T) {
 }
 
 func TestRateLimit_PostRuns(t *testing.T) {
-	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494", Auth: config.HTTPAuthNone}}
+	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"}}
 	h := buildSrvM6(t, cfg)
 
 	// First call OK.
@@ -112,7 +78,7 @@ func TestRateLimit_PostRuns(t *testing.T) {
 func TestConfigRedaction_NoSecretLeaks(t *testing.T) {
 	secrets := []string{"sk-very-secret-arr-key", "qbit-pass-9000"}
 	cfg := &config.Config{
-		HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494", Auth: config.HTTPAuthNone},
+		HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"},
 		Qbit: config.QbitConfig{Enabled: true, URL: "http://qbit", Username: "u", Password: secrets[1]},
 		Arrs: config.ArrsConfig{Sonarr: []config.ArrInstanceConfig{
 			{Name: "primary", Enabled: true, URL: "http://sonarr", APIKey: secrets[0]},
@@ -134,7 +100,7 @@ func TestConfigRedaction_NoSecretLeaks(t *testing.T) {
 
 func TestSummaryEndpoint_Shape(t *testing.T) {
 	cfg := &config.Config{
-		HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494", Auth: config.HTTPAuthNone},
+		HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"},
 		Volumes: []config.VolumeConfig{
 			{Name: "data", Path: "/data", DiskPressure: config.DiskPressureConfig{Enabled: true, TargetFreePercent: 20, ThresholdFreePercent: 10}},
 		},
@@ -155,7 +121,7 @@ func TestSummaryEndpoint_Shape(t *testing.T) {
 }
 
 func TestTorrentsList_Filter(t *testing.T) {
-	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494", Auth: config.HTTPAuthNone}}
+	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"}}
 	h := buildSrvM6(t, cfg)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/torrents?q=n1", nil)
@@ -174,7 +140,7 @@ func TestTorrentsList_Filter(t *testing.T) {
 }
 
 func TestVersionEndpoint(t *testing.T) {
-	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494", Auth: config.HTTPAuthNone}}
+	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"}}
 	h := buildSrvM6(t, cfg)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/version", nil)

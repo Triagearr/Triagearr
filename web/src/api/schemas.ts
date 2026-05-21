@@ -1,7 +1,24 @@
 import { z } from "zod";
 
-export const AuthMode = z.object({ auth: z.enum(["none", "apikey"]) });
-export type AuthModeT = z.infer<typeof AuthMode>;
+export const SessionStatus = z.object({
+  auth_enabled: z.boolean(),
+  authenticated: z.boolean(),
+  username: z.string().optional(),
+});
+export type SessionStatusT = z.infer<typeof SessionStatus>;
+
+export const AuthEnableResponse = z.object({
+  username: z.string(),
+  password: z.string().optional(),
+});
+export type AuthEnableResponseT = z.infer<typeof AuthEnableResponse>;
+
+export const AuthChangePasswordResponse = z.object({
+  password: z.string().optional(),
+});
+export type AuthChangePasswordResponseT = z.infer<typeof AuthChangePasswordResponse>;
+
+export const SimpleStatus = z.object({ status: z.string() });
 
 export const Version = z.object({
   version: z.string(),

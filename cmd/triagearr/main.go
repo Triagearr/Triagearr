@@ -337,7 +337,6 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 		httpSrv = server.New(server.Options{
 			Bind:       cfg.HTTP.Bind,
 			APIKey:     apiKey,
-			Auth:       cfg.HTTP.Auth,
 			Store:      s,
 			Linker:     linker.New(s),
 			Config:     cfg,

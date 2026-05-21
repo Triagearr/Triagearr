@@ -78,22 +78,16 @@ type TrackerPolicy struct {
 // it lives in `${data_dir}/api_key` (Sonarr-style), auto-generated on first
 // boot and persisted with 0600 perms. Setting `bind: ""` disables the API
 // entirely.
+//
+// Authentication is opt-in via the dashboard (ADR-0019): when no user is
+// registered the API is open and the operator relies on whatever upstream
+// protection they configure (TinyAuth/Authelia/private network). When the
+// operator enables auth via Settings, the middleware starts requiring a
+// session cookie OR an X-API-Key on every /api/v1/* request.
 type HTTPConfig struct {
 	Bind        string   `koanf:"bind"`
 	CORSOrigins []string `koanf:"cors_origins"`
-	// Auth selects the HTTP authentication strategy. Allowed values:
-	//   - "none":   no auth (suitable behind a reverse proxy like TinyAuth/Authelia)
-	//   - "apikey": X-API-Key header required (constant-time compared)
-	// When empty, defaults to "none" if Bind is loopback, else "apikey".
-	// `none` + non-loopback bind is rejected at validation time.
-	Auth string `koanf:"auth"`
 }
-
-// HTTPAuth values for HTTPConfig.Auth.
-const (
-	HTTPAuthNone   = "none"
-	HTTPAuthAPIKey = "apikey"
-)
 
 // StorageConfig groups storage-related settings.
 type StorageConfig struct {

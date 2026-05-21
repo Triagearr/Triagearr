@@ -1,15 +1,16 @@
 // Package server exposes Triagearr's HTTP API and serves the embedded React UI.
 //
-// Auth is Sonarr-style: a loopback bind defaults to "none" so a fresh daemon
-// greets the operator without prompts (canonical setup behind a reverse proxy
-// like TinyAuth/Authelia/Caddy). Any non-loopback bind requires "apikey",
-// compared in constant time. The SPA is served from / with a fallback to
-// index.html so client-side routes survive full-page reloads.
+// Authentication is opt-in via the dashboard (ADR-0019): when no user is
+// registered in auth_users the API is open and the operator relies on
+// whatever upstream protection they configure (TinyAuth, Authelia, private
+// network, nothing). Once enabled from Settings → Security, every
+// /api/v1/* request requires either a valid session cookie or a matching
+// X-API-Key header. The two paths coexist so programmatic clients keep
+// working while operators get cookie-based UX.
 package server
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -35,11 +36,8 @@ type VersionInfo struct {
 
 // Options bundles everything the server needs at construction time.
 type Options struct {
-	Bind   string
-	APIKey string
-	// Auth selects the authentication strategy: "none" or "apikey".
-	// Empty defaults to "apikey".
-	Auth      string
+	Bind      string
+	APIKey    string
 	Store     *store.Store
 	Linker    *linker.Linker
 	Config    *config.Config
@@ -55,21 +53,23 @@ type Options struct {
 	Actor      *actor.Actor
 }
 
+// sessionTTL is the sliding window applied on every authenticated hit.
+const sessionTTL = 7 * 24 * time.Hour
+
 // Server is a wired HTTP server ready to be Started.
 type Server struct {
-	opts    Options
-	srv     *http.Server
-	runRate *ipRateLimiter
+	opts     Options
+	srv      *http.Server
+	runRate  *ipRateLimiter
+	authRate *ipRateLimiter
 }
 
 // New builds a Server. Does not start listening.
 func New(opts Options) *Server {
-	if opts.Auth == "" {
-		opts.Auth = config.HTTPAuthAPIKey
-	}
 	s := &Server{
-		opts:    opts,
-		runRate: newIPRateLimiter(1, time.Minute),
+		opts:     opts,
+		runRate:  newIPRateLimiter(1, time.Minute),
+		authRate: newIPRateLimiter(5, time.Minute),
 	}
 
 	mux := http.NewServeMux()
@@ -89,7 +89,17 @@ func New(opts Options) *Server {
 	mux.HandleFunc("GET /api/v1/summary", s.security(s.auth(s.handleSummary)))
 	mux.HandleFunc("GET /api/v1/config", s.security(s.auth(s.handleConfig)))
 	mux.HandleFunc("GET /api/v1/version", s.security(s.auth(s.handleVersion)))
-	mux.HandleFunc("GET /api/v1/auth-mode", s.security(s.handleAuthMode))
+
+	// Auth endpoints. GET /session is unauthenticated (the SPA uses it to
+	// decide whether to show the login screen). POST /session and the
+	// /auth/* mutators run under a stricter per-IP rate limit.
+	mux.HandleFunc("GET /api/v1/session", s.security(s.handleSessionStatus))
+	mux.HandleFunc("POST /api/v1/session", s.security(s.authRateLimit(s.handleSessionLogin)))
+	mux.HandleFunc("DELETE /api/v1/session", s.security(s.handleSessionLogout))
+	mux.HandleFunc("POST /api/v1/auth/enable", s.security(s.authRateLimit(s.handleAuthEnable)))
+	mux.HandleFunc("POST /api/v1/auth/disable", s.security(s.auth(s.authRateLimit(s.handleAuthDisable))))
+	mux.HandleFunc("POST /api/v1/auth/password", s.security(s.auth(s.authRateLimit(s.handleAuthChangePassword))))
+
 	mux.HandleFunc("GET /healthz", s.security(s.handleHealth))
 
 	// SPA fallback must register last so API routes win the pattern match.
@@ -102,6 +112,17 @@ func New(opts Options) *Server {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+
+	// Best-effort sweep of expired sessions at startup. The store also has
+	// a periodic vacuum that picks them up, so a failure here is non-fatal.
+	if opts.Store != nil {
+		if removed, err := opts.Store.SweepExpiredAuthSessions(context.Background()); err != nil {
+			slog.Warn("auth session sweep failed", "err", err)
+		} else if removed > 0 {
+			slog.Info("expired auth sessions swept", "removed", removed)
+		}
+	}
+
 	return s
 }
 
@@ -112,7 +133,7 @@ func (s *Server) Handler() http.Handler { return s.srv.Handler }
 func (s *Server) Start(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("http server listening", "bind", s.opts.Bind, "auth", s.opts.Auth)
+		slog.Info("http server listening", "bind", s.opts.Bind)
 		err := s.srv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -130,24 +151,6 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
-func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
-	if s.opts.Auth == config.HTTPAuthNone {
-		return h
-	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		got := r.Header.Get("X-API-Key")
-		if subtle.ConstantTimeCompare([]byte(got), []byte(s.opts.APIKey)) != 1 {
-			writeError(w, http.StatusUnauthorized, "missing or invalid X-API-Key")
-			return
-		}
-		h(w, r)
-	}
-}
-
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (s *Server) handleAuthMode(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"auth": s.opts.Auth})
 }

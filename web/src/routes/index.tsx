@@ -10,9 +10,9 @@ function Dashboard() {
   const data = summary.data;
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
+    <div className="p-4 sm:p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Overview of pressure, recent runs, and top candidates.</p>
       </div>
 
@@ -25,7 +25,7 @@ function Dashboard() {
 
       {data && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             <StatCard label="Torrents" value={String(data.counts.torrents)} />
             <StatCard label="Scored" value={String(data.counts.scored)} />
             <StatCard label="Total actions" value={String(data.counts.actions)} />

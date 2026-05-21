@@ -30,6 +30,15 @@ func testStore(t *testing.T) *store.Store {
 	return s
 }
 
+// seedAuthUser registers a dummy auth user so the server's auth middleware
+// switches from open-mode to "cookie OR X-API-Key required". Used by tests
+// that exercise rejection paths.
+func seedAuthUser(t *testing.T, s *store.Store) {
+	t.Helper()
+	_, err := s.InsertAuthUser(context.Background(), "test", "$2a$10$abcdefghijklmnopqrstuv")
+	require.NoError(t, err)
+}
+
 func seed(t *testing.T, s *store.Store) {
 	t.Helper()
 	ctx := context.Background()
@@ -82,7 +91,8 @@ func buildSrvWithDaemonLive(t *testing.T, apiKey string, daemonLive bool) (*serv
 }
 
 func TestPostRun_AuthMissing(t *testing.T) {
-	_, _, h := buildSrv(t, "sekrit")
+	_, s, h := buildSrv(t, "sekrit")
+	seedAuthUser(t, s)
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)

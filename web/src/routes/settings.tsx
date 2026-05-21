@@ -3,9 +3,8 @@ import { useState } from "react";
 import { useConfig, useVersion, useVolumes } from "@/api/hooks";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { RunTriggerDialog } from "@/components/RunTriggerDialog";
-import { getStoredApiKey, setStoredApiKey } from "@/api/client";
+import { SecuritySection } from "@/components/SecuritySection";
 
 function SettingsPage() {
   const cfg = useConfig();
@@ -18,9 +17,9 @@ function SettingsPage() {
   const selectedVolume = volume || list[0]?.name || "";
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
+    <div className="p-4 sm:p-6 space-y-6 max-w-4xl">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
           Effective configuration (secrets redacted), manual run trigger, and build info.
         </p>
@@ -71,32 +70,7 @@ function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>API key</CardTitle>
-          <CardDescription>
-            Stored locally in <code className="font-mono">localStorage</code>. Only used when the
-            daemon is configured with <code className="font-mono">auth: apikey</code>.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center gap-2">
-          <Badge variant={getStoredApiKey() ? "success" : "muted"}>
-            {getStoredApiKey() ? "configured" : "not set"}
-          </Badge>
-          {getStoredApiKey() && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setStoredApiKey("");
-                location.reload();
-              }}
-            >
-              Forget key
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+      <SecuritySection />
 
       <Card>
         <CardHeader>

@@ -159,13 +159,25 @@ Run for 2 weeks in `live` mode on my own homelab. Zero accidental deletions. Aud
   - [x] Actions (timeline + per-action audit drawer)
   - [x] Settings (effective config redacted + manual run trigger + version)
 - [x] Static bundle embedded via `embed.FS` (`web/web.go`)
-- [x] Auth Sonarr-style: `auth: none` default on loopback, `auth: apikey` required for non-loopback (validated at config load)
 - [x] `X-API-Key` validated with `crypto/subtle.ConstantTimeCompare`
 - [x] Rate limit `POST /api/v1/runs` at 1/min/IP via `golang.org/x/time/rate`
 - [x] Security headers on every response: `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy: ()`
-- [x] Default bind `127.0.0.1:9494`; non-loopback bind forces `auth: apikey`
+- [x] Default bind `127.0.0.1:9494`
 - [x] `/api/v1/config` redaction audit (`Config.Redacted()` + integration test)
 - [x] ADR-0018 — frontend stack pins
+
+## M6.1 — Auth opt-in + responsive UI
+
+**Estimated**: 1 evening · **Tag**: `v0.7.1`
+
+- [x] Opt-in built-in authentication (ADR-0019): `auth_users` / `auth_sessions` tables, bcrypt cost 10, opaque session cookie (HttpOnly, SameSite=Lax, Secure when HTTPS), 7-day sliding TTL with periodic sweep
+- [x] HTTP surface: `GET/POST/DELETE /api/v1/session`, `POST /api/v1/auth/enable`, `POST /api/v1/auth/disable`, `POST /api/v1/auth/password`
+- [x] Auth middleware accepts cookie OR `X-API-Key` in parallel (programmatic clients keep working)
+- [x] Auth-mutating endpoints rate-limited 5/min/IP
+- [x] `LoginGate` (replaces `ApiKeyGate`); Settings → Security card (enable / change password / disable, password auto-generation with one-time copy)
+- [x] SPA drops `localStorage.apiKey`, switches to `credentials: 'include'`
+- [x] Removed obsolete `http.auth` / `isLoopbackBind` / `/api/v1/auth-mode` (warning emitted for stale configs)
+- [x] Responsive overhaul: mobile drawer + hamburger top bar, content centered at `max-w-screen-2xl`, table-to-card-stack fallback below `md`, touch-friendly nav
 
 ## M7 — Notifications
 

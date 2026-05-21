@@ -1,24 +1,5 @@
 import { z } from "zod";
 
-const STORAGE_KEY = "triagearr.apiKey";
-
-export function getStoredApiKey(): string {
-  try {
-    return localStorage.getItem(STORAGE_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export function setStoredApiKey(key: string) {
-  try {
-    if (key) localStorage.setItem(STORAGE_KEY, key);
-    else localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -27,18 +8,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * apiFetch issues a same-origin request, attaching the session cookie via
+ * `credentials: 'include'`. Authentication is opt-in (see ADR-0019): when
+ * the daemon has no registered user the cookie is unnecessary; once it
+ * does, the cookie is set by the login flow and every subsequent request
+ * carries it automatically.
+ */
 export async function apiFetch<T>(
   path: string,
   schema: z.ZodType<T>,
   init?: RequestInit,
 ): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
-  const key = getStoredApiKey();
-  if (key) headers.set("X-API-Key", key);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const res = await fetch(path, { ...init, headers });
+  const res = await fetch(path, { ...init, headers, credentials: "include" });
   if (!res.ok) {
     let detail = res.statusText;
     try {
