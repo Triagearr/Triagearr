@@ -68,6 +68,22 @@ func (s *Store) InsertRunItems(ctx context.Context, runID int64, items []triagea
 	return nil
 }
 
+// MarkRunStatus updates only the status column of an existing run.
+func (s *Store) MarkRunStatus(ctx context.Context, id int64, status string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE runs SET status = ? WHERE id = ?`, status, id)
+	if err != nil {
+		return fmt.Errorf("updating run %d status: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected on run %d: %w", id, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("run %d not found", id)
+	}
+	return nil
+}
+
 // runRow is the on-disk shape of one runs row.
 type runRow struct {
 	ID                  int64           `db:"id"`
