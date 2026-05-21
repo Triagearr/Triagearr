@@ -335,18 +335,20 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 				"path", keyPath)
 		}
 		httpSrv = server.New(server.Options{
-			Bind:       cfg.HTTP.Bind,
-			APIKey:     apiKey,
-			Store:      s,
-			Linker:     linker.New(s),
-			Config:     cfg,
-			Version:    server.VersionInfo{Version: version, Commit: commit, Date: date},
-			UIHandler:  web.Handler(),
-			Decider:    dec,
-			Volume:     volumeLookup(cfg),
-			Volumes:    func() []decider.Volume { return allVolumes(cfg) },
-			DaemonLive: daemonLive,
-			Actor:      act,
+			Bind:          cfg.HTTP.Bind,
+			APIKey:        apiKey,
+			RunsPerMinute: cfg.HTTP.RateLimits.RunsPerMinute,
+			AuthPerMinute: cfg.HTTP.RateLimits.AuthPerMinute,
+			Store:         s,
+			Linker:        linker.New(s),
+			Config:        cfg,
+			Version:       server.VersionInfo{Version: version, Commit: commit, Date: date},
+			UIHandler:     web.Handler(),
+			Decider:       dec,
+			Volume:        volumeLookup(cfg),
+			Volumes:       func() []decider.Volume { return allVolumes(cfg) },
+			DaemonLive:    daemonLive,
+			Actor:         act,
 		})
 	}
 

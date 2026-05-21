@@ -85,8 +85,20 @@ type TrackerPolicy struct {
 // operator enables auth via Settings, the middleware starts requiring a
 // session cookie OR an X-API-Key on every /api/v1/* request.
 type HTTPConfig struct {
-	Bind        string   `koanf:"bind"`
-	CORSOrigins []string `koanf:"cors_origins"`
+	Bind        string           `koanf:"bind"`
+	CORSOrigins []string         `koanf:"cors_origins"`
+	RateLimits  RateLimitsConfig `koanf:"rate_limits"`
+}
+
+// RateLimitsConfig caps the request rate on sensitive endpoints, per-IP,
+// per minute. Defaults are deliberately permissive — homelab UX matters
+// more than DoS resistance behind a reverse proxy. Conventions:
+//   - unset (0)  → permissive default (60 for runs, 30 for auth)
+//   - positive N → cap at N requests/minute/IP with burst N
+//   - negative   → disable the limiter entirely
+type RateLimitsConfig struct {
+	RunsPerMinute int `koanf:"runs_per_minute"`
+	AuthPerMinute int `koanf:"auth_per_minute"`
 }
 
 // StorageConfig groups storage-related settings.
@@ -176,6 +188,8 @@ type VacuumConfig struct {
 // Defaults applied when a field is left zero by the user.
 const (
 	defaultBind               = "127.0.0.1:9494"
+	defaultRunsPerMinute      = 60
+	defaultAuthPerMinute      = 30
 	defaultSQLitePath         = "/data/triagearr.db"
 	defaultArrTimeout         = 30 * time.Second
 	defaultQbitTimeout        = 30 * time.Second

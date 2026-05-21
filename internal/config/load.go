@@ -116,6 +116,12 @@ func applyDefaults(c *Config) {
 	if c.HTTP.Bind == "" {
 		c.HTTP.Bind = defaultBind
 	}
+	if c.HTTP.RateLimits.RunsPerMinute == 0 {
+		c.HTTP.RateLimits.RunsPerMinute = defaultRunsPerMinute
+	}
+	if c.HTTP.RateLimits.AuthPerMinute == 0 {
+		c.HTTP.RateLimits.AuthPerMinute = defaultAuthPerMinute
+	}
 	if c.Storage.SQLitePath == "" {
 		c.Storage.SQLitePath = defaultSQLitePath
 	}

@@ -51,6 +51,12 @@ type Options struct {
 	// opt-ins are forced back to dry-run (ADR-0015).
 	DaemonLive bool
 	Actor      *actor.Actor
+
+	// RunsPerMinute and AuthPerMinute control the per-IP rate limits. 0
+	// applies the package default (60 / 30); negative disables. See
+	// config.RateLimitsConfig for the source of these values.
+	RunsPerMinute int
+	AuthPerMinute int
 }
 
 // sessionTTL is the sliding window applied on every authenticated hit.
@@ -67,11 +73,9 @@ type Server struct {
 // New builds a Server. Does not start listening.
 func New(opts Options) *Server {
 	s := &Server{
-		opts: opts,
-		// Runs: generous burst for interactive homelab use (clicking "Plan
-		// dry-run" twice shouldn't be a 429). Still catches a runaway loop.
-		runRate:  newIPRateLimiter(20, time.Minute),
-		authRate: newIPRateLimiter(10, time.Minute),
+		opts:     opts,
+		runRate:  buildRateLimiter(opts.RunsPerMinute, 60),
+		authRate: buildRateLimiter(opts.AuthPerMinute, 30),
 	}
 
 	mux := http.NewServeMux()

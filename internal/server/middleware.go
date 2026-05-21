@@ -135,6 +135,20 @@ func newIPRateLimiter(burst int, window time.Duration) *ipRateLimiter {
 	}
 }
 
+// buildRateLimiter resolves the configured per-minute cap to an ipRateLimiter.
+// Convention: 0 applies the package default, negative disables (nil limiter
+// = pass-through).
+func buildRateLimiter(perMinute, defaultPerMinute int) *ipRateLimiter {
+	if perMinute < 0 {
+		return nil
+	}
+	burst := perMinute
+	if burst == 0 {
+		burst = defaultPerMinute
+	}
+	return newIPRateLimiter(burst, time.Minute)
+}
+
 func (l *ipRateLimiter) take(ip string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -155,9 +169,11 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *Server) runRateLimit(h http.HandlerFunc) http.HandlerFunc {
+	if s.runRate == nil {
+		return h
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIP(r)
-		if !s.runRate.take(ip) {
+		if !s.runRate.take(clientIP(r)) {
 			writeError(w, http.StatusTooManyRequests, "rate limit exceeded — try again in a minute")
 			return
 		}
@@ -166,9 +182,11 @@ func (s *Server) runRateLimit(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) authRateLimit(h http.HandlerFunc) http.HandlerFunc {
+	if s.authRate == nil {
+		return h
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIP(r)
-		if !s.authRate.take(ip) {
+		if !s.authRate.take(clientIP(r)) {
 			writeError(w, http.StatusTooManyRequests, "too many auth attempts — try again later")
 			return
 		}
