@@ -12,7 +12,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-func seedRunForActions(t *testing.T, ctx context.Context, s storeIface) int64 {
+func seedRunForActions(ctx context.Context, t *testing.T, s storeIface) int64 {
 	t.Helper()
 	id, err := s.InsertRun(ctx, triagearr.Run{
 		TriggeredBy: triagearr.RunTriggerDiskPressure,
@@ -35,7 +35,7 @@ type storeIface interface {
 func TestActionRoundTrip(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	runID := seedRunForActions(t, ctx, s)
+	runID := seedRunForActions(ctx, t, s)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	id, err := s.InsertAction(ctx, triagearr.Action{
@@ -67,7 +67,7 @@ func TestGetAction_NotFound(t *testing.T) {
 func TestAuditPerFile_8ok_1fail_1notattempted(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	runID := seedRunForActions(t, ctx, s)
+	runID := seedRunForActions(ctx, t, s)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	actionID, err := s.InsertAction(ctx, triagearr.Action{
@@ -136,7 +136,7 @@ func TestAuditPerFile_8ok_1fail_1notattempted(t *testing.T) {
 func TestActionsCascadeOnRunDelete(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	runID := seedRunForActions(t, ctx, s)
+	runID := seedRunForActions(ctx, t, s)
 
 	actionID, err := s.InsertAction(ctx, triagearr.Action{
 		RunID:       runID,
@@ -168,7 +168,7 @@ func TestActionsCascadeOnRunDelete(t *testing.T) {
 func TestListActionsByRun_OrderByRank(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	runID := seedRunForActions(t, ctx, s)
+	runID := seedRunForActions(ctx, t, s)
 	now := time.Now().UTC()
 
 	for _, rank := range []int{2, 0, 1} {
