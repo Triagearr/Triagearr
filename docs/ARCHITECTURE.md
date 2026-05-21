@@ -234,24 +234,38 @@ A central `context.Context` is propagated everywhere; `SIGTERM` triggers gracefu
 
 ## HTTP API
 
-Read-only and control surface, served on `:9494` by default. All routes require an API key header (`X-API-Key: …`). Pairs cleanly with the existing tinyauth/Pocket-ID setup via Traefik forward-auth in the user's homelab.
+Served on `127.0.0.1:9494` by default. Authentication is Sonarr-style: loopback binds default to `auth: none` (pair with TinyAuth/Authelia/Caddy for external access); any non-loopback bind forces `auth: apikey` (`X-API-Key`, constant-time-compared). The choice is validated at config load — `auth: none` + non-loopback is rejected.
+
+Endpoint surface as of M6:
 
 ```
-GET    /api/v1/health
-GET    /api/v1/torrents               ?sort=score:desc&limit=50
-GET    /api/v1/torrents/{hash}
-GET    /api/v1/torrents/{hash}/snapshots
-GET    /api/v1/scores
-GET    /api/v1/scores/{hash}/explain  → breakdown of score factors
-GET    /api/v1/actions                 ?since=…
-GET    /api/v1/runs
-POST   /api/v1/runs                    → trigger a manual run (dry-run or live)
-GET    /api/v1/pressure                → current disk usage per volume
-GET    /api/v1/arrs                    → configured *arr instances + health
-GET    /api/v1/config                  → effective config (redacted secrets)
+GET    /healthz                            unauthenticated liveness probe
+GET    /api/v1/auth-mode                   unauthenticated; UI uses it to decide whether to prompt for a key
+
+GET    /api/v1/summary                     dashboard aggregate
+GET    /api/v1/version                     build metadata
+GET    /api/v1/config                      effective config, secrets redacted to "***"
+
+GET    /api/v1/volumes                     configured volumes + latest disk_pressure
+GET    /api/v1/volumes/{name}/history      ?since=24h    pressure time series
+GET    /api/v1/arrs                        instance health
+
+GET    /api/v1/torrents                    ?sort=&q=&category=&private=&limit=&offset=
+GET    /api/v1/torrents/{hash}             detail (trackers, links, score)
+GET    /api/v1/torrents/{hash}/snapshots   ?since=720h   ratio/seeders/leechers history
+GET    /api/v1/scores                      ?limit=50&include_excluded=false
+
+POST   /api/v1/runs                        body: {volume, mode:"live"|undefined}; 1/min/IP
+GET    /api/v1/runs                        ?limit=50
+GET    /api/v1/runs/{id}                   one run + items
+GET    /api/v1/runs/{id}/actions           actions for one run
+GET    /api/v1/actions                     ?limit=&offset=   global timeline
+GET    /api/v1/actions/{id}                one action + audit trail
 ```
 
-The React UI consumes this API and is served from the same binary via `embed.FS`. No CORS dance, no second deployment.
+Every response carries the M6 security header set (`Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy: ()`).
+
+The React UI is served from the same binary via `embed.FS` (`web/web.go`): asset paths serve directly from `web/dist/`, everything else falls back to `index.html` so the in-memory SPA router keeps working on full-page reloads. The Vite build outputs to `web/dist/`; `make build` runs `bun run build` inside `web/` before invoking `go build`.
 
 ## What lives outside the binary
 

@@ -29,6 +29,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 	"github.com/Triagearr/Triagearr/internal/triggers"
+	"github.com/Triagearr/Triagearr/web"
 )
 
 var (
@@ -336,7 +337,12 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 		httpSrv = server.New(server.Options{
 			Bind:       cfg.HTTP.Bind,
 			APIKey:     apiKey,
+			Auth:       cfg.HTTP.Auth,
 			Store:      s,
+			Linker:     linker.New(s),
+			Config:     cfg,
+			Version:    server.VersionInfo{Version: version, Commit: commit, Date: date},
+			UIHandler:  web.Handler(),
 			Decider:    dec,
 			Volume:     volumeLookup(cfg),
 			Volumes:    func() []decider.Volume { return allVolumes(cfg) },

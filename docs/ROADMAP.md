@@ -150,21 +150,22 @@ Run for 2 weeks in `live` mode on my own homelab. Zero accidental deletions. Aud
 
 **Estimated**: 2-3 evenings · **Tag**: `v0.7.0`
 
-- [ ] React 19 + Vite scaffold under `web/`
-- [ ] shadcn/ui installed, Tailwind v4 wired
-- [ ] TanStack Query for `/api/v1` consumption
-- [ ] Pages:
-  - [ ] Dashboard (volumes + pressure gauges + recent actions)
-  - [ ] Torrents (sortable table, filter, score breakdown drawer)
-  - [ ] Actions (timeline)
-  - [ ] Settings (read-only view of effective config, redacted secrets)
-- [ ] Static bundle embedded via `embed.FS`
-- [ ] Auth via API key header (delegable to upstream reverse proxy)
-- [ ] `X-API-Key` validated with `crypto/subtle.ConstantTimeCompare` (timing-attack resistance)
-- [ ] Rate limit `POST /api/v1/runs` (destructive trigger; e.g. 1/min/IP via `golang.org/x/time/rate`)
-- [ ] Security headers on UI responses: `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy: ()`
-- [ ] Default bind `127.0.0.1:9494`; refuse to start with non-loopback bind unless `api_key` is set (already enforced in config validation — re-verify under tests)
-- [ ] `/api/v1/config` redaction audit: every secret-bearing field (api_keys, qbit password, telegram bot_token) returns `"***"`; integration test asserts no leak
+- [x] React 19 + Vite scaffold under `web/`
+- [x] shadcn/ui primitives, Tailwind v4 wired (Vite-native plugin)
+- [x] TanStack Query + TanStack Router for `/api/v1` consumption
+- [x] Pages:
+  - [x] Dashboard (volumes + pressure gauges + recent runs + top candidates)
+  - [x] Torrents (sortable table, filter, detail page with score breakdown + history charts)
+  - [x] Actions (timeline + per-action audit drawer)
+  - [x] Settings (effective config redacted + manual run trigger + version)
+- [x] Static bundle embedded via `embed.FS` (`web/web.go`)
+- [x] Auth Sonarr-style: `auth: none` default on loopback, `auth: apikey` required for non-loopback (validated at config load)
+- [x] `X-API-Key` validated with `crypto/subtle.ConstantTimeCompare`
+- [x] Rate limit `POST /api/v1/runs` at 1/min/IP via `golang.org/x/time/rate`
+- [x] Security headers on every response: `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy: ()`
+- [x] Default bind `127.0.0.1:9494`; non-loopback bind forces `auth: apikey`
+- [x] `/api/v1/config` redaction audit (`Config.Redacted()` + integration test)
+- [x] ADR-0018 — frontend stack pins
 
 ## M7 — Notifications
 

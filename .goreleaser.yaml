@@ -5,6 +5,10 @@ project_name: triagearr
 before:
   hooks:
     - go mod tidy
+    # M6: build the React UI before compiling the binary so `embed.FS` picks
+    # up the production bundle. The hooks run from the repo root; `bun` is
+    # provided by aqua / the CI setup-bun step.
+    - sh -c "cd web && bun install --frozen-lockfile && bun run build"
 
 builds:
   - id: triagearr

@@ -81,7 +81,19 @@ type TrackerPolicy struct {
 type HTTPConfig struct {
 	Bind        string   `koanf:"bind"`
 	CORSOrigins []string `koanf:"cors_origins"`
+	// Auth selects the HTTP authentication strategy. Allowed values:
+	//   - "none":   no auth (suitable behind a reverse proxy like TinyAuth/Authelia)
+	//   - "apikey": X-API-Key header required (constant-time compared)
+	// When empty, defaults to "none" if Bind is loopback, else "apikey".
+	// `none` + non-loopback bind is rejected at validation time.
+	Auth string `koanf:"auth"`
 }
+
+// HTTPAuth values for HTTPConfig.Auth.
+const (
+	HTTPAuthNone   = "none"
+	HTTPAuthAPIKey = "apikey"
+)
 
 // StorageConfig groups storage-related settings.
 type StorageConfig struct {

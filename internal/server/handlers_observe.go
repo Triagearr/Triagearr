@@ -1,0 +1,634 @@
+package server
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/Triagearr/Triagearr/internal/store"
+	"github.com/Triagearr/Triagearr/internal/triagearr"
+)
+
+type torrentListItem struct {
+	Hash       string     `json:"hash"`
+	Name       string     `json:"name"`
+	Category   string     `json:"category"`
+	Size       int64      `json:"size"`
+	AddedOn    time.Time  `json:"added_on"`
+	LastSeen   time.Time  `json:"last_seen"`
+	Ratio      *float64   `json:"ratio,omitempty"`
+	Seeders    *int       `json:"seeders,omitempty"`
+	Leechers   *int       `json:"leechers,omitempty"`
+	State      *string    `json:"state,omitempty"`
+	SnapshotAt *time.Time `json:"snapshot_at,omitempty"`
+}
+
+type torrentListResponse struct {
+	Torrents []torrentListItem `json:"torrents"`
+	Total    int               `json:"total"`
+	Limit    int               `json:"limit"`
+	Offset   int               `json:"offset"`
+}
+
+func (s *Server) handleListTorrents(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	opts := store.ListTorrentsOpts{
+		Sort:        q.Get("sort"),
+		Query:       q.Get("q"),
+		Category:    q.Get("category"),
+		PrivateOnly: boolParam(q, "private"),
+		Limit:       intParam(q, "limit", 50, 1, 500),
+		Offset:      intParam(q, "offset", 0, 0, 1_000_000),
+	}
+	rows, err := s.opts.Store.ListTorrentsFiltered(r.Context(), opts)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	total, err := s.opts.Store.CountTorrentsFiltered(r.Context(), opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := make([]torrentListItem, len(rows))
+	for i, row := range rows {
+		items[i] = torrentListItem{
+			Hash:       row.Hash,
+			Name:       row.Name,
+			Category:   row.Category,
+			Size:       row.Size,
+			AddedOn:    row.AddedOn,
+			LastSeen:   row.LastSeen,
+			Ratio:      row.Ratio,
+			Seeders:    row.Seeders,
+			Leechers:   row.Leechers,
+			State:      row.State,
+			SnapshotAt: row.SnapshotAt,
+		}
+	}
+	writeJSON(w, http.StatusOK, torrentListResponse{
+		Torrents: items, Total: total, Limit: opts.Limit, Offset: opts.Offset,
+	})
+}
+
+type torrentDetailResponse struct {
+	Hash         string     `json:"hash"`
+	Name         string     `json:"name"`
+	Category     string     `json:"category"`
+	SavePath     string     `json:"save_path"`
+	Size         int64      `json:"size"`
+	AddedOn      time.Time  `json:"added_on"`
+	CompletionOn *time.Time `json:"completion_on,omitempty"`
+	Private      bool       `json:"private"`
+	Tags         string     `json:"tags"`
+	LastSeen     time.Time  `json:"last_seen"`
+
+	Latest *torrentLatest `json:"latest,omitempty"`
+
+	Trackers []trackerView `json:"trackers"`
+	Links    []linkView    `json:"links"`
+	Score    *scoreView    `json:"score,omitempty"`
+}
+
+type torrentLatest struct {
+	Ratio      *float64   `json:"ratio,omitempty"`
+	Uploaded   *int64     `json:"uploaded,omitempty"`
+	Seeders    *int       `json:"seeders,omitempty"`
+	Leechers   *int       `json:"leechers,omitempty"`
+	State      *string    `json:"state,omitempty"`
+	SnapshotAt *time.Time `json:"snapshot_at,omitempty"`
+}
+
+type trackerView struct {
+	Host        string    `json:"host"`
+	URL         string    `json:"url"`
+	Status      string    `json:"status"`
+	Message     string    `json:"message"`
+	LastChecked time.Time `json:"last_checked"`
+}
+
+type linkView struct {
+	ArrName      string `json:"arr_name"`
+	ArrType      string `json:"arr_type"`
+	FileID       int64  `json:"file_id"`
+	Size         int64  `json:"size"`
+	LivePath     string `json:"live_path"`
+	DroppedPath  string `json:"dropped_path"`
+	ImportedPath string `json:"imported_path"`
+}
+
+type scoreView struct {
+	Score            float64         `json:"score"`
+	Private          bool            `json:"private"`
+	AnyTrackerAlive  bool            `json:"any_tracker_alive"`
+	Excluded         bool            `json:"excluded"`
+	ExclusionReasons string          `json:"exclusion_reasons,omitempty"`
+	Factors          json.RawMessage `json:"factors,omitempty"`
+	ComputedAt       time.Time       `json:"computed_at"`
+}
+
+func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
+	hash := triagearr.Hash(strings.ToLower(r.PathValue("hash")))
+	row, err := s.opts.Store.GetTorrent(r.Context(), hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "torrent not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	out := torrentDetailResponse{
+		Hash: row.Hash, Name: row.Name, Category: row.Category, SavePath: row.SavePath,
+		Size: row.Size, AddedOn: row.AddedOn, CompletionOn: row.CompletionOn,
+		Private: row.Private, Tags: row.Tags, LastSeen: row.LastSeen,
+	}
+	if row.SnapshotAt != nil {
+		out.Latest = &torrentLatest{
+			Ratio: row.Ratio, Uploaded: row.Uploaded, Seeders: row.Seeders,
+			Leechers: row.Leechers, State: row.State, SnapshotAt: row.SnapshotAt,
+		}
+	}
+
+	if trks, err := s.opts.Store.ListTrackers(r.Context(), hash); err == nil {
+		out.Trackers = make([]trackerView, len(trks))
+		for i, t := range trks {
+			out.Trackers[i] = trackerView{
+				Host: t.Host, URL: t.URL, Status: t.Status.String(),
+				Message: t.Msg, LastChecked: t.LastChecked,
+			}
+		}
+	}
+
+	if s.opts.Linker != nil {
+		if links, err := s.opts.Linker.Links(r.Context(), hash); err == nil {
+			out.Links = make([]linkView, len(links))
+			for i, l := range links {
+				out.Links[i] = linkView{
+					ArrName: l.ArrName, ArrType: string(l.ArrType), FileID: l.FileID,
+					Size: l.Size, LivePath: l.LivePath, DroppedPath: l.DroppedPath,
+					ImportedPath: l.ImportedPath,
+				}
+			}
+		}
+	}
+
+	if score, err := s.opts.Store.GetScore(r.Context(), hash); err == nil {
+		out.Score = &scoreView{
+			Score: score.Score, Private: score.Private,
+			AnyTrackerAlive: score.AnyTrackerAlive, Excluded: score.Excluded,
+			ExclusionReasons: score.ExclusionReasons,
+			Factors:          json.RawMessage(score.FactorsJSON),
+			ComputedAt:       score.ComputedAt,
+		}
+	}
+
+	if out.Trackers == nil {
+		out.Trackers = []trackerView{}
+	}
+	if out.Links == nil {
+		out.Links = []linkView{}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type snapshotPoint struct {
+	Timestamp time.Time `json:"ts"`
+	Ratio     float64   `json:"ratio"`
+	Uploaded  int64     `json:"uploaded"`
+	Seeders   int       `json:"seeders"`
+	Leechers  int       `json:"leechers"`
+	State     string    `json:"state"`
+}
+
+func (s *Server) handleTorrentSnapshots(w http.ResponseWriter, r *http.Request) {
+	hash := triagearr.Hash(strings.ToLower(r.PathValue("hash")))
+	since := sinceParam(r, 30*24*time.Hour)
+	limit := intParam(r.URL.Query(), "limit", 2000, 1, 10000)
+
+	points, err := s.opts.Store.ListSnapshotsRaw(r.Context(), hash, since, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]snapshotPoint, len(points))
+	for i, p := range points {
+		out[i] = snapshotPoint{
+			Timestamp: p.Timestamp, Ratio: p.Ratio, Uploaded: p.Uploaded,
+			Seeders: p.Seeders, Leechers: p.Leechers, State: p.State,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"snapshots": out})
+}
+
+type scoreListItem struct {
+	Hash             string          `json:"hash"`
+	Score            float64         `json:"score"`
+	Private          bool            `json:"private"`
+	AnyTrackerAlive  bool            `json:"any_tracker_alive"`
+	Excluded         bool            `json:"excluded"`
+	ExclusionReasons string          `json:"exclusion_reasons,omitempty"`
+	Factors          json.RawMessage `json:"factors,omitempty"`
+	ComputedAt       time.Time       `json:"computed_at"`
+}
+
+func (s *Server) handleListScores(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	rows, err := s.opts.Store.ListScores(r.Context(), store.ListScoresOpts{
+		Limit:           intParam(q, "limit", 50, 1, 500),
+		IncludeExcluded: boolParam(q, "include_excluded"),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]scoreListItem, len(rows))
+	for i, row := range rows {
+		out[i] = scoreItemFromRow(row)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"scores": out})
+}
+
+func scoreItemFromRow(row store.ScoreRow) scoreListItem {
+	return scoreListItem{
+		Hash: row.Hash, Score: row.Score, Private: row.Private,
+		AnyTrackerAlive: row.AnyTrackerAlive, Excluded: row.Excluded,
+		ExclusionReasons: row.ExclusionReasons,
+		Factors:          json.RawMessage(row.FactorsJSON),
+		ComputedAt:       row.ComputedAt,
+	}
+}
+
+type volumeView struct {
+	Name                 string     `json:"name"`
+	Path                 string     `json:"path"`
+	TargetFreePercent    float64    `json:"target_free_percent,omitempty"`
+	ThresholdFreePercent float64    `json:"threshold_free_percent,omitempty"`
+	MaxRunSizeGB         int        `json:"max_run_size_gb,omitempty"`
+	TotalBytes           uint64     `json:"total_bytes,omitempty"`
+	UsedBytes            uint64     `json:"used_bytes,omitempty"`
+	FreeBytes            uint64     `json:"free_bytes,omitempty"`
+	FreePercent          float64    `json:"free_percent,omitempty"`
+	MeasuredAt           *time.Time `json:"measured_at,omitempty"`
+}
+
+func (s *Server) handleListVolumes(w http.ResponseWriter, r *http.Request) {
+	out, err := s.buildVolumeViews(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"volumes": out})
+}
+
+func (s *Server) buildVolumeViews(ctx context.Context) ([]volumeView, error) {
+	latest, err := s.opts.Store.LatestDiskUsage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byName := make(map[string]triagearr.DiskUsage, len(latest))
+	for _, d := range latest {
+		byName[d.VolumeName] = d
+	}
+
+	var out []volumeView
+	if s.opts.Config != nil {
+		for _, v := range s.opts.Config.Volumes {
+			vv := volumeView{
+				Name: v.Name, Path: v.Path,
+				TargetFreePercent:    v.DiskPressure.TargetFreePercent,
+				ThresholdFreePercent: v.DiskPressure.ThresholdFreePercent,
+				MaxRunSizeGB:         v.DiskPressure.MaxRunSizeGB,
+			}
+			if d, ok := byName[v.Name]; ok {
+				vv.TotalBytes = d.TotalBytes
+				vv.UsedBytes = d.UsedBytes
+				vv.FreeBytes = d.FreeBytes
+				vv.FreePercent = d.FreePercent
+				ts := d.Timestamp
+				vv.MeasuredAt = &ts
+			}
+			out = append(out, vv)
+		}
+		return out, nil
+	}
+	for _, d := range latest {
+		ts := d.Timestamp
+		out = append(out, volumeView{
+			Name: d.VolumeName, Path: d.Path,
+			TotalBytes: d.TotalBytes, UsedBytes: d.UsedBytes,
+			FreeBytes: d.FreeBytes, FreePercent: d.FreePercent,
+			MeasuredAt: &ts,
+		})
+	}
+	return out, nil
+}
+
+type volumeHistoryPoint struct {
+	Timestamp   time.Time `json:"ts"`
+	TotalBytes  int64     `json:"total_bytes"`
+	UsedBytes   int64     `json:"used_bytes"`
+	FreeBytes   int64     `json:"free_bytes"`
+	FreePercent float64   `json:"free_percent"`
+}
+
+func (s *Server) handleVolumeHistory(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "volume name required")
+		return
+	}
+	since := sinceParam(r, 24*time.Hour)
+	limit := intParam(r.URL.Query(), "limit", 2000, 1, 10000)
+	pts, err := s.opts.Store.ListDiskUsageHistory(r.Context(), name, since, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]volumeHistoryPoint, len(pts))
+	for i, p := range pts {
+		out[i] = volumeHistoryPoint{
+			Timestamp: p.Timestamp, TotalBytes: p.TotalBytes,
+			UsedBytes: p.UsedBytes, FreeBytes: p.FreeBytes,
+			FreePercent: p.FreePercent,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"history": out})
+}
+
+type arrView struct {
+	Name            string     `json:"name"`
+	Type            string     `json:"type"`
+	URL             string     `json:"url"`
+	Healthy         bool       `json:"healthy"`
+	LastHealthCheck *time.Time `json:"last_health_check,omitempty"`
+	LastError       string     `json:"last_error,omitempty"`
+}
+
+func (s *Server) handleListArrs(w http.ResponseWriter, r *http.Request) {
+	out, err := s.buildArrViews(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"arrs": out})
+}
+
+func (s *Server) buildArrViews(ctx context.Context) ([]arrView, error) {
+	rows, err := s.opts.Store.ListArrInstances(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]arrView, len(rows))
+	for i, row := range rows {
+		v := arrView{
+			Name: row.Name, Type: row.Type, URL: row.URL,
+			Healthy: row.Healthy, LastHealthCheck: row.LastHealthCheck,
+		}
+		if row.LastError != nil {
+			v.LastError = *row.LastError
+		}
+		out[i] = v
+	}
+	return out, nil
+}
+
+type actionView struct {
+	ID          int64      `json:"id"`
+	RunID       int64      `json:"run_id"`
+	Rank        int        `json:"rank"`
+	TorrentHash string     `json:"torrent_hash"`
+	Status      string     `json:"status"`
+	StartedAt   time.Time  `json:"started_at"`
+	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+	FreedBytes  int64      `json:"freed_bytes"`
+}
+
+type actionListResponse struct {
+	Actions []actionView `json:"actions"`
+	Total   int          `json:"total"`
+	Limit   int          `json:"limit"`
+	Offset  int          `json:"offset"`
+}
+
+func (s *Server) handleListActions(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit := intParam(q, "limit", 50, 1, 500)
+	offset := intParam(q, "offset", 0, 0, 1_000_000)
+	rows, err := s.opts.Store.ListActionsRecent(r.Context(), limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	total, err := s.opts.Store.CountActions(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, actionListResponse{
+		Actions: viewsFromActions(rows), Total: total, Limit: limit, Offset: offset,
+	})
+}
+
+func viewsFromActions(rows []triagearr.Action) []actionView {
+	out := make([]actionView, len(rows))
+	for i, a := range rows {
+		v := actionView{
+			ID: a.ID, RunID: a.RunID, Rank: a.Rank,
+			TorrentHash: string(a.TorrentHash), Status: string(a.Status),
+			StartedAt: a.StartedAt, FreedBytes: a.FreedBytes,
+		}
+		if !a.FinishedAt.IsZero() {
+			finished := a.FinishedAt
+			v.FinishedAt = &finished
+		}
+		out[i] = v
+	}
+	return out
+}
+
+func (s *Server) handleRunActions(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "id must be a positive integer")
+		return
+	}
+	rows, err := s.opts.Store.ListActionsByRun(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"actions": viewsFromActions(rows)})
+}
+
+type auditView struct {
+	ID        int64     `json:"id"`
+	Timestamp time.Time `json:"ts"`
+	Step      string    `json:"step"`
+	Outcome   string    `json:"outcome"`
+	ArrName   string    `json:"arr_name,omitempty"`
+	ArrFileID int64     `json:"arr_file_id,omitempty"`
+	Detail    string    `json:"detail,omitempty"`
+}
+
+type actionDetailResponse struct {
+	Action actionView  `json:"action"`
+	Audit  []auditView `json:"audit"`
+}
+
+func (s *Server) handleGetAction(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "id must be a positive integer")
+		return
+	}
+	a, err := s.opts.Store.GetAction(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "action not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	audit, err := s.opts.Store.ListAuditByAction(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp := actionDetailResponse{
+		Action: viewsFromActions([]triagearr.Action{a})[0],
+		Audit:  make([]auditView, len(audit)),
+	}
+	for i, e := range audit {
+		resp.Audit[i] = auditView{
+			ID: e.ID, Timestamp: e.Timestamp,
+			Step: string(e.Step), Outcome: string(e.Outcome),
+			ArrName: e.ArrName, ArrFileID: e.ArrFileID, Detail: e.Detail,
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type summaryResponse struct {
+	Volumes  []volumeView    `json:"volumes"`
+	Arrs     []arrView       `json:"arrs"`
+	Counts   summaryCounts   `json:"counts"`
+	LastRuns []runResponse   `json:"last_runs"`
+	TopScore []scoreListItem `json:"top_score"`
+}
+
+type summaryCounts struct {
+	Torrents int `json:"torrents"`
+	Scored   int `json:"scored"`
+	Actions  int `json:"actions"`
+}
+
+func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	volumes, err := s.buildVolumeViews(ctx)
+	if err != nil {
+		slog.Warn("summary: volumes", "err", err)
+	}
+
+	arrs, err := s.buildArrViews(ctx)
+	if err != nil {
+		slog.Warn("summary: arrs", "err", err)
+	}
+
+	var counts summaryCounts
+	if n, err := s.opts.Store.CountTorrents(ctx); err == nil {
+		counts.Torrents = n
+	} else {
+		slog.Warn("summary: count torrents", "err", err)
+	}
+	if n, err := s.opts.Store.CountScored(ctx); err == nil {
+		counts.Scored = n
+	} else {
+		slog.Warn("summary: count scored", "err", err)
+	}
+	if n, err := s.opts.Store.CountActions(ctx); err == nil {
+		counts.Actions = n
+	} else {
+		slog.Warn("summary: count actions", "err", err)
+	}
+
+	var lastRuns []runResponse
+	if runs, err := s.opts.Store.ListRuns(ctx, store.ListRunsOpts{Limit: 10}); err == nil {
+		lastRuns = make([]runResponse, len(runs))
+		for i, run := range runs {
+			lastRuns[i] = buildResponse(run, nil)
+		}
+	} else {
+		slog.Warn("summary: list runs", "err", err)
+	}
+
+	var top []scoreListItem
+	if rows, err := s.opts.Store.ListScores(ctx, store.ListScoresOpts{Limit: 10}); err == nil {
+		top = make([]scoreListItem, len(rows))
+		for i, row := range rows {
+			top[i] = scoreItemFromRow(row)
+		}
+	} else {
+		slog.Warn("summary: list scores", "err", err)
+	}
+
+	writeJSON(w, http.StatusOK, summaryResponse{
+		Volumes: volumes, Arrs: arrs, Counts: counts,
+		LastRuns: lastRuns, TopScore: top,
+	})
+}
+
+func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
+	if s.opts.Config == nil {
+		writeError(w, http.StatusServiceUnavailable, "config not wired into server")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.opts.Config.Redacted())
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.opts.Version)
+}
+
+func intParam(q url.Values, key string, def, min, max int) int {
+	raw := q.Get(key)
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < min || n > max {
+		return def
+	}
+	return n
+}
+
+func boolParam(q url.Values, key string) bool {
+	v := q.Get(key)
+	return v == "1" || v == "true"
+}
+
+// sinceParam reads ?since=<rfc3339> or ?since=<duration ago>, falling back to
+// `now - defaultWindow`.
+func sinceParam(r *http.Request, defaultWindow time.Duration) time.Time {
+	raw := r.URL.Query().Get("since")
+	if raw == "" {
+		return time.Now().UTC().Add(-defaultWindow)
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t.UTC()
+	}
+	if d, err := time.ParseDuration(raw); err == nil {
+		return time.Now().UTC().Add(-d)
+	}
+	return time.Now().UTC().Add(-defaultWindow)
+}

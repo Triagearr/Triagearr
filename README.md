@@ -58,6 +58,18 @@ docker run -d \
 
 See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for a full Docker Compose example and integration with an existing *arr stack.
 
+## Dashboard
+
+A React + Tailwind dashboard ships embedded in the binary at `http://127.0.0.1:9494/`:
+
+- Real-time disk pressure gauges per volume.
+- Sortable, filterable torrent list with per-torrent score breakdown, tracker status, *arr links, and history charts.
+- Action timeline with per-action audit drawer.
+- One-click dry-run; live runs gated behind a typed-name confirmation modal.
+- Effective configuration view with secrets redacted.
+
+Auth is Sonarr-style: a loopback bind needs none (pair with TinyAuth/Authelia/Caddy for external access); any non-loopback bind enforces `X-API-Key`. See [ADR-0018](docs/adr/0018-m6-frontend-stack.md).
+
 ## Documentation
 
 | Document | What's in it |

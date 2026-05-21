@@ -58,15 +58,20 @@ This document captures every dependency Triagearr commits to, the version pin, a
 
 | | Choice | Version | Alternatives considered |
 |---|---|---|---|
-| Bundler | Vite | **7.x** | webpack, parcel |
+| Bundler | Vite | **8.0.x** | webpack, parcel |
+| Runtime / pm | Bun | **1.3.x** | npm, pnpm, yarn |
 | Framework | React | **19.2.6** | Svelte 5, Preact, Solid.js, HTMX + Templ |
-| Component library | shadcn/ui | **4.7.0** | Radix UI, Headless UI, Mantine |
-| Routing | TanStack Router | 1.x | React Router |
-| Data fetching | TanStack Query | 5.x | SWR, plain fetch |
-| Styling | Tailwind CSS | 4.x | vanilla CSS, CSS modules |
+| Language | TypeScript | **6.0.x** | plain JavaScript |
+| Component library | shadcn/ui primitives (handcrafted equiv.) | **4.7.0** | Radix UI, Headless UI, Mantine |
+| Icons | lucide-react | **1.16.x** | Heroicons, Phosphor |
+| Routing | TanStack Router | **1.170.x** | React Router |
+| Data fetching | TanStack Query | **5.100.x** | SWR, plain fetch |
+| Styling | Tailwind CSS | **4.3.x** (Vite-native plugin) | vanilla CSS, CSS modules |
+| Charts | Recharts | **3.8.x** | Tremor, visx, uPlot |
+| Schema validation | zod | **4.4.x** | yup, valibot |
 | Embedding | `embed.FS` (stdlib) | n/a | http.FileSystem from disk |
 
-**Why React 19 + shadcn:** ecosystem alignment (Sonarr, Radarr, Maintainerr, Bazarr are all React-based), the highest visual ceiling (shadcn produces "this looks professional" UIs with minimal effort), and the largest contributor pool. See [ADR-0008](adr/0008-react-shadcn-ui.md).
+**Why React 19 + shadcn:** ecosystem alignment (Sonarr, Radarr, Maintainerr, Bazarr are all React-based), the highest visual ceiling (shadcn produces "this looks professional" UIs with minimal effort), and the largest contributor pool. See [ADR-0008](adr/0008-react-shadcn-ui.md) and [ADR-0017](adr/0017-frontend-stack.md) for the M6-era tightening.
 
 **Why bundled inside the Go binary:** zero second deployment, no CORS, single image to ship. The Vite build outputs to `web/dist/`, which `embed.FS` slurps into the binary.
 

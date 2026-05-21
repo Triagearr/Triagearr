@@ -1,70 +1,102 @@
-// Package server exposes Triagearr's HTTP API. In M4 the surface is minimal:
-//   - POST /api/v1/runs       — trigger a dry-run Decider pass and persist it
-//   - GET  /api/v1/runs       — list recent runs
-//   - GET  /api/v1/runs/{id}  — fetch a run + its items
+// Package server exposes Triagearr's HTTP API and serves the embedded React UI.
 //
-// Auth is a single X-API-Key header compared in constant time. M6 will layer
-// rate-limiting and the static UI on top.
+// Auth is Sonarr-style: a loopback bind defaults to "none" so a fresh daemon
+// greets the operator without prompts (canonical setup behind a reverse proxy
+// like TinyAuth/Authelia/Caddy). Any non-loopback bind requires "apikey",
+// compared in constant time. The SPA is served from / with a fallback to
+// index.html so client-side routes survive full-page reloads.
 package server
 
 import (
 	"context"
 	"crypto/subtle"
-	"database/sql"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/Triagearr/Triagearr/internal/actor"
+	"github.com/Triagearr/Triagearr/internal/config"
 	"github.com/Triagearr/Triagearr/internal/decider"
+	"github.com/Triagearr/Triagearr/internal/linker"
 	"github.com/Triagearr/Triagearr/internal/store"
-	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-// VolumeLookup resolves a volume name to the rule M4 needs for a Decider plan.
+// VolumeLookup resolves a volume name to the rule the Decider plan needs.
 // The daemon supplies a closure over the parsed config.
 type VolumeLookup func(name string) (decider.Volume, bool)
 
+// VersionInfo is the build metadata surfaced through GET /api/v1/version.
+type VersionInfo struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Date    string `json:"date"`
+}
+
 // Options bundles everything the server needs at construction time.
 type Options struct {
-	Bind    string
-	APIKey  string
-	Store   *store.Store
+	Bind   string
+	APIKey string
+	// Auth selects the authentication strategy: "none" or "apikey".
+	// Empty defaults to "apikey".
+	Auth      string
+	Store     *store.Store
+	Linker    *linker.Linker
+	Config    *config.Config
+	Version   VersionInfo
+	UIHandler http.Handler
+
 	Decider *decider.Decider
-	// Volume resolves a name to the {path, target%, max_run_size_gb} that
-	// the Decider expects. Must return ok=false for unknown volumes.
-	Volume VolumeLookup
-	// Volumes returns every configured volume (used when the caller omits the
-	// volume name — picks the most pressed one).
+	Volume  VolumeLookup
 	Volumes func() []decider.Volume
-	// DaemonLive mirrors config.Mode == "live". The HTTP layer needs it to
-	// resolve the per-request live opt-in against the daemon-wide gate
-	// (ADR-0015): without `mode: live` set on the daemon, request bodies
-	// asking for live are forced back to dry-run.
+	// DaemonLive mirrors config.Mode == "live". Without it, per-request live
+	// opt-ins are forced back to dry-run (ADR-0015).
 	DaemonLive bool
-	// Actor executes runs resolved to "live". May be nil — in that case POST
-	// /api/v1/runs continues to insert dry-run plans only.
-	Actor *actor.Actor
+	Actor      *actor.Actor
 }
 
 // Server is a wired HTTP server ready to be Started.
 type Server struct {
-	opts Options
-	srv  *http.Server
+	opts    Options
+	srv     *http.Server
+	runRate *ipRateLimiter
 }
 
 // New builds a Server. Does not start listening.
 func New(opts Options) *Server {
-	s := &Server{opts: opts}
+	if opts.Auth == "" {
+		opts.Auth = config.HTTPAuthAPIKey
+	}
+	s := &Server{
+		opts:    opts,
+		runRate: newIPRateLimiter(1, time.Minute),
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/runs", s.auth(s.handlePostRun))
-	mux.HandleFunc("GET /api/v1/runs", s.auth(s.handleListRuns))
-	mux.HandleFunc("GET /api/v1/runs/{id}", s.auth(s.handleGetRun))
-	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("POST /api/v1/runs", s.security(s.auth(s.runRateLimit(s.handlePostRun))))
+	mux.HandleFunc("GET /api/v1/runs", s.security(s.auth(s.handleListRuns)))
+	mux.HandleFunc("GET /api/v1/runs/{id}", s.security(s.auth(s.handleGetRun)))
+	mux.HandleFunc("GET /api/v1/runs/{id}/actions", s.security(s.auth(s.handleRunActions)))
+	mux.HandleFunc("GET /api/v1/actions", s.security(s.auth(s.handleListActions)))
+	mux.HandleFunc("GET /api/v1/actions/{id}", s.security(s.auth(s.handleGetAction)))
+	mux.HandleFunc("GET /api/v1/torrents", s.security(s.auth(s.handleListTorrents)))
+	mux.HandleFunc("GET /api/v1/torrents/{hash}", s.security(s.auth(s.handleGetTorrent)))
+	mux.HandleFunc("GET /api/v1/torrents/{hash}/snapshots", s.security(s.auth(s.handleTorrentSnapshots)))
+	mux.HandleFunc("GET /api/v1/scores", s.security(s.auth(s.handleListScores)))
+	mux.HandleFunc("GET /api/v1/volumes", s.security(s.auth(s.handleListVolumes)))
+	mux.HandleFunc("GET /api/v1/volumes/{name}/history", s.security(s.auth(s.handleVolumeHistory)))
+	mux.HandleFunc("GET /api/v1/arrs", s.security(s.auth(s.handleListArrs)))
+	mux.HandleFunc("GET /api/v1/summary", s.security(s.auth(s.handleSummary)))
+	mux.HandleFunc("GET /api/v1/config", s.security(s.auth(s.handleConfig)))
+	mux.HandleFunc("GET /api/v1/version", s.security(s.auth(s.handleVersion)))
+	mux.HandleFunc("GET /api/v1/auth-mode", s.security(s.handleAuthMode))
+	mux.HandleFunc("GET /healthz", s.security(s.handleHealth))
+
+	// SPA fallback must register last so API routes win the pattern match.
+	if opts.UIHandler != nil {
+		mux.Handle("/", s.security(opts.UIHandler.ServeHTTP))
+	}
+
 	s.srv = &http.Server{
 		Addr:              opts.Bind,
 		Handler:           mux,
@@ -80,7 +112,7 @@ func (s *Server) Handler() http.Handler { return s.srv.Handler }
 func (s *Server) Start(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("http server listening", "bind", s.opts.Bind)
+		slog.Info("http server listening", "bind", s.opts.Bind, "auth", s.opts.Auth)
 		err := s.srv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -99,6 +131,9 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
+	if s.opts.Auth == config.HTTPAuthNone {
+		return h
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		got := r.Header.Get("X-API-Key")
 		if subtle.ConstantTimeCompare([]byte(got), []byte(s.opts.APIKey)) != 1 {
@@ -109,184 +144,10 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-type postRunRequest struct {
-	Volume string `json:"volume,omitempty"`
-	Mode   string `json:"mode,omitempty"` // "live" opts the request into destructive execution (gated by ADR-0015)
-}
-
-type runResponse struct {
-	RunID               int64             `json:"run_id"`
-	TriggeredBy         string            `json:"triggered_by"`
-	TriggeredAt         time.Time         `json:"triggered_at"`
-	Mode                string            `json:"mode"`
-	Volume              string            `json:"volume,omitempty"`
-	FreePctAtFire       float64           `json:"free_pct_at_fire,omitempty"`
-	TargetFreePct       float64           `json:"target_free_pct,omitempty"`
-	EstimatedFreedBytes int64             `json:"estimated_freed_bytes"`
-	StopReason          string            `json:"stop_reason"`
-	Status              string            `json:"status"`
-	Candidates          []runItemResponse `json:"candidates,omitempty"`
-}
-
-type runItemResponse struct {
-	Rank           int     `json:"rank"`
-	TorrentHash    string  `json:"torrent_hash"`
-	Score          float64 `json:"score"`
-	SizeBytes      int64   `json:"size_bytes"`
-	WouldFreeBytes int64   `json:"would_free_bytes"`
-}
-
-func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
-	var req postRunRequest
-	if r.ContentLength > 0 {
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
-			return
-		}
-	}
-	vol, ok := s.resolveVolume(req.Volume)
-	if !ok {
-		if req.Volume == "" {
-			writeError(w, http.StatusBadRequest, "no volume configured")
-		} else {
-			writeError(w, http.StatusNotFound, fmt.Sprintf("unknown volume %q", req.Volume))
-		}
-		return
-	}
-	plan, err := s.opts.Decider.Plan(r.Context(), vol)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	mode := triagearr.ResolveRunMode(s.opts.DaemonLive, triagearr.RunTriggerHTTP, req.Mode == "live")
-	run := triagearr.Run{
-		TriggeredBy:         triagearr.RunTriggerHTTP,
-		TriggeredAt:         time.Now().UTC(),
-		Mode:                string(mode),
-		VolumeName:          vol.Name,
-		FreePctAtFire:       plan.FreePctAtFire,
-		TargetFreePct:       vol.TargetFreePercent,
-		EstimatedFreedBytes: plan.EstimatedFreedBytes,
-		StopReason:          plan.StopReason,
-		Status:              "completed",
-	}
-	id, err := s.opts.Store.InsertRun(r.Context(), run)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "persisting run: "+err.Error())
-		return
-	}
-	if err := s.opts.Store.InsertRunItems(r.Context(), id, plan.Items); err != nil {
-		writeError(w, http.StatusInternalServerError, "persisting items: "+err.Error())
-		return
-	}
-	run.ID = id
-	if mode == triagearr.RunModeLive && s.opts.Actor != nil {
-		if err := s.opts.Actor.Execute(r.Context(), id); err != nil {
-			slog.Warn("actor execute failed", "run_id", id, "err", err)
-		} else {
-			// Refresh the run + items so the response carries the post-Actor status.
-			if refreshed, items, err := s.opts.Store.GetRun(r.Context(), id); err == nil {
-				writeJSON(w, http.StatusOK, buildResponse(refreshed, items))
-				return
-			}
-		}
-	}
-	writeJSON(w, http.StatusOK, buildResponse(run, plan.Items))
-}
-
-func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
-	limit := 50
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > 500 {
-			writeError(w, http.StatusBadRequest, "limit must be 1..500")
-			return
-		}
-		limit = n
-	}
-	rows, err := s.opts.Store.ListRuns(r.Context(), store.ListRunsOpts{Limit: limit})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	out := make([]runResponse, len(rows))
-	for i, r := range rows {
-		out[i] = buildResponse(r, nil)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"runs": out})
-}
-
-func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "id must be a positive integer")
-		return
-	}
-	run, items, err := s.opts.Store.GetRun(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "run not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, buildResponse(run, items))
-}
-
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// resolveVolume returns the requested volume, or — when none is named —
-// picks the most-pressed one from the configured set (lowest free%).
-func (s *Server) resolveVolume(name string) (decider.Volume, bool) {
-	if name != "" {
-		return s.opts.Volume(name)
-	}
-	all := s.opts.Volumes()
-	if len(all) == 0 {
-		return decider.Volume{}, false
-	}
-	// Without a disk snapshot here, fall back to the first configured volume.
-	// Callers wanting smart selection should pass an explicit name.
-	return all[0], true
-}
-
-func buildResponse(r triagearr.Run, items []triagearr.RunItem) runResponse {
-	out := runResponse{
-		RunID:               r.ID,
-		TriggeredBy:         string(r.TriggeredBy),
-		TriggeredAt:         r.TriggeredAt,
-		Mode:                r.Mode,
-		Volume:              r.VolumeName,
-		FreePctAtFire:       r.FreePctAtFire,
-		TargetFreePct:       r.TargetFreePct,
-		EstimatedFreedBytes: r.EstimatedFreedBytes,
-		StopReason:          string(r.StopReason),
-		Status:              r.Status,
-	}
-	for _, it := range items {
-		out.Candidates = append(out.Candidates, runItemResponse{
-			Rank:           it.Rank,
-			TorrentHash:    string(it.TorrentHash),
-			Score:          it.Score,
-			SizeBytes:      it.SizeBytes,
-			WouldFreeBytes: it.WouldFreeBytes,
-		})
-	}
-	return out
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+func (s *Server) handleAuthMode(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"auth": s.opts.Auth})
 }

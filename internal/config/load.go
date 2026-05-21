@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"regexp"
@@ -11,6 +12,20 @@ import (
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
 )
+
+// isLoopbackBind reports whether bind addresses a loopback interface.
+// Empty / malformed bindings are considered non-loopback (safer default).
+func isLoopbackBind(bind string) bool {
+	host, _, err := net.SplitHostPort(bind)
+	if err != nil {
+		return false
+	}
+	if host == "" || host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 // Load reads the YAML config at path, expands ${VAR} and ${VAR:-default}
 // references against the process environment, applies defaults, and validates
@@ -110,6 +125,13 @@ func applyDefaults(c *Config) {
 	}
 	if c.HTTP.Bind == "" {
 		c.HTTP.Bind = defaultBind
+	}
+	if c.HTTP.Auth == "" {
+		if isLoopbackBind(c.HTTP.Bind) {
+			c.HTTP.Auth = HTTPAuthNone
+		} else {
+			c.HTTP.Auth = HTTPAuthAPIKey
+		}
 	}
 	if c.Storage.SQLitePath == "" {
 		c.Storage.SQLitePath = defaultSQLitePath
@@ -211,6 +233,17 @@ func applyArrDefaults(insts []ArrInstanceConfig) {
 func Validate(c *Config) error {
 	if c.Mode != ModeDryRun && c.Mode != ModeLive {
 		return fmt.Errorf("mode: must be %q or %q, got %q", ModeDryRun, ModeLive, c.Mode)
+	}
+
+	if c.HTTP.Bind != "" {
+		switch c.HTTP.Auth {
+		case HTTPAuthNone, HTTPAuthAPIKey:
+		default:
+			return fmt.Errorf("http.auth: must be %q or %q, got %q", HTTPAuthNone, HTTPAuthAPIKey, c.HTTP.Auth)
+		}
+		if c.HTTP.Auth == HTTPAuthNone && !isLoopbackBind(c.HTTP.Bind) {
+			return fmt.Errorf("http.auth=none is only allowed with a loopback bind, got %q — set auth: apikey or bind to 127.0.0.1", c.HTTP.Bind)
+		}
 	}
 
 	for _, group := range []struct {

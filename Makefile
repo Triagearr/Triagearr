@@ -16,12 +16,26 @@ LDFLAGS     := -s -w \
 GO          ?= go
 GOFLAGS     ?=
 
-.PHONY: all build run test cover lint tidy clean docker help
+.PHONY: all build run test cover lint tidy clean docker help web-install web-build web-dev web-test
 
 all: lint test build
 
-build: ## Build the binary into ./bin
+build: web-build ## Build the binary into ./bin (after building the React UI)
 	CGO_ENABLED=0 $(GO) build $(GOFLAGS) -trimpath -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/$(BINARY) $(CMD)
+
+# ---- Frontend (M6) ----
+
+web-install: ## Install JS deps via bun
+	cd web && bun install --frozen-lockfile
+
+web-build: ## Build the React UI into web/dist (embedded by web/web.go)
+	cd web && bun install --frozen-lockfile && bun run build
+
+web-dev: ## Run the Vite dev server against a running daemon
+	cd web && bun run dev
+
+web-test: ## Run vitest
+	cd web && bun run test
 
 run: ## Run the binary directly
 	$(GO) run $(CMD) $(ARGS)
