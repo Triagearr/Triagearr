@@ -33,7 +33,11 @@ func TestStub_AllOperationalMethodsErrorOut(t *testing.T) {
 	require.Nil(t, items)
 	require.ErrorContains(t, err, "ListMedia not implemented in M1")
 
-	require.ErrorContains(t, c.DeleteMedia(ctx, 1, triagearr.DeleteOpts{}), "lands in M5")
+	// Stubs deliberately do not implement FileDeleter — the type-assert in
+	// the registry/actor path is the gate, not a stub error message.
+	var _ triagearr.ArrInstance = c
+	_, isDeleter := any(c).(triagearr.FileDeleter)
+	require.False(t, isDeleter)
 }
 
 func TestStub_Validations(t *testing.T) {

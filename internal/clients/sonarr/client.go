@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -206,13 +207,48 @@ func (c *Client) ListImports(ctx context.Context, sinceHistoryID int64) ([]triag
 	return arrhistory.Fetch(ctx, c.get, sinceHistoryID)
 }
 
-// DeleteMedia is not wired in M1 — destructive ops live in the M5 Actor milestone.
-func (c *Client) DeleteMedia(_ context.Context, _ triagearr.MediaID, _ triagearr.DeleteOpts) error {
-	return errors.New("sonarr: DeleteMedia not implemented in M1")
+// DeleteMediaFile removes one episode file from Sonarr's library. With
+// opts.DeleteFiles=true Sonarr unlinks the on-disk file (drops the *arr-side
+// hardlink reference); with opts.AddImportExclusion=true the release is added
+// to the import exclusion list so *arr won't re-grab the same release.
+//
+// 5xx and transport failures are wrapped with triagearr.ErrTransient so the
+// Actor's retry loop can distinguish them from hard failures (404, 401).
+func (c *Client) DeleteMediaFile(ctx context.Context, fileID int64, opts triagearr.DeleteOpts) error {
+	path := fmt.Sprintf("/api/v3/episodefile/%d", fileID)
+	q := url.Values{}
+	if opts.DeleteFiles {
+		q.Set("deleteFiles", "true")
+	}
+	if opts.AddImportExclusion {
+		q.Set("addImportExclusion", "true")
+	}
+	if encoded := q.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("sonarr: building DELETE %s: %w", path, err)
+	}
+	req.Header.Set("X-Api-Key", c.apiKey)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("sonarr: DELETE %s: %w: %w", path, triagearr.ErrTransient, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("sonarr: DELETE %s: HTTP %d: %s: %w", path, resp.StatusCode, string(body), triagearr.ErrTransient)
+	}
+	return fmt.Errorf("sonarr: DELETE %s: HTTP %d: %s", path, resp.StatusCode, string(body))
 }
 
 var (
 	_ triagearr.ArrInstance  = (*Client)(nil)
 	_ triagearr.FileLister   = (*Client)(nil)
 	_ triagearr.ImportLister = (*Client)(nil)
+	_ triagearr.FileDeleter  = (*Client)(nil)
 )

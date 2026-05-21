@@ -2,6 +2,7 @@ package sonarr_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -68,11 +69,45 @@ func TestListMedia(t *testing.T) {
 	require.Equal(t, "main", items[0].ArrName)
 }
 
-func TestDeleteMedia_NotImplemented(t *testing.T) {
-	c := newClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "should not be called", http.StatusInternalServerError)
+func TestDeleteMediaFile_OK(t *testing.T) {
+	var seen struct {
+		method string
+		path   string
+		query  string
+		apiKey string
+	}
+	c := newClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen.method = r.Method
+		seen.path = r.URL.Path
+		seen.query = r.URL.RawQuery
+		seen.apiKey = r.Header.Get("X-Api-Key")
+		w.WriteHeader(http.StatusOK)
 	}))
-	require.Error(t, c.DeleteMedia(context.Background(), 1, triagearr.DeleteOpts{DeleteFiles: true}))
+	err := c.DeleteMediaFile(context.Background(), 42, triagearr.DeleteOpts{DeleteFiles: true, AddImportExclusion: true})
+	require.NoError(t, err)
+	require.Equal(t, http.MethodDelete, seen.method)
+	require.Equal(t, "/api/v3/episodefile/42", seen.path)
+	require.Contains(t, seen.query, "deleteFiles=true")
+	require.Contains(t, seen.query, "addImportExclusion=true")
+	require.Equal(t, "k", seen.apiKey)
+}
+
+func TestDeleteMediaFile_404_HardFail(t *testing.T) {
+	c := newClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "gone", http.StatusNotFound)
+	}))
+	err := c.DeleteMediaFile(context.Background(), 1, triagearr.DeleteOpts{DeleteFiles: true})
+	require.Error(t, err)
+	require.False(t, errors.Is(err, triagearr.ErrTransient))
+}
+
+func TestDeleteMediaFile_500_Transient(t *testing.T) {
+	c := newClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	err := c.DeleteMediaFile(context.Background(), 1, triagearr.DeleteOpts{DeleteFiles: true})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, triagearr.ErrTransient))
 }
 
 func TestNew_Validations(t *testing.T) {

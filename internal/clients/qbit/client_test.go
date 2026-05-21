@@ -2,6 +2,7 @@ package qbit_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -109,8 +110,34 @@ func TestTorrentFiles(t *testing.T) {
 	require.Equal(t, "Foo.mkv", files[0].Name)
 }
 
-func TestDelete_NotImplemented(t *testing.T) {
-	c, err := qbit.New(qbit.Options{BaseURL: "http://localhost:1"})
+func TestDelete_DeleteFilesTrue(t *testing.T) {
+	var seen struct {
+		method, path, hashes, deleteFiles string
+	}
+	srv := newServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen.method = r.Method
+		seen.path = r.URL.Path
+		_ = r.ParseForm()
+		seen.hashes = r.FormValue("hashes")
+		seen.deleteFiles = r.FormValue("deleteFiles")
+		w.WriteHeader(http.StatusOK)
+	}))
+	c, err := qbit.New(qbit.Options{BaseURL: srv.URL})
 	require.NoError(t, err)
-	require.Error(t, c.Delete(context.Background(), "h", triagearr.DeleteOpts{}))
+	require.NoError(t, c.Delete(context.Background(), "abc", triagearr.DeleteOpts{DeleteFiles: true}))
+	require.Equal(t, http.MethodPost, seen.method)
+	require.Equal(t, "/api/v2/torrents/delete", seen.path)
+	require.Equal(t, "abc", seen.hashes)
+	require.Equal(t, "true", seen.deleteFiles)
+}
+
+func TestDelete_5xx_Transient(t *testing.T) {
+	srv := newServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusBadGateway)
+	}))
+	c, err := qbit.New(qbit.Options{BaseURL: srv.URL})
+	require.NoError(t, err)
+	err = c.Delete(context.Background(), "abc", triagearr.DeleteOpts{DeleteFiles: true})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, triagearr.ErrTransient))
 }

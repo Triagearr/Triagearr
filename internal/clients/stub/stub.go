@@ -71,9 +71,4 @@ func (c *Client) ListMedia(_ context.Context) ([]triagearr.MediaItem, error) {
 	return nil, fmt.Errorf("%s ListMedia not implemented in M1", c.typ)
 }
 
-// DeleteMedia is destructive and explicitly not implemented.
-func (c *Client) DeleteMedia(_ context.Context, _ triagearr.MediaID, _ triagearr.DeleteOpts) error {
-	return fmt.Errorf("%s DeleteMedia not implemented (lands in M5)", c.typ)
-}
-
 var _ triagearr.ArrInstance = (*Client)(nil)

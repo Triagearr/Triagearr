@@ -264,9 +264,45 @@ func parseTrackerHost(raw string) string {
 	return strings.ToLower(u.Hostname())
 }
 
-// Delete is not implemented in M1 — destructive ops land in M5 (the Actor milestone).
-func (c *Client) Delete(_ context.Context, _ triagearr.Hash, _ triagearr.DeleteOpts) error {
-	return errors.New("qbit: Delete not implemented in M1")
+// Delete removes a torrent from qBit. When opts.DeleteFiles is true qBit
+// unlinks the on-disk files (last hardlink reference on a TRaSH-guides
+// hardlink layout); the *arr-side delete must already have run — see
+// HARDLINK_TOPOLOGY.md and ADR-0003 for why the order matters.
+//
+// 5xx and transport failures are wrapped with triagearr.ErrTransient so the
+// Actor's retry loop can pick them up.
+func (c *Client) Delete(ctx context.Context, h triagearr.Hash, opts triagearr.DeleteOpts) error {
+	if err := c.ensureLogin(ctx); err != nil {
+		return err
+	}
+	form := url.Values{"hashes": {string(h)}, "deleteFiles": {"false"}}
+	if opts.DeleteFiles {
+		form.Set("deleteFiles", "true")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v2/torrents/delete", strings.NewReader(form.Encode()))
+	if err != nil {
+		return fmt.Errorf("qbit: building DELETE request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("qbit: POST /torrents/delete: %w: %w", triagearr.ErrTransient, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusForbidden {
+		c.mu.Lock()
+		c.loggedIn = false
+		c.mu.Unlock()
+		return fmt.Errorf("qbit: POST /torrents/delete: HTTP 403 (session expired): %w", triagearr.ErrTransient)
+	}
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("qbit: POST /torrents/delete: HTTP %d: %s: %w", resp.StatusCode, string(body), triagearr.ErrTransient)
+	}
+	return fmt.Errorf("qbit: POST /torrents/delete: HTTP %d: %s", resp.StatusCode, string(body))
 }
 
 var _ triagearr.QbitClient = (*Client)(nil)

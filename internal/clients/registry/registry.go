@@ -107,3 +107,24 @@ func (r *Registry) AllPolling() []triagearr.ArrInstance {
 	}
 	return out
 }
+
+// Deleter returns the FileDeleter for the named instance when (a) the
+// instance exists, (b) it has `act: true`, and (c) the client implements
+// FileDeleter. Stub *arr types (lidarr/readarr/whisparr) deliberately do
+// not — they fail (c) and are rejected here.
+func (r *Registry) Deleter(name string) (triagearr.FileDeleter, bool) {
+	for _, inst := range r.instances {
+		if inst.Name() != name {
+			continue
+		}
+		if !inst.Act() {
+			return nil, false
+		}
+		d, ok := inst.(triagearr.FileDeleter)
+		if !ok {
+			return nil, false
+		}
+		return d, true
+	}
+	return nil, false
+}

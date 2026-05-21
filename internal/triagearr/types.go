@@ -51,21 +51,40 @@ type MediaFile struct {
 }
 
 // DeleteOpts controls the behaviour of a delete call.
-// Filled out in M5 — kept here so M1 stubs can compile against the final signature.
 type DeleteOpts struct {
 	DeleteFiles        bool
 	AddImportExclusion bool
 }
 
+// ErrTransient marks an upstream failure (5xx, timeout, connection reset)
+// that the Actor may retry. Clients wrap their concrete error with this
+// sentinel via errors.Join so callers can detect it with errors.Is.
+var ErrTransient = errTransient{}
+
+type errTransient struct{}
+
+func (errTransient) Error() string { return "transient upstream failure" }
+
 // ArrInstance is the contract every *arr client implements.
+//
+// Deletion is per-file (episodeFile/movieFile) and lives on the optional
+// FileDeleter interface — *arr clients that can act type-assert into it,
+// stubs do not. M5's Actor consumes FileDeleter, not ArrInstance, for the
+// destructive step.
 type ArrInstance interface {
 	Name() string
 	Type() ArrType
 	Poll() bool
 	Act() bool
 	ListMedia(ctx context.Context) ([]MediaItem, error)
-	DeleteMedia(ctx context.Context, id MediaID, opts DeleteOpts) error
 	HealthCheck(ctx context.Context) error
+}
+
+// FileDeleter is the optional capability for *arr clients that can delete a
+// single library file (one episodeFile.id / movieFile.id). The Actor (M5)
+// fans the per-torrent decision out into N per-file DELETE calls.
+type FileDeleter interface {
+	DeleteMediaFile(ctx context.Context, fileID int64, opts DeleteOpts) error
 }
 
 // Hash is a qBittorrent torrent hash (info hash v1, lowercase hex).
