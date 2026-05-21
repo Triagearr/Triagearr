@@ -68,8 +68,10 @@ type Server struct {
 func New(opts Options) *Server {
 	s := &Server{
 		opts:     opts,
-		runRate:  newIPRateLimiter(1, time.Minute),
-		authRate: newIPRateLimiter(5, time.Minute),
+		// Runs: generous burst for interactive homelab use (clicking "Plan
+		// dry-run" twice shouldn't be a 429). Still catches a runaway loop.
+		runRate:  newIPRateLimiter(20, time.Minute),
+		authRate: newIPRateLimiter(10, time.Minute),
 	}
 
 	mux := http.NewServeMux()

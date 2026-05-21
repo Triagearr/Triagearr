@@ -60,19 +60,20 @@ func TestRateLimit_PostRuns(t *testing.T) {
 	cfg := &config.Config{HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"}}
 	h := buildSrvM6(t, cfg)
 
-	// First call OK.
-	w1 := httptest.NewRecorder()
-	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
-	req1.RemoteAddr = "10.0.0.1:1234"
-	h.ServeHTTP(w1, req1)
-	require.Equal(t, http.StatusOK, w1.Code, w1.Body.String())
-
-	// Immediate second call from same IP rejected.
-	w2 := httptest.NewRecorder()
-	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
-	req2.RemoteAddr = "10.0.0.1:1234"
-	h.ServeHTTP(w2, req2)
-	require.Equal(t, http.StatusTooManyRequests, w2.Code)
+	// Burst of 20 succeed from one IP — homelab UX must not 429 on a few
+	// interactive clicks. The 21st request is the one that should be throttled.
+	for i := 0; i < 20; i++ {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
+		req.RemoteAddr = "10.0.0.1:1234"
+		h.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, "call %d: %s", i+1, w.Body.String())
+	}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
+	req.RemoteAddr = "10.0.0.1:1234"
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusTooManyRequests, w.Code)
 }
 
 func TestConfigRedaction_NoSecretLeaks(t *testing.T) {
