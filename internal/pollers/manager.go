@@ -2,6 +2,7 @@ package pollers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -32,10 +33,11 @@ func (m *Manager) Run(ctx context.Context) error {
 		}(i, p)
 	}
 	wg.Wait()
+	wrapped := make([]error, 0, len(errs))
 	for i, err := range errs {
 		if err != nil {
-			return fmt.Errorf("poller %s: %w", m.pollers[i].Name(), err)
+			wrapped = append(wrapped, fmt.Errorf("poller %s: %w", m.pollers[i].Name(), err))
 		}
 	}
-	return nil
+	return errors.Join(wrapped...)
 }

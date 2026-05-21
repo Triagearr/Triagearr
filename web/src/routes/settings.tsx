@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useConfig, useVersion, useVolumes } from "@/api/hooks";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { RunTriggerDialog } from "@/components/RunTriggerDialog";
 import { SecuritySection } from "@/components/SecuritySection";
 
@@ -37,17 +38,16 @@ function SettingsPage() {
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-sm text-muted-foreground">Volume</label>
-            <select
+            <Select
               value={selectedVolume}
               onChange={(e) => setVolume(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               {list.map((v) => (
                 <option key={v.name} value={v.name}>
                   {v.name} ({v.path})
                 </option>
               ))}
-            </select>
+            </Select>
             <Button onClick={() => setOpen("dry-run")} disabled={!selectedVolume}>
               Plan dry-run
             </Button>
@@ -61,7 +61,7 @@ function SettingsPage() {
           </div>
           {selectedVolume && open && (
             <RunTriggerDialog
-              open={open !== null}
+              open
               onClose={() => setOpen(null)}
               volume={selectedVolume}
               mode={open}

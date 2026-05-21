@@ -13,8 +13,24 @@ import (
 
 	"github.com/Triagearr/Triagearr/internal/actor"
 	"github.com/Triagearr/Triagearr/internal/decider"
+	"github.com/Triagearr/Triagearr/internal/pollers"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
+
+// NewDiskWatcher constructs a DiskWatcher with its internal maps initialised.
+// Prefer this over a struct literal so a future caller that invokes tick()
+// directly (e.g. in tests) doesn't NPE on the lazy maps.
+func NewDiskWatcher(rules []VolumeRule, d *decider.Decider, store RunStore, interval time.Duration) *DiskWatcher {
+	return &DiskWatcher{
+		Rules:     rules,
+		Decider:   d,
+		Store:     store,
+		Interval:  interval,
+		now:       func() time.Time { return time.Now().UTC() },
+		lastFire:  map[string]time.Time{},
+		firingNow: map[string]bool{},
+	}
+}
 
 // DefaultReFireGrace is the minimum delay between two consecutive fires on
 // the same volume. Prevents spamming runs when free% oscillates around the
@@ -79,7 +95,7 @@ func (w *DiskWatcher) Run(ctx context.Context) error {
 	if grace <= 0 {
 		grace = DefaultReFireGrace
 	}
-	return tickLoop(ctx, w.Name(), w.Interval, func(ctx context.Context) error {
+	return pollers.TickLoop(ctx, w.Name(), w.Interval, func(ctx context.Context) error {
 		return w.tick(ctx, grace)
 	})
 }

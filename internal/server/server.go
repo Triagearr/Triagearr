@@ -14,6 +14,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/Triagearr/Triagearr/internal/actor"
@@ -68,6 +69,17 @@ type Server struct {
 	srv      *http.Server
 	runRate  *ipRateLimiter
 	authRate *ipRateLimiter
+
+	// authState caches the "is any user registered" flag and the timestamp
+	// of the last DB check. Used by middleware.auth on every request to
+	// avoid a per-request SELECT COUNT(*).
+	authState atomic.Value // holds authStateCache
+}
+
+// authStateCache is the atomic snapshot stored on Server.authState.
+type authStateCache struct {
+	enabled   bool
+	checkedAt time.Time
 }
 
 // New builds a Server. Does not start listening.

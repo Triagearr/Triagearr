@@ -1,6 +1,7 @@
 package server
 
 import (
+	"container/list"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -14,6 +15,17 @@ import (
 
 	"golang.org/x/time/rate"
 )
+
+// authEnabledTTL caps how long the cached "is any auth_user registered" flag
+// is trusted before re-checking the DB. The flag flips at most twice in the
+// process lifetime (enable then disable), so the only constraint is that a
+// fresh deployment should pick up the change within a few seconds.
+const authEnabledTTL = 3 * time.Second
+
+// touchInterval is the minimum gap between two sliding-window refreshes for
+// the same session. Without this, every authenticated request pays a writer
+// round-trip — and the writer pool serialises through a single connection.
+const touchInterval = 5 * time.Minute
 
 // security emits the default security headers on every response.
 // CSP allows inline styles because Tailwind v4 emits some at runtime;
@@ -63,15 +75,31 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// authEnabled reports whether any user is registered in auth_users.
+// authEnabled reports whether any user is registered in auth_users. The
+// result is cached for authEnabledTTL so steady-state requests skip the DB.
 func (s *Server) authEnabled(ctx context.Context) (bool, error) {
 	if s.opts.Store == nil {
 		return false, nil
 	}
-	return s.opts.Store.HasAuthUser(ctx)
+	if c, ok := s.authState.Load().(authStateCache); ok && time.Since(c.checkedAt) < authEnabledTTL {
+		return c.enabled, nil
+	}
+	enabled, err := s.opts.Store.HasAuthUser(ctx)
+	if err != nil {
+		return false, err
+	}
+	s.authState.Store(authStateCache{enabled: enabled, checkedAt: time.Now()})
+	return enabled, nil
 }
 
-// resolveSession looks up the session cookie; touches it on success.
+// invalidateAuthState forces the next authEnabled call to re-query the DB.
+// Called by handlers that toggle auth_users (enable / disable).
+func (s *Server) invalidateAuthState() {
+	s.authState.Store(authStateCache{})
+}
+
+// resolveSession looks up the session cookie; refreshes its sliding window
+// only when stale enough to warrant a writer round-trip.
 func (s *Server) resolveSession(r *http.Request) (int64, bool) {
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil || c.Value == "" {
@@ -81,14 +109,14 @@ func (s *Server) resolveSession(r *http.Request) (int64, bool) {
 	sess, err := s.opts.Store.LookupAuthSession(r.Context(), hash)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
-			// log via slog at the call site if needed; for an auth lookup
-			// failure we simply treat as anonymous.
+			// Treat a DB error as anonymous; the next request will retry.
 			_ = err
 		}
 		return 0, false
 	}
-	// Sliding refresh; best-effort.
-	_ = s.opts.Store.TouchAuthSession(r.Context(), hash, sessionTTL)
+	if time.Since(sess.LastSeenAt) >= touchInterval {
+		_ = s.opts.Store.TouchAuthSession(r.Context(), hash, sessionTTL)
+	}
 	return sess.UserID, true
 }
 
@@ -114,13 +142,27 @@ func hashToken(token string) string {
 
 // ipRateLimiter caps the request rate per client IP. Used on destructive or
 // sensitive endpoints so a misbehaving script or UI loop can't spam them.
+//
+// The map is bounded LRU-style: once `maxIPs` distinct IPs have been seen,
+// the least recently used limiter is evicted on each insert. Without this,
+// a scanner cycling through random IPs would grow the map indefinitely.
 type ipRateLimiter struct {
 	mu       sync.Mutex
-	limiters map[string]*rate.Limiter
+	limiters map[string]*list.Element
+	lru      *list.List // front = most recent
 	r        rate.Limit
 	burst    int
-	window   time.Duration
+	maxIPs   int
 }
+
+type ipLimiterEntry struct {
+	ip  string
+	lim *rate.Limiter
+}
+
+// ipLimiterCap caps the LRU at 10k distinct IPs — generous for a home-lab
+// deployment while keeping the map bounded for any pathological caller.
+const ipLimiterCap = 10_000
 
 // newIPRateLimiter allows `burst` calls per `window` per IP.
 func newIPRateLimiter(burst int, window time.Duration) *ipRateLimiter {
@@ -128,10 +170,11 @@ func newIPRateLimiter(burst int, window time.Duration) *ipRateLimiter {
 		burst = 1
 	}
 	return &ipRateLimiter{
-		limiters: make(map[string]*rate.Limiter),
+		limiters: make(map[string]*list.Element),
+		lru:      list.New(),
 		r:        rate.Every(window / time.Duration(burst)),
 		burst:    burst,
-		window:   window,
+		maxIPs:   ipLimiterCap,
 	}
 }
 
@@ -152,11 +195,20 @@ func buildRateLimiter(perMinute, defaultPerMinute int) *ipRateLimiter {
 func (l *ipRateLimiter) take(ip string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	lim, ok := l.limiters[ip]
-	if !ok {
-		lim = rate.NewLimiter(l.r, l.burst)
-		l.limiters[ip] = lim
+	if el, ok := l.limiters[ip]; ok {
+		l.lru.MoveToFront(el)
+		return el.Value.(*ipLimiterEntry).lim.Allow()
 	}
+	if l.lru.Len() >= l.maxIPs {
+		old := l.lru.Back()
+		if old != nil {
+			l.lru.Remove(old)
+			delete(l.limiters, old.Value.(*ipLimiterEntry).ip)
+		}
+	}
+	lim := rate.NewLimiter(l.r, l.burst)
+	el := l.lru.PushFront(&ipLimiterEntry{ip: ip, lim: lim})
+	l.limiters[ip] = el
 	return lim.Allow()
 }
 
@@ -168,28 +220,28 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-func (s *Server) runRateLimit(h http.HandlerFunc) http.HandlerFunc {
-	if s.runRate == nil {
-		return h
-	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.runRate.take(clientIP(r)) {
-			writeError(w, http.StatusTooManyRequests, "rate limit exceeded — try again in a minute")
-			return
+// rateLimit returns a middleware that drops requests beyond lim's per-IP
+// budget, responding with 429 and the given user-facing message. A nil
+// limiter is a pass-through (rate limiting disabled via config).
+func rateLimit(lim *ipRateLimiter, msg string) func(http.HandlerFunc) http.HandlerFunc {
+	return func(h http.HandlerFunc) http.HandlerFunc {
+		if lim == nil {
+			return h
 		}
-		h(w, r)
+		return func(w http.ResponseWriter, r *http.Request) {
+			if !lim.take(clientIP(r)) {
+				writeError(w, http.StatusTooManyRequests, msg)
+				return
+			}
+			h(w, r)
+		}
 	}
 }
 
+func (s *Server) runRateLimit(h http.HandlerFunc) http.HandlerFunc {
+	return rateLimit(s.runRate, "rate limit exceeded — try again in a minute")(h)
+}
+
 func (s *Server) authRateLimit(h http.HandlerFunc) http.HandlerFunc {
-	if s.authRate == nil {
-		return h
-	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.authRate.take(clientIP(r)) {
-			writeError(w, http.StatusTooManyRequests, "too many auth attempts — try again later")
-			return
-		}
-		h(w, r)
-	}
+	return rateLimit(s.authRate, "too many auth attempts — try again later")(h)
 }

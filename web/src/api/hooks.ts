@@ -202,7 +202,7 @@ export function useRuns() {
 
 export function useRunActions(id: number | undefined) {
   return useQuery({
-    queryKey: queryKeys.runActions(id ?? 0),
+    queryKey: id != null ? queryKeys.runActions(id) : ["run", "noop"],
     queryFn: () => apiFetch(`/api/v1/runs/${id}/actions`, RunActionList),
     enabled: Boolean(id),
   });
@@ -218,7 +218,7 @@ export function useActions(limit = 50, offset = 0) {
 
 export function useAction(id: number | undefined) {
   return useQuery({
-    queryKey: queryKeys.action(id ?? 0),
+    queryKey: id != null ? queryKeys.action(id) : ["action", "noop"],
     queryFn: () => apiFetch(`/api/v1/actions/${id}`, ActionDetail),
     enabled: Boolean(id),
   });
@@ -250,7 +250,7 @@ export function useTriggerRun() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.runs });
       qc.invalidateQueries({ queryKey: queryKeys.summary });
-      qc.invalidateQueries({ queryKey: queryKeys.actions(50, 0) });
+      qc.invalidateQueries({ queryKey: ["actions"] });
     },
   });
 }

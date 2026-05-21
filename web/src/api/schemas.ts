@@ -50,10 +50,21 @@ export const TorrentList = z.object({
   offset: z.number(),
 });
 
+export const TrackerStatus = z.enum([
+  "working",
+  "not_contacted",
+  "updating",
+  "not_working",
+  "disabled",
+  "unknown",
+]);
+export type TrackerStatusT = z.infer<typeof TrackerStatus>;
+
 export const TrackerView = z.object({
   host: z.string(),
   url: z.string(),
-  status: z.string(),
+  // Server may add new states; fall through to "unknown" rather than fail validation.
+  status: TrackerStatus.catch("unknown"),
   message: z.string(),
   last_checked: ts,
 });
@@ -150,11 +161,14 @@ export const ArrView = z.object({
 export type ArrViewT = z.infer<typeof ArrView>;
 export const ArrList = z.object({ arrs: z.array(ArrView) });
 
+export const RunMode = z.enum(["live", "dry-run"]).catch("dry-run");
+export type RunModeT = z.infer<typeof RunMode>;
+
 export const RunResponse = z.object({
   run_id: z.number(),
   triggered_by: z.string(),
   triggered_at: ts,
-  mode: z.string(),
+  mode: RunMode,
   volume: z.string().optional(),
   free_pct_at_fire: z.number().optional(),
   target_free_pct: z.number().optional(),
@@ -176,12 +190,17 @@ export const RunResponse = z.object({
 export type RunResponseT = z.infer<typeof RunResponse>;
 export const RunList = z.object({ runs: z.array(RunResponse) });
 
+export const ActionStatus = z
+  .enum(["succeeded", "pending", "running", "failed_qbit", "aborted_arr_fail"])
+  .catch("pending");
+export type ActionStatusT = z.infer<typeof ActionStatus>;
+
 export const ActionView = z.object({
   id: z.number(),
   run_id: z.number(),
   rank: z.number(),
   torrent_hash: z.string(),
-  status: z.string(),
+  status: ActionStatus,
   started_at: ts,
   finished_at: ts.nullable().optional(),
   freed_bytes: z.number(),
@@ -194,11 +213,16 @@ export const ActionList = z.object({
   offset: z.number(),
 });
 
+export const AuditOutcome = z
+  .enum(["ok", "failed", "skipped", "not_attempted"])
+  .catch("ok");
+export type AuditOutcomeT = z.infer<typeof AuditOutcome>;
+
 export const AuditView = z.object({
   id: z.number(),
   ts: ts,
   step: z.string(),
-  outcome: z.string(),
+  outcome: AuditOutcome,
   arr_name: z.string().optional(),
   arr_file_id: z.number().optional(),
   detail: z.string().optional(),

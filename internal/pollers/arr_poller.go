@@ -43,7 +43,7 @@ func (p *ArrPoller) Name() string { return "arr" }
 
 // Run blocks until ctx is cancelled.
 func (p *ArrPoller) Run(ctx context.Context) error {
-	return tickLoop(ctx, p.Name(), p.Interval, p.tick)
+	return TickLoop(ctx, p.Name(), p.Interval, p.tick)
 }
 
 func (p *ArrPoller) tick(ctx context.Context) error {
@@ -54,6 +54,7 @@ func (p *ArrPoller) tick(ctx context.Context) error {
 }
 
 func (p *ArrPoller) pollOne(ctx context.Context, inst triagearr.ArrInstance) {
+	logger := slog.With("arr", inst.Type(), "name", inst.Name())
 	url := p.URLs[URLKey(inst.Name(), inst.Type())]
 	healthErr := inst.HealthCheck(ctx)
 	healthy := healthErr == nil
@@ -62,10 +63,10 @@ func (p *ArrPoller) pollOne(ctx context.Context, inst triagearr.ArrInstance) {
 		lastErr = healthErr.Error()
 	}
 	if err := p.Store.UpsertArrInstance(ctx, inst.Name(), inst.Type(), url, healthy, lastErr); err != nil {
-		slog.Warn("upsert arr_instance failed", "arr", inst.Type(), "name", inst.Name(), "err", err)
+		logger.Warn("upsert arr_instance failed", "err", err)
 	}
 	if !healthy {
-		slog.Info("arr unhealthy", "arr", inst.Type(), "name", inst.Name(), "err", healthErr)
+		logger.Info("arr unhealthy", "err", healthErr)
 		return
 	}
 	items, err := inst.ListMedia(ctx)
@@ -74,7 +75,7 @@ func (p *ArrPoller) pollOne(ctx context.Context, inst triagearr.ArrInstance) {
 		if errors.Is(err, context.Canceled) {
 			return
 		}
-		slog.Debug("list media failed", "arr", inst.Type(), "name", inst.Name(), "err", err)
+		logger.Debug("list media failed", "err", err)
 		return
 	}
 	lister, hasFileLister := inst.(triagearr.FileLister)
@@ -83,7 +84,7 @@ func (p *ArrPoller) pollOne(ctx context.Context, inst triagearr.ArrInstance) {
 	lastFileCall := time.Time{}
 	for _, m := range items {
 		if err := p.Store.UpsertMedia(ctx, m); err != nil {
-			slog.Warn("upsert media failed", "arr", inst.Type(), "name", inst.Name(), "id", m.ID, "err", err)
+			logger.Warn("upsert media failed", "id", m.ID, "err", err)
 			continue
 		}
 		if !hasFileLister {
@@ -102,21 +103,20 @@ func (p *ArrPoller) pollOne(ctx context.Context, inst triagearr.ArrInstance) {
 		lastFileCall = time.Now()
 		files, err := lister.ListMediaFiles(ctx, m.ID)
 		if err != nil {
-			slog.Debug("list media files failed", "arr", inst.Type(), "name", inst.Name(), "id", m.ID, "err", err)
+			logger.Debug("list media files failed", "id", m.ID, "err", err)
 			filesFailed++
 			continue
 		}
 		for _, f := range files {
 			if err := p.Store.UpsertMediaFile(ctx, f); err != nil {
-				slog.Warn("upsert media_file failed", "arr", inst.Type(), "name", inst.Name(), "file_id", f.FileID, "err", err)
+				logger.Warn("upsert media_file failed", "file_id", f.FileID, "err", err)
 				continue
 			}
 			filesTotal++
 		}
 	}
-	imports, importsFailed := p.syncImports(ctx, inst)
-	slog.Info("arr tick complete",
-		"arr", inst.Type(), "name", inst.Name(),
+	imports, importsFailed := p.syncImports(ctx, inst, logger)
+	logger.Info("arr tick complete",
 		"media", len(items),
 		"files", filesTotal, "files_failed", filesFailed,
 		"imports_new", imports, "imports_failed", importsFailed)
@@ -125,24 +125,24 @@ func (p *ArrPoller) pollOne(ctx context.Context, inst triagearr.ArrInstance) {
 // syncImports pulls the *arr-side import history delta (since the highest
 // history_id we've already stored) and upserts arr_imports. Skipped silently
 // when the client doesn't implement ImportLister (stub clients).
-func (p *ArrPoller) syncImports(ctx context.Context, inst triagearr.ArrInstance) (ok, failed int) {
+func (p *ArrPoller) syncImports(ctx context.Context, inst triagearr.ArrInstance, logger *slog.Logger) (ok, failed int) {
 	lister, hasImportLister := inst.(triagearr.ImportLister)
 	if !hasImportLister {
 		return 0, 0
 	}
 	since, err := p.Store.MaxHistoryID(ctx, inst.Name(), inst.Type())
 	if err != nil {
-		slog.Warn("max history_id failed", "arr", inst.Type(), "name", inst.Name(), "err", err)
+		logger.Warn("max history_id failed", "err", err)
 		return 0, 0
 	}
 	recs, err := lister.ListImports(ctx, since)
 	if err != nil {
-		slog.Warn("list imports failed", "arr", inst.Type(), "name", inst.Name(), "err", err)
+		logger.Warn("list imports failed", "err", err)
 		return 0, 0
 	}
 	for _, r := range recs {
 		if err := p.Store.UpsertArrImport(ctx, inst.Name(), inst.Type(), r); err != nil {
-			slog.Warn("upsert arr_import failed", "arr", inst.Type(), "name", inst.Name(), "file_id", r.FileID, "err", err)
+			logger.Warn("upsert arr_import failed", "file_id", r.FileID, "err", err)
 			failed++
 			continue
 		}

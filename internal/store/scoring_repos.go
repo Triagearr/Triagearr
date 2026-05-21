@@ -208,6 +208,61 @@ func (s *Store) LinkedMediaForHash(ctx context.Context, hash triagearr.Hash) ([]
 	return rows, nil
 }
 
+// LinkedMediaAll returns the distinct media items linked to every download_id
+// present in arr_imports, grouped by lowercased hash. Used by the scoring
+// pass to avoid a per-torrent round-trip (N+1).
+func (s *Store) LinkedMediaAll(ctx context.Context) (map[string][]LinkedMedia, error) {
+	type row struct {
+		Hash    string `db:"download_id"`
+		ArrName string `db:"arr_name"`
+		ArrType string `db:"arr_type"`
+		MediaID int64  `db:"media_id"`
+		Tags    string `db:"tags"`
+	}
+	var rows []row
+	if err := s.reader.SelectContext(ctx, &rows, `
+		SELECT DISTINCT LOWER(ai.download_id) AS download_id,
+		       m.arr_name, m.arr_type, m.id AS media_id, m.tags
+		FROM arr_imports ai
+		JOIN media_files mf
+		  ON mf.arr_name = ai.arr_name
+		 AND mf.arr_type = ai.arr_type
+		 AND mf.file_id  = ai.file_id
+		JOIN media m
+		  ON m.arr_name = mf.arr_name
+		 AND m.arr_type = mf.arr_type
+		 AND m.id       = mf.media_id
+		ORDER BY ai.download_id, m.arr_type, m.arr_name, m.id
+	`); err != nil {
+		return nil, fmt.Errorf("listing all linked media: %w", err)
+	}
+	out := make(map[string][]LinkedMedia, len(rows))
+	for _, r := range rows {
+		out[r.Hash] = append(out[r.Hash], LinkedMedia{
+			ArrName: r.ArrName, ArrType: r.ArrType, MediaID: r.MediaID, Tags: r.Tags,
+		})
+	}
+	return out, nil
+}
+
+// ListTrackersAll returns every torrent's trackers grouped by torrent_hash.
+// Used by the scoring pass to avoid one ListTrackers call per torrent.
+func (s *Store) ListTrackersAll(ctx context.Context) (map[string][]TrackerRow, error) {
+	var rows []TrackerRow
+	if err := s.reader.SelectContext(ctx, &rows, `
+		SELECT torrent_hash, tracker_url, tracker_host, status, last_msg, last_checked, first_seen_dead
+		FROM torrent_trackers
+		ORDER BY torrent_hash, tracker_host, tracker_url
+	`); err != nil {
+		return nil, fmt.Errorf("listing all trackers: %w", err)
+	}
+	out := make(map[string][]TrackerRow)
+	for _, r := range rows {
+		out[r.TorrentHash] = append(out[r.TorrentHash], r)
+	}
+	return out, nil
+}
+
 // ScoreRow is the persisted scoring verdict per torrent.
 type ScoreRow struct {
 	Hash             string    `db:"torrent_hash"`

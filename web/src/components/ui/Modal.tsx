@@ -1,6 +1,15 @@
 import { useEffect, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
+function useEscapeKey(active: boolean, onEscape: () => void) {
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onEscape();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [active, onEscape]);
+}
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -11,12 +20,7 @@ type Props = {
 };
 
 export function Modal({ open, onClose, title, description, children, className }: Props) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useEscapeKey(open, onClose);
 
   if (!open) return null;
   return (
@@ -51,12 +55,7 @@ type DrawerProps = {
 };
 
 export function Drawer({ open, onClose, title, children, className }: DrawerProps) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useEscapeKey(open, onClose);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-40">

@@ -62,7 +62,7 @@ function UserBadge({ username }: { username: string }) {
       <Button
         size="sm"
         variant="outline"
-        onClick={() => logout.mutate(undefined, { onSuccess: () => location.reload() })}
+        onClick={() => logout.mutate()}
       >
         Sign out
       </Button>
@@ -222,10 +222,7 @@ function DisableAuthForm() {
         className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]"
         onSubmit={(e) => {
           e.preventDefault();
-          disable.mutate(
-            { password },
-            { onSuccess: () => location.reload() },
-          );
+          disable.mutate({ password });
         }}
       >
         <Input

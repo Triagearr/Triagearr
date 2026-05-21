@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Triagearr/Triagearr/internal/store"
@@ -54,7 +55,7 @@ func (s *Server) handleListTorrents(w http.ResponseWriter, r *http.Request) {
 	}
 	total, err := s.opts.Store.CountTorrentsFiltered(r.Context(), opts)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	items := make([]torrentListItem, len(rows))
@@ -142,7 +143,7 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "torrent not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 
@@ -216,7 +217,7 @@ func (s *Server) handleTorrentSnapshots(w http.ResponseWriter, r *http.Request) 
 
 	points, err := s.opts.Store.ListSnapshotsRaw(r.Context(), hash, since, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	out := make([]snapshotPoint, len(points))
@@ -247,7 +248,7 @@ func (s *Server) handleListScores(w http.ResponseWriter, r *http.Request) {
 		IncludeExcluded: boolParam(q, "include_excluded"),
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	out := make([]scoreListItem, len(rows))
@@ -283,7 +284,7 @@ type volumeView struct {
 func (s *Server) handleListVolumes(w http.ResponseWriter, r *http.Request) {
 	out, err := s.buildVolumeViews(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"volumes": out})
@@ -350,7 +351,7 @@ func (s *Server) handleVolumeHistory(w http.ResponseWriter, r *http.Request) {
 	limit := intParam(r.URL.Query(), "limit", 2000, 1, 10000)
 	pts, err := s.opts.Store.ListDiskUsageHistory(r.Context(), name, since, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	out := make([]volumeHistoryPoint, len(pts))
@@ -376,7 +377,7 @@ type arrView struct {
 func (s *Server) handleListArrs(w http.ResponseWriter, r *http.Request) {
 	out, err := s.buildArrViews(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"arrs": out})
@@ -425,12 +426,12 @@ func (s *Server) handleListActions(w http.ResponseWriter, r *http.Request) {
 	offset := intParam(q, "offset", 0, 0, 1_000_000)
 	rows, err := s.opts.Store.ListActionsRecent(r.Context(), limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	total, err := s.opts.Store.CountActions(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, actionListResponse{
@@ -438,32 +439,35 @@ func (s *Server) handleListActions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func actionToView(a triagearr.Action) actionView {
+	v := actionView{
+		ID: a.ID, RunID: a.RunID, Rank: a.Rank,
+		TorrentHash: string(a.TorrentHash), Status: string(a.Status),
+		StartedAt: a.StartedAt, FreedBytes: a.FreedBytes,
+	}
+	if !a.FinishedAt.IsZero() {
+		finished := a.FinishedAt
+		v.FinishedAt = &finished
+	}
+	return v
+}
+
 func viewsFromActions(rows []triagearr.Action) []actionView {
 	out := make([]actionView, len(rows))
 	for i, a := range rows {
-		v := actionView{
-			ID: a.ID, RunID: a.RunID, Rank: a.Rank,
-			TorrentHash: string(a.TorrentHash), Status: string(a.Status),
-			StartedAt: a.StartedAt, FreedBytes: a.FreedBytes,
-		}
-		if !a.FinishedAt.IsZero() {
-			finished := a.FinishedAt
-			v.FinishedAt = &finished
-		}
-		out[i] = v
+		out[i] = actionToView(a)
 	}
 	return out
 }
 
 func (s *Server) handleRunActions(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "id must be a positive integer")
+	id, ok := parseIDPath(w, r)
+	if !ok {
 		return
 	}
 	rows, err := s.opts.Store.ListActionsByRun(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"actions": viewsFromActions(rows)})
@@ -485,9 +489,8 @@ type actionDetailResponse struct {
 }
 
 func (s *Server) handleGetAction(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "id must be a positive integer")
+	id, ok := parseIDPath(w, r)
+	if !ok {
 		return
 	}
 	a, err := s.opts.Store.GetAction(r.Context(), id)
@@ -496,16 +499,16 @@ func (s *Server) handleGetAction(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "action not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	audit, err := s.opts.Store.ListAuditByAction(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	resp := actionDetailResponse{
-		Action: viewsFromActions([]triagearr.Action{a})[0],
+		Action: actionToView(a),
 		Audit:  make([]auditView, len(audit)),
 	}
 	for i, e := range audit {
@@ -535,52 +538,73 @@ type summaryCounts struct {
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	volumes, err := s.buildVolumeViews(ctx)
-	if err != nil {
-		slog.Warn("summary: volumes", "err", err)
+	// Fan out the seven independent reads across the reader pool. Each goroutine
+	// owns its slot in the response struct, so no mutex is needed.
+	var (
+		wg       sync.WaitGroup
+		volumes  []volumeView
+		arrs     []arrView
+		counts   summaryCounts
+		lastRuns []runResponse
+		top      []scoreListItem
+	)
+	run := func(label string, fn func() error) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := fn(); err != nil {
+				slog.Warn("summary: "+label, "err", err)
+			}
+		}()
 	}
-
-	arrs, err := s.buildArrViews(ctx)
-	if err != nil {
-		slog.Warn("summary: arrs", "err", err)
-	}
-
-	var counts summaryCounts
-	if n, err := s.opts.Store.CountTorrents(ctx); err == nil {
+	run("volumes", func() error {
+		v, err := s.buildVolumeViews(ctx)
+		volumes = v
+		return err
+	})
+	run("arrs", func() error {
+		a, err := s.buildArrViews(ctx)
+		arrs = a
+		return err
+	})
+	run("count torrents", func() error {
+		n, err := s.opts.Store.CountTorrents(ctx)
 		counts.Torrents = n
-	} else {
-		slog.Warn("summary: count torrents", "err", err)
-	}
-	if n, err := s.opts.Store.CountScored(ctx); err == nil {
+		return err
+	})
+	run("count scored", func() error {
+		n, err := s.opts.Store.CountScored(ctx)
 		counts.Scored = n
-	} else {
-		slog.Warn("summary: count scored", "err", err)
-	}
-	if n, err := s.opts.Store.CountActions(ctx); err == nil {
+		return err
+	})
+	run("count actions", func() error {
+		n, err := s.opts.Store.CountActions(ctx)
 		counts.Actions = n
-	} else {
-		slog.Warn("summary: count actions", "err", err)
-	}
-
-	var lastRuns []runResponse
-	if runs, err := s.opts.Store.ListRuns(ctx, store.ListRunsOpts{Limit: 10}); err == nil {
-		lastRuns = make([]runResponse, len(runs))
-		for i, run := range runs {
-			lastRuns[i] = buildResponse(run, nil)
+		return err
+	})
+	run("list runs", func() error {
+		runs, err := s.opts.Store.ListRuns(ctx, store.ListRunsOpts{Limit: 10})
+		if err != nil {
+			return err
 		}
-	} else {
-		slog.Warn("summary: list runs", "err", err)
-	}
-
-	var top []scoreListItem
-	if rows, err := s.opts.Store.ListScores(ctx, store.ListScoresOpts{Limit: 10}); err == nil {
+		lastRuns = make([]runResponse, len(runs))
+		for i, rn := range runs {
+			lastRuns[i] = buildResponse(rn, nil)
+		}
+		return nil
+	})
+	run("list scores", func() error {
+		rows, err := s.opts.Store.ListScores(ctx, store.ListScoresOpts{Limit: 10})
+		if err != nil {
+			return err
+		}
 		top = make([]scoreListItem, len(rows))
 		for i, row := range rows {
 			top[i] = scoreItemFromRow(row)
 		}
-	} else {
-		slog.Warn("summary: list scores", "err", err)
-	}
+		return nil
+	})
+	wg.Wait()
 
 	writeJSON(w, http.StatusOK, summaryResponse{
 		Volumes: volumes, Arrs: arrs, Counts: counts,

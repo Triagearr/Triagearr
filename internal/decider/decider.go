@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
@@ -44,19 +43,11 @@ type RunPlan struct {
 // Decider produces RunPlans. Stateless; safe for concurrent use.
 type Decider struct {
 	src Source
-	now func() time.Time
 }
 
 // New returns a Decider backed by src.
 func New(src Source) *Decider {
-	return &Decider{src: src, now: func() time.Time { return time.Now().UTC() }}
-}
-
-// WithClock overrides the clock used for the (currently unused) timestamping
-// hook. Reserved for future plan-level metadata.
-func (d *Decider) WithClock(now func() time.Time) *Decider {
-	d.now = now
-	return d
+	return &Decider{src: src}
 }
 
 // Plan computes a run plan for v. It reads the latest disk_usage for v to
@@ -106,7 +97,7 @@ func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 			continue
 		}
 		sp := strings.TrimRight(t.SavePath, "/")
-		if sp != volumePath && !strings.HasPrefix(t.SavePath, prefix) {
+		if sp != volumePath && !strings.HasPrefix(sp, prefix) {
 			continue
 		}
 		plan.Items = append(plan.Items, triagearr.RunItem{

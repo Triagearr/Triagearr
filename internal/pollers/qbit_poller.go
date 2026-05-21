@@ -27,7 +27,7 @@ func (p *QbitPoller) Name() string { return "qbit" }
 
 // Run blocks until ctx is cancelled.
 func (p *QbitPoller) Run(ctx context.Context) error {
-	return tickLoop(ctx, p.Name(), p.Interval, p.tick)
+	return TickLoop(ctx, p.Name(), p.Interval, p.tick)
 }
 
 func (p *QbitPoller) tick(ctx context.Context) error {

@@ -31,7 +31,7 @@ func (p *DiskPoller) Name() string { return "disk" }
 
 // Run blocks until ctx is cancelled.
 func (p *DiskPoller) Run(ctx context.Context) error {
-	return tickLoop(ctx, p.Name(), p.Interval, p.tick)
+	return TickLoop(ctx, p.Name(), p.Interval, p.tick)
 }
 
 func (p *DiskPoller) tick(ctx context.Context) error {

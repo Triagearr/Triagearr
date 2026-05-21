@@ -15,10 +15,11 @@ type Poller interface {
 	Run(ctx context.Context) error
 }
 
-// tickLoop drives a poller's tick function: one immediate tick, then on interval
+// TickLoop drives a poller's tick function: one immediate tick, then on interval
 // until ctx is cancelled. Errors are logged and swallowed so a transient failure
-// in one provider never kills the daemon.
-func tickLoop(ctx context.Context, name string, interval time.Duration, tick func(context.Context) error) error {
+// in one provider never kills the daemon. Exported so triggers and scorer can
+// share the same loop semantics without duplicating the timer plumbing.
+func TickLoop(ctx context.Context, name string, interval time.Duration, tick func(context.Context) error) error {
 	logger := slog.With("poller", name, "interval", interval.String())
 	logger.Info("poller started")
 	defer logger.Info("poller stopped")

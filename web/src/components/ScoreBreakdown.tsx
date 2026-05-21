@@ -27,7 +27,7 @@ export function ScoreBreakdown({ factors, total }: { factors: unknown; total?: n
       )}
       <ul className="divide-y divide-border rounded-md border border-border bg-muted/30">
         {rows.map((r, i) => (
-          <li key={i} className="px-3 py-2 text-sm flex flex-col gap-0.5">
+          <li key={r.name ?? r.factor ?? `idx-${i}`} className="px-3 py-2 text-sm flex flex-col gap-0.5">
             <div className="flex items-baseline justify-between">
               <span className="font-medium">{r.name ?? r.factor ?? `factor ${i + 1}`}</span>
               <span className="font-mono text-xs text-muted-foreground">

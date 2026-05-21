@@ -29,7 +29,7 @@ func (p *TrackerPoller) Name() string { return "tracker" }
 
 // Run blocks until ctx is cancelled.
 func (p *TrackerPoller) Run(ctx context.Context) error {
-	return tickLoop(ctx, p.Name(), p.Interval, p.tick)
+	return TickLoop(ctx, p.Name(), p.Interval, p.tick)
 }
 
 func (p *TrackerPoller) tick(ctx context.Context) error {
@@ -44,9 +44,14 @@ func (p *TrackerPoller) tick(ctx context.Context) error {
 	ok, failed := 0, 0
 	for _, h := range hashes {
 		if ctx.Err() != nil {
-			return nil //nolint:nilerr // tickLoop swallows context.Canceled; exit cleanly
+			return nil //nolint:nilerr // TickLoop swallows context.Canceled; exit cleanly
 		}
-		infos, err := p.Client.ListTrackers(ctx, h)
+		// Per-hash timeout so one stuck tracker call doesn't stall the rest of
+		// the run. 30s is generous for a qBit local call but well under the
+		// 6h cadence.
+		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		infos, err := p.Client.ListTrackers(callCtx, h)
+		cancel()
 		if err != nil {
 			slog.Warn("list trackers failed", "hash", h, "err", err)
 			failed++

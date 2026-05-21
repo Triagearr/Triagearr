@@ -5,6 +5,7 @@ package triagearr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -59,11 +60,7 @@ type DeleteOpts struct {
 // ErrTransient marks an upstream failure (5xx, timeout, connection reset)
 // that the Actor may retry. Clients wrap their concrete error with this
 // sentinel via errors.Join so callers can detect it with errors.Is.
-var ErrTransient = errTransient{}
-
-type errTransient struct{}
-
-func (errTransient) Error() string { return "transient upstream failure" }
+var ErrTransient = errors.New("transient upstream failure")
 
 // ArrInstance is the contract every *arr client implements.
 //

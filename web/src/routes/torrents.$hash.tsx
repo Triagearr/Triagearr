@@ -1,13 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
+import { useMemo } from "react";
 import { useSnapshots, useTorrent } from "@/api/hooks";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { Callout } from "@/components/ui/Callout";
 import { Sparkline } from "@/components/Sparkline";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
-import { humanBytes, pct, relativeTime, shortHash } from "@/lib/format";
+import { humanBytes, relativeTime, shortHash } from "@/lib/format";
 
 function TorrentDetailPage() {
   const { hash } = Route.useParams();
@@ -21,16 +23,23 @@ function TorrentDetailPage() {
         <Link to="/torrents" className="text-sm text-muted-foreground flex items-center gap-1">
           <ArrowLeft className="h-4 w-4" /> back to torrents
         </Link>
-        <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          {String(torrent.error)}
+        <div className="mt-4">
+          <Callout>{String(torrent.error)}</Callout>
         </div>
       </div>
     );
   if (!torrent.data) return null;
   const t = torrent.data;
 
-  const series = (snaps.data?.snapshots ?? []).map((p) => ({ ts: p.ts, value: p.ratio }));
-  const seedSeries = (snaps.data?.snapshots ?? []).map((p) => ({ ts: p.ts, value: p.seeders }));
+  const snapshots = snaps.data?.snapshots;
+  const series = useMemo(
+    () => (snapshots ?? []).map((p) => ({ ts: p.ts, value: p.ratio })),
+    [snapshots],
+  );
+  const seedSeries = useMemo(
+    () => (snapshots ?? []).map((p) => ({ ts: p.ts, value: p.seeders })),
+    [snapshots],
+  );
 
   return (
     <div className="p-4 sm:p-6 space-y-4 max-w-5xl">
@@ -96,8 +105,8 @@ function TorrentDetailPage() {
                           </TR>
                         </THead>
                         <TBody>
-                          {t.trackers.map((tr, i) => (
-                            <TR key={i}>
+                          {t.trackers.map((tr) => (
+                            <TR key={`${tr.host}-${tr.url}`}>
                               <TD>{tr.host || "—"}</TD>
                               <TD>
                                 <Badge variant={tr.status === "working" ? "success" : "warning"}>
@@ -169,8 +178,8 @@ function TorrentDetailPage() {
                         </TR>
                       </THead>
                       <TBody>
-                        {t.links.map((l, i) => (
-                          <TR key={i}>
+                        {t.links.map((l) => (
+                          <TR key={`${l.arr_type}-${l.arr_name}-${l.file_id}`}>
                             <TD>
                               <Badge variant="muted">{l.arr_type}</Badge> {l.arr_name}
                             </TD>
@@ -215,7 +224,7 @@ function TorrentDetailPage() {
         ]}
       />
 
-      <div className="text-xs text-muted-foreground">torrent {shortHash(t.hash)} · ratio target {pct(100)} typ.</div>
+      <div className="text-xs text-muted-foreground">torrent {shortHash(t.hash)}</div>
     </div>
   );
 }

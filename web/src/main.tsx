@@ -8,7 +8,15 @@ import { routeTree } from "./routeTree.gen";
 import { LoginGate } from "@/components/LoginGate";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 5_000 } },
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 30_000,
+      // Pause polling when the tab is hidden so a forgotten dashboard tab
+      // doesn't keep the daemon's writer pool warm for nothing.
+      refetchIntervalInBackground: false,
+    },
+  },
 });
 
 const router = createRouter({

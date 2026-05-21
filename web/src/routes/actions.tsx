@@ -7,14 +7,22 @@ import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Modal";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { humanBytes, relativeTime, shortHash } from "@/lib/format";
+import type { ActionStatusT, AuditOutcomeT } from "@/api/schemas";
 
-const statusTone = {
+const statusTone: Record<ActionStatusT, "success" | "muted" | "destructive"> = {
   succeeded: "success",
   pending: "muted",
   running: "muted",
   failed_qbit: "destructive",
   aborted_arr_fail: "destructive",
-} as const;
+};
+
+const outcomeTone: Record<AuditOutcomeT, "success" | "muted" | "destructive"> = {
+  ok: "success",
+  failed: "destructive",
+  skipped: "muted",
+  not_attempted: "muted",
+};
 
 function ActionsPage() {
   const actions = useActions(50, 0);
@@ -87,7 +95,7 @@ function ActionsPage() {
                             <TD className="font-mono">{shortHash(a.torrent_hash, 12)}</TD>
                             <TD>
                               <Badge
-                                variant={statusTone[a.status as keyof typeof statusTone] ?? "muted"}
+                                variant={statusTone[a.status]}
                               >
                                 {a.status}
                               </Badge>
@@ -117,7 +125,7 @@ function ActionsPage() {
                           <span className="font-mono text-sm">
                             #{a.run_id} · {shortHash(a.torrent_hash, 10)}
                           </span>
-                          <Badge variant={statusTone[a.status as keyof typeof statusTone] ?? "muted"}>
+                          <Badge variant={statusTone[a.status]}>
                             {a.status}
                           </Badge>
                         </div>
@@ -159,7 +167,7 @@ function ActionAudit({ id }: { id: number | undefined }) {
         <div className="text-muted-foreground">Status</div>
         <div className="text-right">
           <Badge
-            variant={statusTone[detail.data.action.status as keyof typeof statusTone] ?? "muted"}
+            variant={statusTone[detail.data.action.status]}
           >
             {detail.data.action.status}
           </Badge>
@@ -183,17 +191,7 @@ function ActionAudit({ id }: { id: number | undefined }) {
                 <div className="flex items-baseline justify-between">
                   <div className="flex items-center gap-2">
                     <Badge variant="muted">{e.step}</Badge>
-                    <Badge
-                      variant={
-                        e.outcome === "ok"
-                          ? "success"
-                          : e.outcome === "failed"
-                          ? "destructive"
-                          : "muted"
-                      }
-                    >
-                      {e.outcome}
-                    </Badge>
+                    <Badge variant={outcomeTone[e.outcome]}>{e.outcome}</Badge>
                   </div>
                   <span className="text-xs text-muted-foreground">{relativeTime(e.ts)}</span>
                 </div>

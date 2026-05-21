@@ -1,13 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSummary } from "@/api/hooks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Callout } from "@/components/ui/Callout";
 import { PressureGauge } from "@/components/PressureGauge";
 import { Badge } from "@/components/ui/Badge";
-import { humanBytes, pct, relativeTime, shortHash } from "@/lib/format";
+import { humanBytes, relativeTime, shortHash } from "@/lib/format";
 
 function Dashboard() {
   const summary = useSummary();
   const data = summary.data;
+
+  const volumes = data?.volumes ?? [];
+  const arrs = data?.arrs ?? [];
+  const lastRuns = data?.last_runs ?? [];
+  const topScore = data?.top_score ?? [];
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -17,11 +23,7 @@ function Dashboard() {
       </div>
 
       {summary.isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
-      {summary.isError && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          {String(summary.error)}
-        </div>
-      )}
+      {summary.isError && <Callout>{String(summary.error)}</Callout>}
 
       {data && (
         <>
@@ -31,15 +33,15 @@ function Dashboard() {
             <StatCard label="Total actions" value={String(data.counts.actions)} />
             <StatCard
               label="Healthy *arrs"
-              value={`${(data.arrs ?? []).filter((a) => a.healthy).length} / ${(data.arrs ?? []).length}`}
+              value={`${arrs.filter((a) => a.healthy).length} / ${arrs.length}`}
             />
           </div>
 
-          {(data.volumes ?? []).length > 0 && (
+          {volumes.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-base font-semibold">Volumes</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {(data.volumes ?? []).map((v) => (
+                {volumes.map((v) => (
                   <PressureGauge key={v.name} volume={v} />
                 ))}
               </div>
@@ -52,10 +54,10 @@ function Dashboard() {
                 <CardTitle>Recent runs</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {(data.last_runs ?? []).length === 0 && (
+                {lastRuns.length === 0 && (
                   <div className="text-sm text-muted-foreground">No runs yet.</div>
                 )}
-                {(data.last_runs ?? []).slice(0, 5).map((run) => (
+                {lastRuns.slice(0, 5).map((run) => (
                   <Link
                     key={run.run_id}
                     to="/actions"
@@ -79,10 +81,10 @@ function Dashboard() {
                 <CardTitle>Top candidates</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {(data.top_score ?? []).length === 0 && (
+                {topScore.length === 0 && (
                   <div className="text-sm text-muted-foreground">No scored torrents yet.</div>
                 )}
-                {(data.top_score ?? []).slice(0, 10).map((s) => (
+                {topScore.slice(0, 10).map((s) => (
                   <Link
                     key={s.hash}
                     to="/torrents/$hash"
@@ -101,11 +103,11 @@ function Dashboard() {
             </Card>
           </div>
 
-          {(data.arrs ?? []).length > 0 && (
+          {arrs.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-base font-semibold">*arr instances</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {(data.arrs ?? []).map((a) => (
+                {arrs.map((a) => (
                   <Card key={`${a.type}/${a.name}`}>
                     <CardContent className="p-4 space-y-1">
                       <div className="flex items-center justify-between">
@@ -135,9 +137,6 @@ function Dashboard() {
         </>
       )}
 
-      <div className="text-xs text-muted-foreground">
-        pressure auto-refreshes every 15s · current free% target shown as {pct(20)} default
-      </div>
     </div>
   );
 }

@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 import { useVersion } from "@/api/hooks";
 
+// TanStack Router navigates via pushState, which doesn't fire `popstate`, so a
+// popstate listener for closing the drawer would be dead code. The Link
+// onClick handler below closes the drawer on navigation instead.
+
 const nav = [
   { to: "/", label: "Dashboard", Icon: Gauge },
   { to: "/torrents", label: "Torrents", Icon: ListChecks },
@@ -15,14 +19,6 @@ function Layout() {
   const version = useVersion();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Auto-close the drawer when the route changes (handled by Link click below).
-  useEffect(() => {
-    const close = () => setDrawerOpen(false);
-    window.addEventListener("popstate", close);
-    return () => window.removeEventListener("popstate", close);
-  }, []);
-
-  // Lock body scroll while the mobile drawer is open.
   useEffect(() => {
     if (drawerOpen) {
       const prev = document.body.style.overflow;

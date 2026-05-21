@@ -13,11 +13,10 @@ package actor
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/big"
+	"math/rand/v2"
 	"time"
 
 	"github.com/Triagearr/Triagearr/internal/triagearr"
@@ -110,10 +109,10 @@ func (a *Actor) Execute(ctx context.Context, runID int64) error {
 		return fmt.Errorf("actor: marking run running: %w", err)
 	}
 
-	cap := a.opts.MaxDeletionsPerRun
+	limit := a.opts.MaxDeletionsPerRun
 	for i, item := range items {
-		if cap > 0 && i >= cap {
-			slog.Info("actor: rate cap reached", "run_id", runID, "cap", cap, "processed", i)
+		if limit > 0 && i >= limit {
+			slog.Info("actor: rate cap reached", "run_id", runID, "cap", limit, "processed", i)
 			break
 		}
 		if err := a.processCandidate(ctx, runID, item); err != nil {
@@ -129,6 +128,21 @@ func (a *Actor) Execute(ctx context.Context, runID int64) error {
 		return fmt.Errorf("actor: marking run completed: %w", err)
 	}
 	return nil
+}
+
+// audit appends one audit_log row for the given action/step. Errors are
+// swallowed because audit failures must never abort the destructive
+// pipeline — the action's terminal status is still recorded by finish().
+func (a *Actor) audit(ctx context.Context, actionID int64, step triagearr.AuditStep, outcome triagearr.AuditOutcome, arrName string, fileID int64, detail string) {
+	_ = a.opts.Source.AppendAudit(ctx, triagearr.AuditEntry{
+		ActionID:  actionID,
+		Timestamp: a.opts.now(),
+		Step:      step,
+		Outcome:   outcome,
+		ArrName:   arrName,
+		ArrFileID: fileID,
+		Detail:    detail,
+	})
 }
 
 // processCandidate runs one candidate end-to-end. Errors are non-fatal at
@@ -149,11 +163,7 @@ func (a *Actor) processCandidate(ctx context.Context, runID int64, item triagear
 
 	links, err := a.opts.Source.LinksByHash(ctx, item.TorrentHash)
 	if err != nil {
-		_ = a.opts.Source.AppendAudit(ctx, triagearr.AuditEntry{
-			ActionID: actionID, Timestamp: a.opts.now(),
-			Step: triagearr.AuditStepArrDelete, Outcome: triagearr.AuditOutcomeFailed,
-			Detail: fmt.Sprintf("resolving links: %v", err),
-		})
+		a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeFailed, "", 0, fmt.Sprintf("resolving links: %v", err))
 		return a.finish(ctx, actionID, triagearr.ActionAbortedArrFail, 0, err)
 	}
 
@@ -165,17 +175,10 @@ func (a *Actor) processCandidate(ctx context.Context, runID int64, item triagear
 	if err := withRetry(ctx, a.opts.sleep, func() error {
 		return a.opts.Qbit.Delete(ctx, item.TorrentHash, delOpts)
 	}); err != nil {
-		_ = a.opts.Source.AppendAudit(ctx, triagearr.AuditEntry{
-			ActionID: actionID, Timestamp: a.opts.now(),
-			Step: triagearr.AuditStepQbitDelete, Outcome: triagearr.AuditOutcomeFailed,
-			Detail: truncate(err.Error()),
-		})
+		a.audit(ctx, actionID, triagearr.AuditStepQbitDelete, triagearr.AuditOutcomeFailed, "", 0, truncate(err.Error()))
 		return a.finish(ctx, actionID, triagearr.ActionFailedQbit, 0, err)
 	}
-	_ = a.opts.Source.AppendAudit(ctx, triagearr.AuditEntry{
-		ActionID: actionID, Timestamp: a.opts.now(),
-		Step: triagearr.AuditStepQbitDelete, Outcome: triagearr.AuditOutcomeOK,
-	})
+	a.audit(ctx, actionID, triagearr.AuditStepQbitDelete, triagearr.AuditOutcomeOK, "", 0, "")
 
 	return a.finish(ctx, actionID, triagearr.ActionSucceeded, item.SizeBytes, nil)
 }
@@ -189,11 +192,7 @@ func (a *Actor) fanoutArr(ctx context.Context, actionID int64, links []triagearr
 	for i, lk := range links {
 		deleter, ok := a.opts.Deleter(lk.ArrName)
 		if !ok {
-			_ = a.opts.Source.AppendAudit(ctx, triagearr.AuditEntry{
-				ActionID: actionID, Timestamp: a.opts.now(),
-				Step: triagearr.AuditStepArrDelete, ArrName: lk.ArrName, ArrFileID: lk.FileID,
-				Outcome: triagearr.AuditOutcomeSkipped, Detail: "instance act=false or no deleter",
-			})
+			a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeSkipped, lk.ArrName, lk.FileID, "instance act=false or no deleter")
 			a.markRemaining(ctx, actionID, links[i+1:])
 			return fmt.Errorf("instance %q is not actable", lk.ArrName)
 		}
@@ -201,30 +200,18 @@ func (a *Actor) fanoutArr(ctx context.Context, actionID int64, links []triagearr
 			return deleter.DeleteMediaFile(ctx, lk.FileID, delOpts)
 		})
 		if err != nil {
-			_ = a.opts.Source.AppendAudit(ctx, triagearr.AuditEntry{
-				ActionID: actionID, Timestamp: a.opts.now(),
-				Step: triagearr.AuditStepArrDelete, ArrName: lk.ArrName, ArrFileID: lk.FileID,
-				Outcome: triagearr.AuditOutcomeFailed, Detail: truncate(err.Error()),
-			})
+			a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeFailed, lk.ArrName, lk.FileID, truncate(err.Error()))
 			a.markRemaining(ctx, actionID, links[i+1:])
 			return fmt.Errorf("arr delete for file %d on %q: %w", lk.FileID, lk.ArrName, err)
 		}
-		_ = a.opts.Source.AppendAudit(ctx, triagearr.AuditEntry{
-			ActionID: actionID, Timestamp: a.opts.now(),
-			Step: triagearr.AuditStepArrDelete, ArrName: lk.ArrName, ArrFileID: lk.FileID,
-			Outcome: triagearr.AuditOutcomeOK,
-		})
+		a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeOK, lk.ArrName, lk.FileID, "")
 	}
 	return nil
 }
 
 func (a *Actor) markRemaining(ctx context.Context, actionID int64, rest []triagearr.Link) {
 	for _, lk := range rest {
-		_ = a.opts.Source.AppendAudit(ctx, triagearr.AuditEntry{
-			ActionID: actionID, Timestamp: a.opts.now(),
-			Step: triagearr.AuditStepArrDelete, ArrName: lk.ArrName, ArrFileID: lk.FileID,
-			Outcome: triagearr.AuditOutcomeNotAttempted,
-		})
+		a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeNotAttempted, lk.ArrName, lk.FileID, "")
 	}
 }
 
@@ -273,11 +260,7 @@ func jitter(max time.Duration) time.Duration {
 	if max <= 0 {
 		return 0
 	}
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
-	if err != nil {
-		return 0
-	}
-	return time.Duration(n.Int64())
+	return time.Duration(rand.Int64N(int64(max)))
 }
 
 func truncate(s string) string {

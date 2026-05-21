@@ -115,6 +115,17 @@ func (s *Scorer) ScoreAll(ctx context.Context) (ScoreAllStats, error) {
 	}
 	globalAvg := globalAvgFromStats(statsByHash)
 
+	// Batch the trackers + linked-media joins once for the whole library so
+	// scoreInputs avoids two SQL round-trips per torrent.
+	trackersByHash, err := s.store.ListTrackersAll(ctx)
+	if err != nil {
+		return stats, fmt.Errorf("prefetch trackers: %w", err)
+	}
+	linkedByHash, err := s.store.LinkedMediaAll(ctx)
+	if err != nil {
+		return stats, fmt.Errorf("prefetch linked media: %w", err)
+	}
+
 	// Pass 2: evaluate factors against the cached stats.
 	for _, t := range torrents {
 		if ctx.Err() != nil {
@@ -125,7 +136,7 @@ func (s *Scorer) ScoreAll(ctx context.Context) (ScoreAllStats, error) {
 			// Pass-1 error already counted; skip rather than double-count.
 			continue
 		}
-		b, err := s.scoreInputs(ctx, t, sn, globalAvg)
+		b, err := s.scoreWithPrefetched(t, sn, globalAvg, trackersByHash[t.Hash], linkedByHash[t.Hash])
 		if err != nil {
 			slog.Warn("scoring torrent failed", "hash", t.Hash, "err", err)
 			stats.Errors++
@@ -191,20 +202,26 @@ func globalAvgFromStats(by map[string]store.SnapshotStats) float64 {
 
 // scoreInputs runs the seven factors over already-fetched torrent metadata.
 // Snapshot stats are passed in so ScoreAll's two-pass flow doesn't re-fetch
-// them per torrent — the caller is responsible for loading them once.
+// them per torrent — the caller is responsible for loading them once. This
+// fetches trackers + linked media individually; ScoreAll prefers
+// scoreWithPrefetched to avoid the per-torrent round-trip.
 func (s *Scorer) scoreInputs(ctx context.Context, t store.ScoringTorrent, snaps store.SnapshotStats, globalAvg float64) (Breakdown, error) {
-	now := s.now()
-
 	trackerRows, err := s.store.ListTrackers(ctx, triagearr.Hash(t.Hash))
 	if err != nil {
 		return Breakdown{}, fmt.Errorf("loading trackers: %w", err)
 	}
-	trackers := trackerViewsFromRows(trackerRows)
-
 	linked, err := s.store.LinkedMediaForHash(ctx, triagearr.Hash(t.Hash))
 	if err != nil {
 		return Breakdown{}, fmt.Errorf("loading linked media: %w", err)
 	}
+	return s.scoreWithPrefetched(t, snaps, globalAvg, trackerRows, linked)
+}
+
+// scoreWithPrefetched is the pure factor-evaluation path used by ScoreAll
+// once trackers + linked media have been bulk-loaded.
+func (s *Scorer) scoreWithPrefetched(t store.ScoringTorrent, snaps store.SnapshotStats, globalAvg float64, trackerRows []store.TrackerRow, linked []store.LinkedMedia) (Breakdown, error) {
+	now := s.now()
+	trackers := trackerViewsFromRows(trackerRows)
 
 	alive := anyTrackerAlive(trackers)
 	policy := trackerPolicyFor(trackers, s.cfg)

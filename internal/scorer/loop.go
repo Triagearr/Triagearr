@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/Triagearr/Triagearr/internal/pollers"
 )
 
 // Loop drives the periodic ScoreAll pass. Shape mirrors internal/pollers so
@@ -18,37 +20,17 @@ func (l *Loop) Name() string { return "scorer" }
 
 // Run blocks until ctx is cancelled.
 func (l *Loop) Run(ctx context.Context) error {
-	logger := slog.With("poller", l.Name(), "interval", l.Interval.String())
-	logger.Info("scorer loop started")
-	defer logger.Info("scorer loop stopped")
-
-	runOnce := func() {
+	return pollers.TickLoop(ctx, l.Name(), l.Interval, func(ctx context.Context) error {
 		stats, err := l.Scorer.ScoreAll(ctx)
 		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			logger.Error("score pass failed", "err", err)
-			return
+			return err
 		}
-		logger.Info("score pass complete",
+		slog.Info("score pass complete",
 			"scored", stats.Scored,
 			"excluded", stats.Excluded,
 			"errors", stats.Errors,
 			"duration", stats.Duration.String(),
 		)
-	}
-
-	runOnce()
-	timer := time.NewTimer(l.Interval)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-timer.C:
-			runOnce()
-			timer.Reset(l.Interval)
-		}
-	}
+		return nil
+	})
 }

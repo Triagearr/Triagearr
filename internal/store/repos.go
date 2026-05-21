@@ -199,9 +199,11 @@ func (s *Store) ListTorrentsLatest(ctx context.Context, sortBy string, limit int
 		       s.ratio AS ratio, s.seeders AS seeders, s.leechers AS leechers,
 		       s.state AS state, s.ts AS snap_ts
 		FROM torrents t
+		LEFT JOIN (
+		    SELECT torrent_hash, MAX(ts) AS ts FROM snapshots_raw GROUP BY torrent_hash
+		) sm ON sm.torrent_hash = t.hash
 		LEFT JOIN snapshots_raw s
-		  ON s.torrent_hash = t.hash
-		 AND s.ts = (SELECT MAX(ts) FROM snapshots_raw WHERE torrent_hash = t.hash)
+		  ON s.torrent_hash = sm.torrent_hash AND s.ts = sm.ts
 		ORDER BY ` + orderBy
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
@@ -294,10 +296,12 @@ func (s *Store) LatestDiskUsage(ctx context.Context) ([]triagearr.DiskUsage, err
 	}
 	var rows []row
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT volume_name, path, ts, total_bytes, used_bytes, free_bytes, free_percent
+		SELECT d.volume_name, d.path, d.ts, d.total_bytes, d.used_bytes, d.free_bytes, d.free_percent
 		FROM disk_pressure d
-		WHERE ts = (SELECT MAX(ts) FROM disk_pressure WHERE volume_name = d.volume_name)
-		ORDER BY volume_name
+		JOIN (
+		    SELECT volume_name, MAX(ts) AS ts FROM disk_pressure GROUP BY volume_name
+		) m ON m.volume_name = d.volume_name AND m.ts = d.ts
+		ORDER BY d.volume_name
 	`); err != nil {
 		return nil, fmt.Errorf("listing latest disk_pressure: %w", err)
 	}
@@ -497,41 +501,6 @@ func (s *Store) SampleMediaFilePaths(ctx context.Context, limit int) ([]string, 
 // "snapshots_pk_design").
 func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWritten, rawDeleted int, err error) {
 	cutoff := ts(before)
-	rows, err := s.reader.QueryContext(ctx, `
-		SELECT torrent_hash,
-		       date(ts) AS day,
-		       AVG(ratio), MIN(ratio), MAX(ratio),
-		       AVG(seeders), MIN(seeders), MAX(seeders),
-		       MAX(uploaded),
-		       COUNT(*)
-		FROM snapshots_raw
-		WHERE ts < ?
-		GROUP BY torrent_hash, date(ts)
-	`, cutoff)
-	if err != nil {
-		return 0, 0, fmt.Errorf("aggregating snapshots_raw: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	type agg struct {
-		hash                                     string
-		day                                      string
-		ratioAvg, ratioMin, ratioMax, seedersAvg float64
-		seedersMin, seedersMax, samples          int
-		uploadedMax                              int64
-	}
-	var aggs []agg
-	for rows.Next() {
-		var a agg
-		if err := rows.Scan(&a.hash, &a.day, &a.ratioAvg, &a.ratioMin, &a.ratioMax,
-			&a.seedersAvg, &a.seedersMin, &a.seedersMax, &a.uploadedMax, &a.samples); err != nil {
-			return 0, 0, fmt.Errorf("scanning aggregate: %w", err)
-		}
-		aggs = append(aggs, a)
-	}
-	if err := rows.Err(); err != nil {
-		return 0, 0, fmt.Errorf("iterating aggregate rows: %w", err)
-	}
 
 	tx, err := s.writer.BeginTxx(ctx, nil)
 	if err != nil {
@@ -539,23 +508,29 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	for _, a := range aggs {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO snapshots_daily(torrent_hash, day, ratio_avg, ratio_min, ratio_max, seeders_avg, seeders_min, seeders_max, uploaded_max, samples)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(torrent_hash, day) DO UPDATE SET
-				ratio_avg=excluded.ratio_avg,
-				ratio_min=excluded.ratio_min,
-				ratio_max=excluded.ratio_max,
-				seeders_avg=excluded.seeders_avg,
-				seeders_min=excluded.seeders_min,
-				seeders_max=excluded.seeders_max,
-				uploaded_max=excluded.uploaded_max,
-				samples=excluded.samples
-		`, a.hash, a.day, a.ratioAvg, a.ratioMin, a.ratioMax, a.seedersAvg, a.seedersMin, a.seedersMax, a.uploadedMax, a.samples); err != nil {
-			return 0, 0, fmt.Errorf("inserting daily %s/%s: %w", a.hash, a.day, err)
-		}
+	ins, err := tx.ExecContext(ctx, `
+		INSERT INTO snapshots_daily(torrent_hash, day, ratio_avg, ratio_min, ratio_max, seeders_avg, seeders_min, seeders_max, uploaded_max, samples)
+		SELECT torrent_hash, date(ts) AS day,
+		       AVG(ratio), MIN(ratio), MAX(ratio),
+		       AVG(seeders), MIN(seeders), MAX(seeders),
+		       MAX(uploaded), COUNT(*)
+		FROM snapshots_raw
+		WHERE ts < ?
+		GROUP BY torrent_hash, date(ts)
+		ON CONFLICT(torrent_hash, day) DO UPDATE SET
+			ratio_avg=excluded.ratio_avg,
+			ratio_min=excluded.ratio_min,
+			ratio_max=excluded.ratio_max,
+			seeders_avg=excluded.seeders_avg,
+			seeders_min=excluded.seeders_min,
+			seeders_max=excluded.seeders_max,
+			uploaded_max=excluded.uploaded_max,
+			samples=excluded.samples
+	`, cutoff)
+	if err != nil {
+		return 0, 0, fmt.Errorf("aggregating snapshots_raw: %w", err)
 	}
+	written, _ := ins.RowsAffected()
 
 	res, err := tx.ExecContext(ctx, `DELETE FROM snapshots_raw WHERE ts < ?`, cutoff)
 	if err != nil {
@@ -565,7 +540,7 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 	if err := tx.Commit(); err != nil {
 		return 0, 0, fmt.Errorf("commit downsample: %w", err)
 	}
-	return len(aggs), int(deleted), nil
+	return int(written), int(deleted), nil
 }
 
 // PruneStaleTorrents deletes torrents whose last_seen is older than `olderThan`
@@ -590,23 +565,32 @@ func (s *Store) PruneStaleTorrents(ctx context.Context, olderThan time.Duration)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Cascade: dependents first, then torrents themselves. Using a subquery
-	// against torrents (rather than a separate SELECT) keeps the whole cascade
-	// driven by one cutoff inside the transaction.
-	hashFilter := `torrent_hash IN (SELECT hash FROM torrents WHERE last_seen < ?)`
-	if _, err := tx.ExecContext(ctx, `DELETE FROM snapshots_raw    WHERE `+hashFilter, cutoff); err != nil {
+	// Stage the stale hash set in a temp table so each dependent DELETE shares
+	// one scan of torrents.last_seen rather than re-running the subquery. The
+	// table lives on the writer connection, which is shared across calls, so
+	// recreate it from scratch every invocation.
+	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS stale_hashes`); err != nil {
+		return 0, fmt.Errorf("dropping stale_hashes: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TEMP TABLE stale_hashes AS SELECT hash FROM torrents WHERE last_seen < ?`, cutoff); err != nil {
+		return 0, fmt.Errorf("staging stale hashes: %w", err)
+	}
+	defer func() { _, _ = s.writer.ExecContext(ctx, `DROP TABLE IF EXISTS stale_hashes`) }()
+
+	hashFilter := `torrent_hash IN (SELECT hash FROM stale_hashes)`
+	if _, err := tx.ExecContext(ctx, `DELETE FROM snapshots_raw    WHERE `+hashFilter); err != nil {
 		return 0, fmt.Errorf("prune snapshots_raw: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM snapshots_daily  WHERE `+hashFilter, cutoff); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM snapshots_daily  WHERE `+hashFilter); err != nil {
 		return 0, fmt.Errorf("prune snapshots_daily: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM torrent_trackers WHERE `+hashFilter, cutoff); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM torrent_trackers WHERE `+hashFilter); err != nil {
 		return 0, fmt.Errorf("prune torrent_trackers: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM scores WHERE `+hashFilter, cutoff); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM scores WHERE `+hashFilter); err != nil {
 		return 0, fmt.Errorf("prune scores: %w", err)
 	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM torrents WHERE last_seen < ?`, cutoff)
+	res, err := tx.ExecContext(ctx, `DELETE FROM torrents WHERE hash IN (SELECT hash FROM stale_hashes)`)
 	if err != nil {
 		return 0, fmt.Errorf("prune torrents: %w", err)
 	}

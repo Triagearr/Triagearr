@@ -15,6 +15,23 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
+// writeInternal returns a 500 with the error's message, used everywhere a
+// handler can't recover from an upstream/storage failure.
+func writeInternal(w http.ResponseWriter, err error) {
+	writeError(w, http.StatusInternalServerError, err.Error())
+}
+
+// parseIDPath extracts a positive int64 from the {id} path segment, writing
+// a 400 on failure. Returns (id, true) on success.
+func parseIDPath(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "id must be a positive integer")
+		return 0, false
+	}
+	return id, true
+}
+
 type postRunRequest struct {
 	Volume string `json:"volume,omitempty"`
 	Mode   string `json:"mode,omitempty"`
@@ -44,13 +61,8 @@ type runItemResponse struct {
 
 func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	var req postRunRequest
-	if r.ContentLength > 0 {
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
-			return
-		}
+	if r.ContentLength > 0 && !decodeJSONBody(w, r, &req) {
+		return
 	}
 	vol, ok := s.resolveVolume(req.Volume)
 	if !ok {
@@ -63,7 +75,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 	plan, err := s.opts.Decider.Plan(r.Context(), vol)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	mode := triagearr.ResolveRunMode(s.opts.DaemonLive, triagearr.RunTriggerHTTP, req.Mode == "live")
@@ -80,32 +92,34 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.opts.Store.InsertRun(r.Context(), run)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "persisting run: "+err.Error())
+		writeInternal(w, fmt.Errorf("persisting run: %w", err))
 		return
 	}
 	if err := s.opts.Store.InsertRunItems(r.Context(), id, plan.Items); err != nil {
-		writeError(w, http.StatusInternalServerError, "persisting items: "+err.Error())
+		writeInternal(w, fmt.Errorf("persisting items: %w", err))
 		return
 	}
-	run.ID = id
 	if mode == triagearr.RunModeLive && s.opts.Actor != nil {
 		if err := s.opts.Actor.Execute(r.Context(), id); err != nil {
 			slog.Warn("actor execute failed", "run_id", id, "err", err)
-		} else {
-			if refreshed, items, err := s.opts.Store.GetRun(r.Context(), id); err == nil {
-				writeJSON(w, http.StatusOK, buildResponse(refreshed, items))
-				return
-			}
 		}
 	}
-	writeJSON(w, http.StatusOK, buildResponse(run, plan.Items))
+	// Always re-read the run so the response carries persisted state
+	// (Actor may have updated status, freed_bytes, ordering).
+	refreshed, items, err := s.opts.Store.GetRun(r.Context(), id)
+	if err != nil {
+		run.ID = id
+		writeJSON(w, http.StatusOK, buildResponse(run, plan.Items))
+		return
+	}
+	writeJSON(w, http.StatusOK, buildResponse(refreshed, items))
 }
 
 func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	limit := intParam(r.URL.Query(), "limit", 50, 1, 500)
 	rows, err := s.opts.Store.ListRuns(r.Context(), store.ListRunsOpts{Limit: limit})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	out := make([]runResponse, len(rows))
@@ -116,10 +130,8 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "id must be a positive integer")
+	id, ok := parseIDPath(w, r)
+	if !ok {
 		return
 	}
 	run, items, err := s.opts.Store.GetRun(r.Context(), id)
@@ -128,7 +140,7 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "run not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeInternal(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, buildResponse(run, items))

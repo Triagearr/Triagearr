@@ -1,21 +1,23 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useDeferredValue, useState } from "react";
 import { useTorrents } from "@/api/hooks";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { humanBytes, relativeTime, shortHash } from "@/lib/format";
 
 function TorrentsPage() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
+  const deferredQ = useDeferredValue(q);
   const [sort, setSort] = useState("name");
   const [privateOnly, setPrivateOnly] = useState(false);
   const [offset, setOffset] = useState(0);
   const limit = 50;
 
-  const list = useTorrents({ q, sort, privateOnly, limit, offset });
+  const list = useTorrents({ q: deferredQ, sort, privateOnly, limit, offset });
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
@@ -38,10 +40,12 @@ function TorrentsPage() {
           }}
           className="max-w-xs"
         />
-        <select
+        <Select
           value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          onChange={(e) => {
+            setSort(e.target.value);
+            setOffset(0);
+          }}
         >
           <option value="name">sort: name</option>
           <option value="score">sort: score</option>
@@ -49,7 +53,7 @@ function TorrentsPage() {
           <option value="ratio">sort: ratio</option>
           <option value="seeders">sort: seeders</option>
           <option value="last_seen">sort: last seen</option>
-        </select>
+        </Select>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
@@ -147,7 +151,7 @@ function TorrentsPage() {
                 <span className="text-muted-foreground">· {t.category}</span>
               )}
               {t.ratio != null && (
-                <span className="font-mono">ratio {t.ratio.toFixed(2)}</span>
+                <span className="font-mono">ratio {t.ratio.toFixed(3)}</span>
               )}
               {t.seeders != null && (
                 <span className="font-mono">seeders {t.seeders}</span>

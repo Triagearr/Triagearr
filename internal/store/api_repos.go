@@ -44,9 +44,11 @@ func (s *Store) ListTorrentsFiltered(ctx context.Context, opts ListTorrentsOpts)
 		       s.ratio AS ratio, s.seeders AS seeders, s.leechers AS leechers,
 		       s.state AS state, s.ts AS snap_ts
 		FROM torrents t
+		LEFT JOIN (
+		    SELECT torrent_hash, MAX(ts) AS ts FROM snapshots_raw GROUP BY torrent_hash
+		) sm ON sm.torrent_hash = t.hash
 		LEFT JOIN snapshots_raw s
-		  ON s.torrent_hash = t.hash
-		 AND s.ts = (SELECT MAX(ts) FROM snapshots_raw WHERE torrent_hash = t.hash)`
+		  ON s.torrent_hash = sm.torrent_hash AND s.ts = sm.ts`
 	if joinScore {
 		q += `
 		LEFT JOIN scores sc ON sc.torrent_hash = t.hash`
