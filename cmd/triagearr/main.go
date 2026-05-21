@@ -16,6 +16,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/Triagearr/Triagearr/internal/actor"
 	"github.com/Triagearr/Triagearr/internal/clients/qbit"
 	"github.com/Triagearr/Triagearr/internal/clients/registry"
 	"github.com/Triagearr/Triagearr/internal/config"
@@ -292,6 +293,21 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 
 	dec := decider.New(s)
 	daemonLive := cfg.Mode == config.ModeLive
+
+	// Actor needs the qBit client; if qBit isn't enabled nothing destructive
+	// can happen anyway, so leave it nil.
+	var act *actor.Actor
+	if qb != nil {
+		act = actor.New(actor.Options{
+			Source:             s,
+			Qbit:               qb,
+			Deleter:            registryDeleter(reg),
+			MaxDeletionsPerRun: cfg.Action.MaxDeletionsPerRun,
+			InterActionDelay:   cfg.Action.InterActionDelay,
+			AddImportExclusion: cfg.Action.AddImportExclusion,
+		})
+	}
+
 	if rules := pressureRules(cfg); len(rules) > 0 {
 		ps = append(ps, &triggers.DiskWatcher{
 			Rules:      rules,
@@ -299,6 +315,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 			Store:      s,
 			Interval:   cfg.Polling.DiskInterval,
 			DaemonLive: daemonLive,
+			Actor:      act,
 		})
 	}
 
@@ -324,6 +341,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 			Volume:     volumeLookup(cfg),
 			Volumes:    func() []decider.Volume { return allVolumes(cfg) },
 			DaemonLive: daemonLive,
+			Actor:      act,
 		})
 	}
 
@@ -353,6 +371,46 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 		}
 	}
 	return firstErr
+}
+
+// registryDeleter adapts the registry's typed accessor into the
+// actor.DeleterResolver function shape.
+func registryDeleter(reg *registry.Registry) actor.DeleterResolver {
+	return func(name string) (triagearr.FileDeleter, bool) {
+		return reg.Deleter(name)
+	}
+}
+
+// buildActor constructs an Actor for one-shot CLI invocations. It mirrors
+// the lifecycle the daemon performs in runDaemon, but stays scoped to the
+// caller (no goroutines, no SIGHUP). Returns the qbit client too so callers
+// can keep it alive for the duration of Execute.
+func buildActor(cfg *config.Config, s *store.Store) (*actor.Actor, *qbit.Client, error) {
+	if !cfg.Qbit.Enabled {
+		return nil, nil, errors.New("qbit must be enabled to run --live actions")
+	}
+	qb, err := qbit.New(qbit.Options{
+		BaseURL:  cfg.Qbit.URL,
+		Username: cfg.Qbit.Username,
+		Password: cfg.Qbit.Password,
+		Timeout:  cfg.Qbit.Timeout,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("building qbit client: %w", err)
+	}
+	reg, err := registry.BuildFromConfig(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("building registry: %w", err)
+	}
+	act := actor.New(actor.Options{
+		Source:             s,
+		Qbit:               qb,
+		Deleter:            registryDeleter(reg),
+		MaxDeletionsPerRun: cfg.Action.MaxDeletionsPerRun,
+		InterActionDelay:   cfg.Action.InterActionDelay,
+		AddImportExclusion: cfg.Action.AddImportExclusion,
+	})
+	return act, qb, nil
 }
 
 func pressureRules(cfg *config.Config) []triggers.VolumeRule {

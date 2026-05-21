@@ -148,6 +148,7 @@ func applyDefaults(c *Config) {
 		c.Qbit.Timeout = defaultQbitTimeout
 	}
 	applyScoringDefaults(&c.Scoring)
+	applyActionDefaults(&c.Action)
 	applyArrDefaults(c.Arrs.Sonarr)
 	applyArrDefaults(c.Arrs.Radarr)
 	applyArrDefaults(c.Arrs.Lidarr)
@@ -186,6 +187,15 @@ func applyScoringDefaults(s *ScoringConfig) {
 	}
 	if s.Weights.TrackerDeadBonus == 0 {
 		s.Weights.TrackerDeadBonus = defaultWeightTrackerDead
+	}
+}
+
+func applyActionDefaults(a *ActionConfig) {
+	if a.MaxDeletionsPerRun == 0 {
+		a.MaxDeletionsPerRun = defaultMaxDeletionsPerRun
+	}
+	if a.InterActionDelay == 0 {
+		a.InterActionDelay = defaultInterActionDelay
 	}
 }
 

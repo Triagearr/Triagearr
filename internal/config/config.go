@@ -27,6 +27,22 @@ type Config struct {
 	Volumes []VolumeConfig `koanf:"volumes"`
 	Polling PollingConfig  `koanf:"polling"`
 	Scoring ScoringConfig  `koanf:"scoring"`
+	Action  ActionConfig   `koanf:"action"`
+}
+
+// ActionConfig tunes the M5 Actor's destructive pipeline.
+type ActionConfig struct {
+	// MaxDeletionsPerRun caps how many candidates a single run executes;
+	// zero means unlimited. Default 10.
+	MaxDeletionsPerRun int `koanf:"max_deletions_per_run"`
+	// InterActionDelay sleeps between consecutive whole-torrent qBit deletes,
+	// giving the filesystem and *arr a moment to settle before the next call.
+	// Default 2s.
+	InterActionDelay time.Duration `koanf:"inter_action_delay"`
+	// AddImportExclusion forwards to *arr — when true, deleted releases are
+	// added to the import exclusion list so *arr won't re-grab them.
+	// Default false (operator can opt in per their workflow).
+	AddImportExclusion bool `koanf:"add_import_exclusion"`
 }
 
 // ScoringConfig drives the M3 scorer. Weights come from SCORING.md;
@@ -177,4 +193,7 @@ const (
 	defaultWeightSeedersLow   = -1000.0
 	defaultWeightSwarmBonus   = 5.0
 	defaultWeightTrackerDead  = 40.0
+
+	defaultMaxDeletionsPerRun = 10
+	defaultInterActionDelay   = 2 * time.Second
 )

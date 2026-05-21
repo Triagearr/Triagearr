@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Triagearr/Triagearr/internal/actor"
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
@@ -45,6 +46,9 @@ type Options struct {
 	// (ADR-0015): without `mode: live` set on the daemon, request bodies
 	// asking for live are forced back to dry-run.
 	DaemonLive bool
+	// Actor executes runs resolved to "live". May be nil — in that case POST
+	// /api/v1/runs continues to insert dry-run plans only.
+	Actor *actor.Actor
 }
 
 // Server is a wired HTTP server ready to be Started.
@@ -178,6 +182,17 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run.ID = id
+	if mode == triagearr.RunModeLive && s.opts.Actor != nil {
+		if err := s.opts.Actor.Execute(r.Context(), id); err != nil {
+			slog.Warn("actor execute failed", "run_id", id, "err", err)
+		} else {
+			// Refresh the run + items so the response carries the post-Actor status.
+			if refreshed, items, err := s.opts.Store.GetRun(r.Context(), id); err == nil {
+				writeJSON(w, http.StatusOK, buildResponse(refreshed, items))
+				return
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, buildResponse(run, plan.Items))
 }
 

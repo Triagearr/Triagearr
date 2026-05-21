@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-21
+
+M5 — Actor. The release where Triagearr actually deletes things. A run resolved
+to `mode: live` now fans out per-file *arr DELETEs and then issues the
+whole-torrent qBit DELETE, persisting a per-file audit trail. The daemon stays
+`mode: dry-run` by default and the Actor refuses to act unless three gates
+align (`mode: live`, per-*arr `act: true`, ADR-0015 trigger × opt-in).
+
+### Added
+- `internal/actor`: arr-first → qBit-second pipeline (ADR-0003). Per-candidate state machine driven by `runs.mode` + `runs.triggered_by`; per-file fan-out audit so cases like "8 OK + 1 failed + 1 not-attempted" on a season pack are reconstructible from `audit_log` alone (HARDLINK_TOPOLOGY.md case 4).
+- `internal/store/migrations/0009_actions.sql`: `actions` (one row per executed candidate) + `audit_log` (one row per API call). FK cascades on `runs` deletion.
+- `triagearr.ResolveRunMode(daemonLive, trigger, requestedLive)`: pure function applying ADR-0015. Wired into `POST /api/v1/runs` (accepts `"mode":"live"` in body), `triagearr run --live`, and the disk-pressure watcher.
+- `triagearr.FileDeleter` optional interface implemented by Sonarr (`/api/v3/episodefile/{id}`) and Radarr (`/api/v3/moviefile/{id}`). Stub *arr types deliberately do not implement it — the actor's deleter resolver gates on that.
+- `qbit.Delete(hash, deleteFiles=true)` → `POST /api/v2/torrents/delete`. 5xx and transport failures are wrapped with the new `triagearr.ErrTransient` sentinel so the actor's retry loop can distinguish them from hard 404/401.
+- Config `action.{max_deletions_per_run, inter_action_delay, add_import_exclusion}` (defaults: 10, 2s, false).
+- `store.MarkRunStatus(id, status)` so the actor can transition runs through running/completed.
+
+### Changed
+- `triagearr run`: `--live` now resolves through the gate. `--live` against a dry-run daemon fails fast with a clear error. `--dry-run` continues to be required for non-live invocations.
+- `disk_watcher` carries `DaemonLive` + an optional `Actor`; pressure runs auto-execute when the daemon is live, otherwise they fall back to the M4 dry-run plan.
+- ROADMAP: cross-seed safety net (T3.5 nlink stat + skip/warn_only/force_delete) **deferred to M8** — requires FS access, out of scope for a full-API release (ADR-0012). Smoke testcontainers also reclassed to M8; M5 ships in-process httptest fakes covering the same state machine.
+
+### Removed
+- `ArrInstance.DeleteMedia(MediaID)` and its stubs — the interface required a series/movie-level delete that Triagearr never wired and that has the wrong granularity for per-torrent decisions against per-file *arr DELETE.
+
 ## [0.5.0] - 2026-05-20
 
 M4 — Triggers. The Decider turns scores into ordered run plans; disk pressure, HTTP, and CLI all fire dry-run runs that are persisted for audit. Still no destructive action — the Actor lands in M5.

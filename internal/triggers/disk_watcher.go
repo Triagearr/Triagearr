@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Triagearr/Triagearr/internal/actor"
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
@@ -49,6 +50,9 @@ type DiskWatcher struct {
 	// automatically when set; otherwise they stay dry-run regardless of
 	// trigger (ADR-0015).
 	DaemonLive bool
+	// Actor executes runs resolved to "live". When nil the watcher behaves
+	// as in M4 (plan only, no destructive call).
+	Actor *actor.Actor
 
 	now      func() time.Time
 	lastFire map[string]time.Time
@@ -152,6 +156,12 @@ func (w *DiskWatcher) fire(ctx context.Context, r VolumeRule, snap triagearr.Dis
 		"candidates", len(plan.Items),
 		"estimated_freed_gb", float64(plan.EstimatedFreedBytes)/(1024*1024*1024),
 		"stop_reason", string(plan.StopReason),
+		"mode", string(mode),
 	)
+	if mode == triagearr.RunModeLive && w.Actor != nil {
+		if err := w.Actor.Execute(ctx, id); err != nil {
+			return fmt.Errorf("actor execute: %w", err)
+		}
+	}
 	return nil
 }

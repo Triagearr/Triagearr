@@ -125,21 +125,21 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 
 ⚠️ **The release where Triagearr actually deletes things.**
 
-- [ ] `internal/actor` package
-- [ ] `mode: live` config requirement
-- [ ] Per-*arr-instance `act: true` requirement (defense in depth)
-- [ ] Trigger gating per ADR-0015: Actor executes runs from `disk_pressure` automatically; HTTP/CLI triggers require explicit per-request live opt-in; any future scheduled trigger (cron) stays dry-run forever
-- [ ] `POST /api/v1/runs` accepts a `mode` field in the request body — without it, the resulting run is forced to dry-run even if the daemon is `mode: live`
-- [ ] `triagearr run --live` is unlocked (currently rejected by `runAction`); the flag remains mandatory for any live CLI trigger
-- [ ] `arr-then-qbit` deletion pipeline per `docs/HARDLINK_TOPOLOGY.md`, including the multi-file fan-out (T3 per `arr_file_id`, T3.5 per-file nlink re-stat, T4 whole-torrent)
-- [ ] Cross-seed conflict handling (skip / warn_only / force_delete), evaluated per-file but aborting the whole torrent on any conflict (qBit `deleteFiles=true` is all-or-nothing)
-- [ ] Partial *arr failure handling: hard fail aborts the candidate, deletes already done are NOT rolled back, disk impact = 0 (every nlink remains ≥1 thanks to surviving torrent), state logged for *arr re-grab
-- [ ] `actions` + `audit_log` tables populated atomically — `audit_log` granularity is **per-file** (case "8 OK + 1 failed + 1 not-attempted" must be reconstructible post-mortem)
-- [ ] Rate limiting (`max_deletions_per_run`, `inter_action_delay`)
-- [ ] Retry with backoff on transient *arr/qbit failures
-- [ ] Smoke test against a throwaway Sonarr+qBit pair in CI (testcontainers)
-- [ ] Log redaction: never write `api_key`, `password`, or auth-bearing query strings to slog output
-- [ ] New SQLite file created with `0640` mode (umask-respected via `os.OpenFile`); existing-file perms left alone — Docker UID/GID mismatches across homelab NAS setups are real and a strict enforcement would break more deployments than it would harden. Document the host-side recommendation (`chmod 600`, restrict the parent directory) in `DEPLOYMENT.md`.
+- [x] `internal/actor` package
+- [x] `mode: live` config requirement
+- [x] Per-*arr-instance `act: true` requirement (defense in depth)
+- [x] Trigger gating per ADR-0015: pressure auto, HTTP/CLI explicit opt-in, cron forever dry-run
+- [x] `POST /api/v1/runs` accepts a `mode` field; without it the run stays dry-run even on a live daemon
+- [x] `triagearr run --live` unlocked (errors out clearly when daemon mode is dry-run)
+- [x] `arr-then-qbit` deletion pipeline per `docs/HARDLINK_TOPOLOGY.md` (T3 per `arr_file_id`, T4 whole-torrent)
+- [ ] ~~Cross-seed conflict handling (T3.5 nlink stat + skip/warn_only/force_delete)~~ — **deferred to M8** (requires FS access; out of scope for full-API per ADR-0012)
+- [x] Partial *arr failure handling: hard fail aborts candidate, no rollback, audit_log narrates
+- [x] `actions` + `audit_log` tables — per-file granularity (case "8 OK + 1 failed + 1 not-attempted" reconstructible from `SELECT … WHERE action_id = ?`)
+- [x] Rate limiting (`max_deletions_per_run`, `inter_action_delay`)
+- [x] Retry with backoff on transient failures (stdlib exponential + `crypto/rand` jitter, 3 attempts, ~10s budget)
+- [ ] ~~Smoke test against a throwaway Sonarr+qBit pair in CI (testcontainers)~~ — **reclassed to M8**; M5 covers the state machine with in-process httptest fakes
+- [ ] Log redaction _(PR6 — pending)_
+- [ ] `DEPLOYMENT.md` `chmod 600` recommendation _(PR6)_; strict SQLite file mode enforcement skipped (Docker/NAS UID friction)
 
 ### Personal acceptance
 

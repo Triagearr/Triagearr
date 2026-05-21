@@ -93,6 +93,22 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	run.ID = id
 
+	if mode == triagearr.RunModeLive {
+		act, qbitClient, err := buildActor(cfg, s)
+		if err != nil {
+			return err
+		}
+		_ = qbitClient // referenced via closure inside buildActor for lifecycle
+		if err := act.Execute(ctx, id); err != nil {
+			return fmt.Errorf("actor execute: %w", err)
+		}
+		refreshed, items, err := s.GetRun(ctx, id)
+		if err == nil {
+			run = refreshed
+			plan.Items = items
+		}
+	}
+
 	if cmd.Bool("json") {
 		return emitRunJSON(run, plan.Items)
 	}

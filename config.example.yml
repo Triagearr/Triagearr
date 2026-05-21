@@ -161,15 +161,13 @@ triggers:
 # -----------------------------------------------------------------------------
 action:
   max_deletions_per_run: 10
-  inter_action_delay: 5s
-  retry:
-    max_attempts: 3
-    backoff: 30s
-  cross_seed:
-    # skip:         leave cross-seeded torrent alive, don't delete files (safest)
-    # warn_only:    delete torrent metadata only, keep files (silent fail)
-    # force_delete: delete files anyway, other seeders will break
-    on_conflict: skip
+  inter_action_delay: 2s
+  # When true, *arr is asked to add deleted releases to the import-exclusion
+  # list so they aren't re-grabbed. Per-operator choice — leave false to keep
+  # behaviour observable while the workflow stabilises.
+  add_import_exclusion: false
+  # Cross-seed safety net (nlink check) is intentionally out of scope in v0.6.0
+  # — deferred to a future milestone. Triagearr executes pure-API per ADR-0012.
 
 # -----------------------------------------------------------------------------
 # Notifications
