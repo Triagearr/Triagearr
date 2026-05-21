@@ -16,7 +16,8 @@ whole-torrent qBit DELETE, persisting a per-file audit trail. The daemon stays
 align (`mode: live`, per-*arr `act: true`, ADR-0015 trigger × opt-in).
 
 ### Added
-- `internal/actor`: arr-first → qBit-second pipeline (ADR-0003). Per-candidate state machine driven by `runs.mode` + `runs.triggered_by`; per-file fan-out audit so cases like "8 OK + 1 failed + 1 not-attempted" on a season pack are reconstructible from `audit_log` alone (HARDLINK_TOPOLOGY.md case 4).
+- `internal/actor`: arr-first → qBit-second pipeline (ADR-0003, narrated in ADR-0016). Per-candidate state machine driven by `runs.mode` + `runs.triggered_by`; per-file fan-out audit so cases like "8 OK + 1 failed + 1 not-attempted" on a season pack are reconstructible from `audit_log` alone (HARDLINK_TOPOLOGY.md case 4).
+- `internal/logging.RedactHandler`: slog middleware that scrubs `api_key`/`apikey`/`password`/`bot_token` attributes and known secret query parameters in URL-shaped string values. Installed by default via `logging.Setup`.
 - `internal/store/migrations/0009_actions.sql`: `actions` (one row per executed candidate) + `audit_log` (one row per API call). FK cascades on `runs` deletion.
 - `triagearr.ResolveRunMode(daemonLive, trigger, requestedLive)`: pure function applying ADR-0015. Wired into `POST /api/v1/runs` (accepts `"mode":"live"` in body), `triagearr run --live`, and the disk-pressure watcher.
 - `triagearr.FileDeleter` optional interface implemented by Sonarr (`/api/v3/episodefile/{id}`) and Radarr (`/api/v3/moviefile/{id}`). Stub *arr types deliberately do not implement it — the actor's deleter resolver gates on that.

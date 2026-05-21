@@ -138,8 +138,9 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 - [x] Rate limiting (`max_deletions_per_run`, `inter_action_delay`)
 - [x] Retry with backoff on transient failures (stdlib exponential + `crypto/rand` jitter, 3 attempts, ~10s budget)
 - [ ] ~~Smoke test against a throwaway Sonarr+qBit pair in CI (testcontainers)~~ — **reclassed to M8**; M5 covers the state machine with in-process httptest fakes
-- [ ] Log redaction _(PR6 — pending)_
-- [ ] `DEPLOYMENT.md` `chmod 600` recommendation _(PR6)_; strict SQLite file mode enforcement skipped (Docker/NAS UID friction)
+- [x] Log redaction: slog handler scrubs api_key / password / bot_token attrs and secret query params
+- [x] `DEPLOYMENT.md` `chmod 600` recommendation; strict SQLite file mode enforcement skipped (Docker/NAS UID friction)
+- [x] ADR-0016 — Actor pipeline narrative
 
 ### Personal acceptance
 

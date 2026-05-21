@@ -136,6 +136,25 @@ The container UID/GID must:
 
 On QNAP, the standard fix for ACL inheritance issues applies — `setfacl -bR /share/docker/triagearr/` after first deploy. The parent project's Taskfile does this automatically after rsync.
 
+### SQLite file mode (host-side recommendation)
+
+The daemon does **not** enforce a strict permission mode on `triagearr.db` —
+Docker/UID mismatches across NAS setups (PUID, ACLs, share inheritance)
+make a hard `chmod 0640` more disruptive than protective. The database is
+written through the container UID and inherits the parent directory's
+defaults.
+
+If your host policy allows it, recommend:
+
+```bash
+chmod 600 /opt/triagearr/data/triagearr.db
+chmod 600 /opt/triagearr/data/api_key
+chmod 750 /opt/triagearr/data
+```
+
+after the first boot. `api_key` is auto-generated with `0600` already; the
+SQLite database picks up the directory's umask.
+
 ## Secrets handling
 
 Triagearr **never** reads secrets from the YAML file directly. Use environment variable substitution (`${VAR}` syntax in the YAML). Secrets come from:

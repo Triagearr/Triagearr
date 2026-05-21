@@ -16,12 +16,13 @@ import (
 func Setup() *slog.Logger {
 	level := parseLevel(os.Getenv("TRIAGEARR_LOG_LEVEL"))
 	opts := &slog.HandlerOptions{Level: level}
-	var handler slog.Handler
+	var inner slog.Handler
 	if term.IsTerminal(int(os.Stderr.Fd())) {
-		handler = slog.NewTextHandler(os.Stderr, opts)
+		inner = slog.NewTextHandler(os.Stderr, opts)
 	} else {
-		handler = slog.NewJSONHandler(os.Stderr, opts)
+		inner = slog.NewJSONHandler(os.Stderr, opts)
 	}
+	handler := NewRedactHandler(inner)
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	return logger
