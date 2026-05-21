@@ -67,7 +67,7 @@ type Server struct {
 // New builds a Server. Does not start listening.
 func New(opts Options) *Server {
 	s := &Server{
-		opts:     opts,
+		opts: opts,
 		// Runs: generous burst for interactive homelab use (clicking "Plan
 		// dry-run" twice shouldn't be a 429). Still catches a runaway loop.
 		runRate:  newIPRateLimiter(20, time.Minute),
