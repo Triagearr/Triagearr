@@ -110,9 +110,11 @@ Triagearr stats both paths and verifies `Sys().(*syscall.Stat_t).Ino` matches.
 
 The mapping is refreshed each *arr poll (file paths can move via *arr renames). Stale entries are detected and recomputed.
 
-### 4. Scoring (on demand, cached)
+### 4. Scoring (event-driven, cached)
 
 The scorer reads from `snapshots_raw + snapshots_daily + media + arr_instances` and computes a `DeleteScore` per torrent. See [SCORING.md](SCORING.md) for the full formula. Output is persisted to the `scores` table with the contributing factors (auditability).
+
+Scoring is **event-driven** (ADR-0020): a feeding poller (qbit, tracker, *arr) signals the scorer after every successful tick, and the scorer re-scores the whole library after a short debounce window. There is no fixed scoring interval — the pollers' own cadences pace the scorer, which means a fresh start scores as soon as the first poll lands instead of racing an empty store.
 
 ### 5. Decision (triggered)
 
@@ -225,6 +227,7 @@ All tables use `WITHOUT ROWID` where appropriate and have composite indexes for 
 Single binary, single process, multiple goroutines:
 
 - 1 goroutine per poller (configurable interval)
+- 1 goroutine for the scorer loop (event-driven: re-scores on poller signals, debounced)
 - 1 goroutine for the downsampler (daily tick)
 - 1 goroutine for the decider (subscribes to triggers via channels)
 - 1 goroutine for the actor (consumes decisions via channel, processes serially to respect rate limits)
