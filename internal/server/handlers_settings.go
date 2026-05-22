@@ -191,8 +191,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body settingsPutRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 	if len(body.Overrides) == 0 {

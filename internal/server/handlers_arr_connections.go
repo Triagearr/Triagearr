@@ -2,7 +2,6 @@ package server
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -136,8 +135,7 @@ func (s *Server) handleListArrConnections(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleCreateArrConnection(w http.ResponseWriter, r *http.Request) {
 	var in arrConnectionInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSONBody(w, r, &in) {
 		return
 	}
 	if msg, ok := validateArrConnInput(in); !ok {
@@ -172,8 +170,7 @@ func (s *Server) handleUpdateArrConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var in arrConnectionInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSONBody(w, r, &in) {
 		return
 	}
 	if msg, ok := validateArrConnInput(in); !ok {
@@ -233,8 +230,7 @@ type arrConnectionTestRequest struct {
 
 func (s *Server) handleTestArrConnection(w http.ResponseWriter, r *http.Request) {
 	var body arrConnectionTestRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 	if !registry.KnownKind(body.Kind) {

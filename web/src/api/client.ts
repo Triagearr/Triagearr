@@ -15,11 +15,7 @@ export class ApiError extends Error {
  * does, the cookie is set by the login flow and every subsequent request
  * carries it automatically.
  */
-export async function apiFetch<T>(
-  path: string,
-  schema: z.ZodType<T>,
-  init?: RequestInit,
-): Promise<T> {
+async function request(path: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers ?? {});
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -35,6 +31,20 @@ export async function apiFetch<T>(
     }
     throw new ApiError(res.status, detail);
   }
+  return res;
+}
+
+export async function apiFetch<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await request(path, init);
   const json = (await res.json()) as unknown;
   return schema.parse(json);
+}
+
+/** apiFetchVoid is apiFetch for endpoints that return no body (204, 202). */
+export async function apiFetchVoid(path: string, init?: RequestInit): Promise<void> {
+  await request(path, init);
 }

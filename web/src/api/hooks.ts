@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "./client";
+import { apiFetch, apiFetchVoid } from "./client";
 import {
   ActionDetail,
   ActionList,
@@ -272,18 +272,11 @@ export type SettingsOverrideInput = { key: string; value: unknown | null };
 export function useUpdateSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (overrides: SettingsOverrideInput[]) => {
-      const res = await fetch("/api/v1/settings", {
+    mutationFn: (overrides: SettingsOverrideInput[]) =>
+      apiFetchVoid("/api/v1/settings", {
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ overrides }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || res.statusText);
-      }
-    },
+      }),
     onSuccess: () => {
       // Refresh after the daemon's reload window. 1.5s is generous on the
       // local sqlite + in-process restart path.
@@ -301,22 +294,7 @@ export function useUpdateSettings() {
 // currently-loaded config, so unsaved edits must be saved first.
 export function useTestNotification() {
   return useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/v1/notifications/test", {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        let msg = res.statusText;
-        try {
-          const body = (await res.json()) as { error?: string };
-          if (body?.error) msg = body.error;
-        } catch {
-          // non-JSON body — keep statusText
-        }
-        throw new Error(msg);
-      }
-    },
+    mutationFn: () => apiFetchVoid("/api/v1/notifications/test", { method: "POST" }),
   });
 }
 
@@ -380,16 +358,8 @@ export function useUpdateArrConnection() {
 export function useDeleteArrConnection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/v1/arr-connections/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || res.statusText);
-      }
-    },
+    mutationFn: (id: number) =>
+      apiFetchVoid(`/api/v1/arr-connections/${id}`, { method: "DELETE" }),
     onSuccess: () => invalidateArrConnections(qc),
   });
 }
@@ -398,29 +368,16 @@ export function useDeleteArrConnection() {
 // operator can verify a connection before saving it.
 export function useTestArrConnection() {
   return useMutation({
-    mutationFn: async (input: {
+    mutationFn: (input: {
       kind: string;
       url: string;
       api_key: string;
       timeout_seconds: number;
-    }) => {
-      const res = await fetch("/api/v1/arr-connections/test", {
+    }) =>
+      apiFetchVoid("/api/v1/arr-connections/test", {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
-      });
-      if (!res.ok) {
-        let msg = res.statusText;
-        try {
-          const body = (await res.json()) as { error?: string };
-          if (body?.error) msg = body.error;
-        } catch {
-          // non-JSON body — keep statusText
-        }
-        throw new Error(msg);
-      }
-    },
+      }),
   });
 }
 
