@@ -3,9 +3,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -175,6 +177,10 @@ func migrateAction(_ context.Context, cmd *cli.Command) error {
 
 func serveAction(ctx context.Context, cmd *cli.Command) error {
 	path := cmd.String("config")
+	// Boot in two passes so SQLite overrides can layer on top of the YAML
+	// baseline: load YAML once to find sqlite_path, migrate the store, then
+	// reload with the persisted overrides applied. Anything in
+	// settings_overrides becomes part of the effective config from tick zero.
 	cfg, err := config.Load(path)
 	if err != nil {
 		return fmt.Errorf("loading config from %q: %w", path, err)
@@ -184,6 +190,11 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer func() { _ = s.Close() }()
+
+	cfg, err = loadWithOverrides(ctx, path, s)
+	if err != nil {
+		return fmt.Errorf("applying settings_overrides: %w", err)
+	}
 
 	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -196,7 +207,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		runCtx, cancel := context.WithCancel(signalCtx)
 		done := make(chan error, 1)
 		go func(c *config.Config) {
-			done <- runDaemon(runCtx, s, c)
+			done <- runDaemon(runCtx, s, c, path)
 		}(cfg)
 
 	inner:
@@ -206,7 +217,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 				cancel()
 				return <-done
 			case <-hup:
-				newCfg, err := config.Load(path)
+				newCfg, err := loadWithOverrides(signalCtx, path, s)
 				if err != nil {
 					slog.Error("SIGHUP reload failed; keeping current config", "err", err)
 					continue inner
@@ -224,16 +235,31 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	}
 }
 
+// selfReload sends SIGHUP to the current process so the serveAction boot
+// loop tears down the daemon and re-loads with fresh settings_overrides.
+// Called by the settings HTTP handler after a successful PUT.
+func selfReload() {
+	if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
+		slog.Error("self-SIGHUP failed", "err", err)
+	}
+}
+
 // runDaemon assembles the poller set + HTTP server from cfg and blocks until
 // ctx is cancelled. Reused by serveAction's SIGHUP loop to spawn a fresh
-// daemon when config changes.
-func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
+// daemon when config changes. cfgPath is captured for the ReloadValidate
+// closure given to the HTTP server.
+func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath string) error {
 	reg, err := registry.BuildFromConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("building client registry: %w", err)
 	}
 
 	var ps []pollers.Poller
+
+	// scoreSignal carries "fresh data persisted" pings from the feeding
+	// pollers (qbit/tracker/arr) to the scorer Loop. Buffered at 1 so a burst
+	// of poller ticks coalesces and senders never block.
+	scoreSignal := make(chan struct{}, 1)
 
 	var qb *qbit.Client
 	if cfg.Qbit.Enabled {
@@ -247,8 +273,8 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 			return fmt.Errorf("building qbit client: %w", qbErr)
 		}
 		qb = qbBuilt
-		ps = append(ps, &pollers.QbitPoller{Client: qb, Store: s, Interval: cfg.Polling.QbitInterval})
-		ps = append(ps, &pollers.TrackerPoller{Client: qb, Store: s, Interval: cfg.Polling.TrackerInterval})
+		ps = append(ps, &pollers.QbitPoller{Client: qb, Store: s, Interval: cfg.Polling.QbitInterval, Notify: scoreSignal})
+		ps = append(ps, &pollers.TrackerPoller{Client: qb, Store: s, Interval: cfg.Polling.TrackerInterval, Notify: scoreSignal})
 	}
 
 	pollingArrs := reg.AllPolling()
@@ -260,6 +286,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 			Store:                 s,
 			Interval:              cfg.Polling.ArrInterval,
 			FileFanoutMinInterval: cfg.Polling.ArrFileMinInterval,
+			Notify:                scoreSignal,
 		})
 	}
 
@@ -290,7 +317,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 		Arrs:  cfg.Arrs,
 		Store: s,
 	})
-	ps = append(ps, &scorer.Loop{Scorer: sc, Interval: cfg.Scoring.Interval})
+	ps = append(ps, &scorer.Loop{Score: sc.ScorePass, Signal: scoreSignal})
 
 	dec := decider.New(s)
 	daemonLive := cfg.Mode == config.ModeLive
@@ -349,6 +376,11 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config) error {
 			Volumes:       func() []decider.Volume { return allVolumes(cfg) },
 			DaemonLive:    daemonLive,
 			Actor:         act,
+			Reload:        selfReload,
+			ReloadValidate: func(ovs []config.Override) error {
+				_, err := config.LoadWithOverrides(cfgPath, ovs)
+				return err
+			},
 		})
 	}
 
@@ -481,15 +513,69 @@ func arrURLMap(cfg *config.Config) map[string]string {
 	return out
 }
 
+// loadWithOverrides reads YAML from path, layers persisted settings_overrides
+// on top, and returns the effective config. Called at boot and on SIGHUP.
+func loadWithOverrides(ctx context.Context, path string, s *store.Store) (*config.Config, error) {
+	rows, err := s.ListSettingsOverrides(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ovs := make([]config.Override, len(rows))
+	for i, r := range rows {
+		ovs[i] = config.Override{Key: r.Key, ValueJSON: r.ValueJSON}
+	}
+	return config.LoadWithOverrides(path, ovs)
+}
+
 func enabledVolumes(cfg *config.Config) []pollers.Volume {
 	var out []pollers.Volume
 	for _, v := range cfg.Volumes {
 		if !v.DiskPressure.Enabled {
 			continue
 		}
-		out = append(out, pollers.Volume{Name: v.Name, Path: v.Path})
+		vol := pollers.Volume{Name: v.Name, Path: v.Path}
+		if v.Source != "" {
+			vol.Sample = httpDiskSampler(v.Source)
+		}
+		out = append(out, vol)
 	}
 	return out
+}
+
+// httpDiskSampler returns a Sampler that fetches DiskUsage from a URL serving
+// the fakedisk JSON shape. Used by dev configs (config.dev.yml) to drive the
+// pressure trigger off a fake disk without touching a real filesystem.
+func httpDiskSampler(url string) pollers.Sampler {
+	client := &http.Client{Timeout: 5 * time.Second}
+	return func(ctx context.Context) (triagearr.DiskUsage, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return triagearr.DiskUsage{}, fmt.Errorf("disk source %q: %w", url, err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return triagearr.DiskUsage{}, fmt.Errorf("disk source %q: %w", url, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			return triagearr.DiskUsage{}, fmt.Errorf("disk source %q: HTTP %d", url, resp.StatusCode)
+		}
+		var body struct {
+			TotalBytes  uint64  `json:"total_bytes"`
+			UsedBytes   uint64  `json:"used_bytes"`
+			FreeBytes   uint64  `json:"free_bytes"`
+			FreePercent float64 `json:"free_percent"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			return triagearr.DiskUsage{}, fmt.Errorf("disk source %q: decode: %w", url, err)
+		}
+		return triagearr.DiskUsage{
+			TotalBytes:  body.TotalBytes,
+			UsedBytes:   body.UsedBytes,
+			FreeBytes:   body.FreeBytes,
+			FreePercent: body.FreePercent,
+		}, nil
+	}
 }
 
 func inspectTorrentsAction(ctx context.Context, cmd *cli.Command) error {

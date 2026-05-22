@@ -19,7 +19,11 @@ type Poller interface {
 // until ctx is cancelled. Errors are logged and swallowed so a transient failure
 // in one provider never kills the daemon. Exported so triggers and scorer can
 // share the same loop semantics without duplicating the timer plumbing.
-func TickLoop(ctx context.Context, name string, interval time.Duration, tick func(context.Context) error) error {
+//
+// notify, when non-nil, receives a non-blocking signal after every successful
+// tick — the scorer subscribes to this so a poll completing fresh data
+// immediately drives a re-score.
+func TickLoop(ctx context.Context, name string, interval time.Duration, tick func(context.Context) error, notify chan<- struct{}) error {
 	logger := slog.With("poller", name, "interval", interval.String())
 	logger.Info("poller started")
 	defer logger.Info("poller stopped")
@@ -34,6 +38,12 @@ func TickLoop(ctx context.Context, name string, interval time.Duration, tick fun
 			return
 		}
 		logger.Debug("tick ok", "duration", time.Since(t0).String())
+		if notify != nil {
+			select {
+			case notify <- struct{}{}:
+			default:
+			}
+		}
 	}
 
 	runOnce()

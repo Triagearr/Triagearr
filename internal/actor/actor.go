@@ -260,7 +260,7 @@ func jitter(max time.Duration) time.Duration {
 	if max <= 0 {
 		return 0
 	}
-	return time.Duration(rand.Int64N(int64(max)))
+	return time.Duration(rand.Int64N(int64(max))) //nolint:gosec // G404: jitter is timing noise, not security-sensitive
 }
 
 func truncate(s string) string {

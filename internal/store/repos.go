@@ -171,8 +171,10 @@ func (s *Store) InsertSnapshot(ctx context.Context, snap triagearr.Snapshot) err
 	return nil
 }
 
-// TorrentRow is a denormalised view used by `inspect torrents`. It joins the
-// latest snapshot onto each torrent.
+// TorrentRow is a denormalised view used by `inspect torrents` and the
+// dashboard's torrent list. It joins the latest snapshot onto each torrent.
+// The score-related fields are only populated by ListTorrentsFiltered, which
+// joins the scores table; other callers leave them at their zero value.
 type TorrentRow struct {
 	Hash       string     `db:"hash"`
 	Name       string     `db:"name"`
@@ -180,11 +182,16 @@ type TorrentRow struct {
 	Size       int64      `db:"size"`
 	AddedOn    time.Time  `db:"added_on"`
 	LastSeen   time.Time  `db:"last_seen"`
+	Private    bool       `db:"private"`
 	Ratio      *float64   `db:"ratio"`
 	Seeders    *int       `db:"seeders"`
 	Leechers   *int       `db:"leechers"`
 	State      *string    `db:"state"`
 	SnapshotAt *time.Time `db:"snap_ts"`
+
+	Score           *float64 `db:"score"`
+	Excluded        *bool    `db:"excluded"`
+	AnyTrackerAlive *bool    `db:"any_tracker_alive"`
 }
 
 // ListTorrentsLatest returns torrents with their latest snapshot, sorted+limited.

@@ -20,6 +20,9 @@ type QbitPoller struct {
 	Client   triagearr.QbitClient
 	Store    QbitStore
 	Interval time.Duration
+	// Notify, when non-nil, is signalled after each successful tick so the
+	// scorer can re-score against the freshly persisted torrents.
+	Notify chan<- struct{}
 }
 
 // Name implements Poller.
@@ -27,7 +30,7 @@ func (p *QbitPoller) Name() string { return "qbit" }
 
 // Run blocks until ctx is cancelled.
 func (p *QbitPoller) Run(ctx context.Context) error {
-	return TickLoop(ctx, p.Name(), p.Interval, p.tick)
+	return TickLoop(ctx, p.Name(), p.Interval, p.tick, p.Notify)
 }
 
 func (p *QbitPoller) tick(ctx context.Context) error {

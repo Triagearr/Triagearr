@@ -169,9 +169,6 @@ func applyDefaults(c *Config) {
 }
 
 func applyScoringDefaults(s *ScoringConfig) {
-	if s.Interval == 0 {
-		s.Interval = defaultScoringInterval
-	}
 	if s.HnRWindowDays == 0 {
 		s.HnRWindowDays = defaultHnRWindowDays
 	}

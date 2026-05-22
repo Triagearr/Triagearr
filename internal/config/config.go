@@ -48,7 +48,6 @@ type ActionConfig struct {
 // ScoringConfig drives the M3 scorer. Weights come from SCORING.md;
 // HnR window weight is hard-coded (-10000) per the safety contract.
 type ScoringConfig struct {
-	Interval             time.Duration            `koanf:"interval"`
 	HnRWindowDays        int                      `koanf:"hnr_window_days"`
 	RareContentThreshold int                      `koanf:"rare_content_threshold"`
 	TrackerDeadGrace     time.Duration            `koanf:"tracker_dead_grace"`
@@ -144,9 +143,14 @@ type QbitConfig struct {
 }
 
 // VolumeConfig describes a watched filesystem mount.
+//
+// When Source is non-empty, the disk poller fetches usage from that URL
+// instead of calling statfs(Path). This is a dev/test hook — production
+// configs leave it empty so statfs is used.
 type VolumeConfig struct {
 	Name         string             `koanf:"name"`
 	Path         string             `koanf:"path"`
+	Source       string             `koanf:"source"`
 	DiskPressure DiskPressureConfig `koanf:"disk_pressure"`
 }
 
@@ -203,7 +207,6 @@ const (
 	defaultRetentionDaily     = 365 * 24 * time.Hour
 	defaultRetentionTorrents  = 7 * 24 * time.Hour
 	defaultVacuumMinReclaimMB = int64(50)
-	defaultScoringInterval    = time.Hour
 	defaultHnRWindowDays      = 14
 	defaultRareThreshold      = 3
 	defaultTrackerDeadGrace   = 7 * 24 * time.Hour

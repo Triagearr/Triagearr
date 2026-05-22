@@ -31,6 +31,9 @@ type ArrPoller struct {
 	Store                 ArrStore
 	Interval              time.Duration
 	FileFanoutMinInterval time.Duration
+	// Notify, when non-nil, is signalled after each successful tick so the
+	// scorer can re-score against the freshly persisted *arr state.
+	Notify chan<- struct{}
 }
 
 // URLKey is the canonical "<type>/<name>" key for the URLs map.
@@ -43,7 +46,7 @@ func (p *ArrPoller) Name() string { return "arr" }
 
 // Run blocks until ctx is cancelled.
 func (p *ArrPoller) Run(ctx context.Context) error {
-	return TickLoop(ctx, p.Name(), p.Interval, p.tick)
+	return TickLoop(ctx, p.Name(), p.Interval, p.tick, p.Notify)
 }
 
 func (p *ArrPoller) tick(ctx context.Context) error {

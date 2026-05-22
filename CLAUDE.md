@@ -22,6 +22,7 @@ Go 1.26+ · urfave/cli/v3 · koanf/v2 · modernc.org/sqlite · chi/v5 · log/slo
 - logging: `slog` only, structured key/value pairs
 - tests: table-driven, real subjects (`t.TempDir()`, `httptest`), light on mocks
 - comments: WHY only, never WHAT; no PR/issue refs in code
+- frontend (`web/`): use **bun**, not npm — `bun install`, `bun run lint`, `bun run build`, `bun run dev`
 
 ## Non-negotiable safety rules
 

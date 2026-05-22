@@ -13,10 +13,17 @@ type DiskStore interface {
 	InsertDiskUsage(ctx context.Context, d triagearr.DiskUsage) error
 }
 
-// Volume is a watched filesystem mount.
+// Sampler returns one disk-usage snapshot. The default sampler in this
+// package wraps statfs(2); dev fixtures inject an HTTP-backed sampler so the
+// pressure trigger can be exercised against fake volumes.
+type Sampler func(ctx context.Context) (triagearr.DiskUsage, error)
+
+// Volume is a watched filesystem mount. When Sample is nil, the poller falls
+// back to statfs(Path) — the production code path.
 type Volume struct {
-	Name string
-	Path string
+	Name   string
+	Path   string
+	Sample Sampler
 }
 
 // DiskPoller polls disk usage on every configured volume.
@@ -31,15 +38,23 @@ func (p *DiskPoller) Name() string { return "disk" }
 
 // Run blocks until ctx is cancelled.
 func (p *DiskPoller) Run(ctx context.Context) error {
-	return TickLoop(ctx, p.Name(), p.Interval, p.tick)
+	return TickLoop(ctx, p.Name(), p.Interval, p.tick, nil)
 }
 
 func (p *DiskPoller) tick(ctx context.Context) error {
 	now := time.Now().UTC()
 	for _, v := range p.Volumes {
-		usage, err := statfs(v.Path)
+		var (
+			usage triagearr.DiskUsage
+			err   error
+		)
+		if v.Sample != nil {
+			usage, err = v.Sample(ctx)
+		} else {
+			usage, err = statfs(v.Path)
+		}
 		if err != nil {
-			slog.Warn("statfs failed", "volume", v.Name, "path", v.Path, "err", err)
+			slog.Warn("disk sample failed", "volume", v.Name, "path", v.Path, "err", err)
 			continue
 		}
 		usage.VolumeName = v.Name

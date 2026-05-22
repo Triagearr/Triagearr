@@ -263,9 +263,11 @@ func (s *Store) ListTrackersAll(ctx context.Context) (map[string][]TrackerRow, e
 	return out, nil
 }
 
-// ScoreRow is the persisted scoring verdict per torrent.
+// ScoreRow is the persisted scoring verdict per torrent. Name is only populated
+// by ListScores (which joins the torrents table); GetScore leaves it empty.
 type ScoreRow struct {
 	Hash             string    `db:"torrent_hash"`
+	Name             string    `db:"name"`
 	Score            float64   `db:"score"`
 	Private          bool      `db:"private"`
 	AnyTrackerAlive  bool      `db:"any_tracker_alive"`
@@ -321,16 +323,20 @@ type ListScoresOpts struct {
 	Limit int
 }
 
-// ListScores returns score rows ordered by score descending (most-deletable first).
+// ListScores returns score rows ordered by score descending (most-deletable
+// first), joined to the torrents table so callers get a human-readable name.
 func (s *Store) ListScores(ctx context.Context, opts ListScoresOpts) ([]ScoreRow, error) {
 	q := `
-		SELECT torrent_hash, score, private, any_tracker_alive, excluded, exclusion_reasons, factors_json, computed_at
-		FROM scores
+		SELECT sc.torrent_hash, sc.score, sc.private, sc.any_tracker_alive,
+		       sc.excluded, sc.exclusion_reasons, sc.factors_json, sc.computed_at,
+		       COALESCE(t.name, sc.torrent_hash) AS name
+		FROM scores sc
+		LEFT JOIN torrents t ON t.hash = sc.torrent_hash
 	`
 	if !opts.IncludeExcluded {
-		q += ` WHERE excluded = 0`
+		q += ` WHERE sc.excluded = 0`
 	}
-	q += ` ORDER BY score DESC, torrent_hash ASC`
+	q += ` ORDER BY sc.score DESC, sc.torrent_hash ASC`
 	if opts.Limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", opts.Limit)
 	}

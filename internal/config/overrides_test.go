@@ -1,0 +1,143 @@
+package config_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/Triagearr/Triagearr/internal/config"
+)
+
+const baseYAML = `
+mode: dry-run
+http:
+  bind: "127.0.0.1:9494"
+storage:
+  sqlite_path: /tmp/triagearr-test.db
+arrs:
+  sonarr:
+    - name: main
+      enabled: true
+      url: http://sonarr:8989
+      api_key: test-key
+      poll: true
+      act: false
+qbit:
+  enabled: true
+  url: http://qbit:8090
+  username: ""
+  password: ""
+volumes:
+  - name: media
+    path: /tmp
+    disk_pressure:
+      enabled: true
+      threshold_free_percent: 15
+      target_free_percent: 25
+      max_run_size_gb: 50
+scoring:
+  weights:
+    ratio_obligation_met: 50
+    upload_velocity_inv: 30
+    age_days: 0.1
+    seeders_low_guard: -1000
+    swarm_health_bonus: 5
+  rare_content_threshold: 3
+  hnr_window_days: 14
+polling:
+  qbit_interval: 30m
+  arr_interval: 1h
+  arr_file_min_interval: 200ms
+  tracker_interval: 6h
+  disk_interval: 5m
+  maintainerr_interval: 1h
+  downsample_cron: "0 3 * * *"
+`
+
+func writeBaseYAML(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.yml")
+	require.NoError(t, os.WriteFile(p, []byte(baseYAML), 0o600))
+	return p
+}
+
+func TestLoadWithOverrides_NoOverrides_MatchesLoad(t *testing.T) {
+	p := writeBaseYAML(t)
+	base, err := config.Load(p)
+	require.NoError(t, err)
+	merged, err := config.LoadWithOverrides(p, nil)
+	require.NoError(t, err)
+	require.Equal(t, base.Scoring.HnRWindowDays, merged.Scoring.HnRWindowDays)
+	require.Equal(t, base.Polling.QbitInterval, merged.Polling.QbitInterval)
+}
+
+func TestLoadWithOverrides_ScalarOverride(t *testing.T) {
+	p := writeBaseYAML(t)
+	cfg, err := config.LoadWithOverrides(p, []config.Override{
+		{Key: "scoring.hnr_window_days", ValueJSON: `21`},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 21, cfg.Scoring.HnRWindowDays)
+}
+
+func TestLoadWithOverrides_NestedWeight(t *testing.T) {
+	p := writeBaseYAML(t)
+	cfg, err := config.LoadWithOverrides(p, []config.Override{
+		{Key: "scoring.weights.ratio_obligation_met", ValueJSON: `100`},
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 100.0, cfg.Scoring.Weights.RatioObligationMet, 0.001)
+}
+
+func TestLoadWithOverrides_DurationOverride(t *testing.T) {
+	p := writeBaseYAML(t)
+	cfg, err := config.LoadWithOverrides(p, []config.Override{
+		{Key: "polling.qbit_interval", ValueJSON: `"5m"`},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "5m0s", cfg.Polling.QbitInterval.String())
+}
+
+func TestLoadWithOverrides_InvalidJSON(t *testing.T) {
+	p := writeBaseYAML(t)
+	_, err := config.LoadWithOverrides(p, []config.Override{
+		{Key: "scoring.hnr_window_days", ValueJSON: `not-json`},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "invalid JSON")
+}
+
+func TestLoadWithOverrides_InvalidValueFailsValidation(t *testing.T) {
+	p := writeBaseYAML(t)
+	// threshold > target is rejected by Validate
+	_, err := config.LoadWithOverrides(p, []config.Override{
+		{Key: "volumes.0.disk_pressure.threshold_free_percent", ValueJSON: `90`},
+	})
+	require.Error(t, err)
+}
+
+func TestIsEditableKey(t *testing.T) {
+	editable := []string{
+		"scoring.hnr_window_days",
+		"scoring.weights.ratio_obligation_met",
+		"polling.qbit_interval",
+		"volumes.0.disk_pressure.threshold_free_percent",
+	}
+	forbidden := []string{
+		"mode",
+		"arrs.sonarr.0.act",
+		"arrs.sonarr.0.api_key",
+		"qbit.password",
+		"http.bind",
+		"storage.sqlite_path",
+	}
+	for _, k := range editable {
+		require.True(t, config.IsEditableKey(k), "expected editable: %s", k)
+	}
+	for _, k := range forbidden {
+		require.False(t, config.IsEditableKey(k), "expected forbidden: %s", k)
+	}
+}

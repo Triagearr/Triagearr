@@ -22,6 +22,9 @@ type TrackerPoller struct {
 	Client   triagearr.QbitClient
 	Store    TrackerStore
 	Interval time.Duration
+	// Notify, when non-nil, is signalled after each successful tick so the
+	// scorer can re-score against the freshly persisted tracker state.
+	Notify chan<- struct{}
 }
 
 // Name implements Poller.
@@ -29,7 +32,7 @@ func (p *TrackerPoller) Name() string { return "tracker" }
 
 // Run blocks until ctx is cancelled.
 func (p *TrackerPoller) Run(ctx context.Context) error {
-	return TickLoop(ctx, p.Name(), p.Interval, p.tick)
+	return TickLoop(ctx, p.Name(), p.Interval, p.tick, p.Notify)
 }
 
 func (p *TrackerPoller) tick(ctx context.Context) error {

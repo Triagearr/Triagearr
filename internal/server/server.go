@@ -58,6 +58,17 @@ type Options struct {
 	// config.RateLimitsConfig for the source of these values.
 	RunsPerMinute int
 	AuthPerMinute int
+
+	// Reload, when non-nil, is invoked after a successful PUT /api/v1/settings
+	// to ask the daemon to rebuild itself with the new effective config.
+	// Wired to a self-SIGHUP in cmd/triagearr; nil in tests.
+	Reload func()
+
+	// ReloadValidate dry-runs a candidate override set through the full
+	// config load pipeline (YAML + overrides + Validate) so PUT can reject
+	// invalid combinations before persisting anything. Required for the
+	// settings endpoints — they return 503 when nil.
+	ReloadValidate func(overrides []config.Override) error
 }
 
 // sessionTTL is the sliding window applied on every authenticated hit.
@@ -98,6 +109,7 @@ func New(opts Options) *Server {
 	mux.HandleFunc("GET /api/v1/actions", s.security(s.auth(s.handleListActions)))
 	mux.HandleFunc("GET /api/v1/actions/{id}", s.security(s.auth(s.handleGetAction)))
 	mux.HandleFunc("GET /api/v1/torrents", s.security(s.auth(s.handleListTorrents)))
+	mux.HandleFunc("GET /api/v1/torrents/categories", s.security(s.auth(s.handleTorrentCategories)))
 	mux.HandleFunc("GET /api/v1/torrents/{hash}", s.security(s.auth(s.handleGetTorrent)))
 	mux.HandleFunc("GET /api/v1/torrents/{hash}/snapshots", s.security(s.auth(s.handleTorrentSnapshots)))
 	mux.HandleFunc("GET /api/v1/scores", s.security(s.auth(s.handleListScores)))
@@ -107,6 +119,9 @@ func New(opts Options) *Server {
 	mux.HandleFunc("GET /api/v1/summary", s.security(s.auth(s.handleSummary)))
 	mux.HandleFunc("GET /api/v1/config", s.security(s.auth(s.handleConfig)))
 	mux.HandleFunc("GET /api/v1/version", s.security(s.auth(s.handleVersion)))
+	mux.HandleFunc("GET /api/v1/settings", s.security(s.auth(s.handleGetSettings)))
+	mux.HandleFunc("PUT /api/v1/settings", s.security(s.auth(s.handlePutSettings)))
+	mux.HandleFunc("DELETE /api/v1/settings/{key}", s.security(s.auth(s.handleDeleteSetting)))
 
 	// Auth endpoints. GET /session is unauthenticated (the SPA uses it to
 	// decide whether to show the login screen). POST /session and the

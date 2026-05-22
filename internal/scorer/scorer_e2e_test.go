@@ -30,7 +30,6 @@ func openTestStore(t *testing.T) *store.Store {
 // do not silently depend on applyScoringDefaults running upstream.
 func testConfig() config.ScoringConfig {
 	return config.ScoringConfig{
-		Interval:             time.Hour,
 		HnRWindowDays:        14,
 		RareContentThreshold: 3,
 		TrackerDeadGrace:     7 * 24 * time.Hour,

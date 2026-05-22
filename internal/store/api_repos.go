@@ -17,19 +17,22 @@ import (
 
 // ListTorrentsOpts tunes ListTorrentsFiltered.
 type ListTorrentsOpts struct {
-	Sort        string // name|seeders|ratio|size|last_seen|score
-	Query       string // case-insensitive substring on torrent.name
-	Category    string // exact match; "" disables
-	PrivateOnly bool   // when true, only private torrents
-	Limit       int    // <= 0 falls back to 50
-	Offset      int    // >= 0
+	Sort         string // name|seeders|ratio|size|last_seen|score
+	Order        string // asc|desc; "" uses the per-column default direction
+	Query        string // case-insensitive substring on torrent.name
+	Category     string // exact match; "" disables
+	PrivateOnly  bool   // when true, only private torrents
+	ExcludedOnly bool   // when true, only torrents flagged excluded by the scorer
+	Limit        int    // <= 0 falls back to 50
+	Offset       int    // >= 0
 }
 
-// ListTorrentsFiltered returns torrents with their latest snapshot, applying
-// the filters from opts. Sort key "score" joins the scores table.
+// ListTorrentsFiltered returns torrents with their latest snapshot and persisted
+// score, applying the filters from opts. The scores table is always joined so
+// the dashboard list can show score and status without a second round-trip.
 func (s *Store) ListTorrentsFiltered(ctx context.Context, opts ListTorrentsOpts) ([]TorrentRow, error) {
-	args, where, joinScore := buildTorrentFilter(opts)
-	orderBy, err := torrentOrderByExtended(opts.Sort, joinScore)
+	args, where, _ := buildTorrentFilter(opts)
+	orderBy, err := torrentOrderByExtended(opts.Sort, opts.Order, true)
 	if err != nil {
 		return nil, err
 	}
@@ -41,18 +44,18 @@ func (s *Store) ListTorrentsFiltered(ctx context.Context, opts ListTorrentsOpts)
 
 	q := `
 		SELECT t.hash, t.name, t.category, t.size, t.added_on, t.last_seen,
+		       t.private AS private,
 		       s.ratio AS ratio, s.seeders AS seeders, s.leechers AS leechers,
-		       s.state AS state, s.ts AS snap_ts
+		       s.state AS state, s.ts AS snap_ts,
+		       sc.score AS score, sc.excluded AS excluded,
+		       sc.any_tracker_alive AS any_tracker_alive
 		FROM torrents t
 		LEFT JOIN (
 		    SELECT torrent_hash, MAX(ts) AS ts FROM snapshots_raw GROUP BY torrent_hash
 		) sm ON sm.torrent_hash = t.hash
 		LEFT JOIN snapshots_raw s
-		  ON s.torrent_hash = sm.torrent_hash AND s.ts = sm.ts`
-	if joinScore {
-		q += `
+		  ON s.torrent_hash = sm.torrent_hash AND s.ts = sm.ts
 		LEFT JOIN scores sc ON sc.torrent_hash = t.hash`
-	}
 	if where != "" {
 		q += " WHERE " + where
 	}
@@ -68,8 +71,11 @@ func (s *Store) ListTorrentsFiltered(ctx context.Context, opts ListTorrentsOpts)
 
 // CountTorrentsFiltered returns the total count matching opts (ignores limit/offset).
 func (s *Store) CountTorrentsFiltered(ctx context.Context, opts ListTorrentsOpts) (int, error) {
-	args, where, _ := buildTorrentFilter(opts)
+	args, where, joinScore := buildTorrentFilter(opts)
 	q := "SELECT COUNT(*) FROM torrents t"
+	if joinScore {
+		q += " LEFT JOIN scores sc ON sc.torrent_hash = t.hash"
+	}
 	if where != "" {
 		q += " WHERE " + where
 	}
@@ -80,6 +86,9 @@ func (s *Store) CountTorrentsFiltered(ctx context.Context, opts ListTorrentsOpts
 	return n, nil
 }
 
+// buildTorrentFilter assembles the WHERE clause shared by the list and count
+// queries. joinScore is true when a clause references the scores table, so the
+// count query knows to add the join (the list query always joins scores).
 func buildTorrentFilter(opts ListTorrentsOpts) (args []any, where string, joinScore bool) {
 	var clauses []string
 	if q := strings.TrimSpace(opts.Query); q != "" {
@@ -93,18 +102,58 @@ func buildTorrentFilter(opts ListTorrentsOpts) (args []any, where string, joinSc
 	if opts.PrivateOnly {
 		clauses = append(clauses, "t.private = 1")
 	}
-	joinScore = strings.EqualFold(opts.Sort, "score")
+	if opts.ExcludedOnly {
+		clauses = append(clauses, "sc.excluded = 1")
+		joinScore = true
+	}
 	return args, strings.Join(clauses, " AND "), joinScore
 }
 
-func torrentOrderByExtended(sortBy string, joinedScore bool) (string, error) {
-	if strings.EqualFold(sortBy, "score") {
+// orderDir resolves an explicit asc/desc request, falling back to def for an
+// empty or unrecognised value.
+func orderDir(order, def string) string {
+	switch strings.ToLower(order) {
+	case "asc":
+		return "ASC"
+	case "desc":
+		return "DESC"
+	default:
+		return def
+	}
+}
+
+func torrentOrderByExtended(sortBy, order string, joinedScore bool) (string, error) {
+	switch strings.ToLower(sortBy) {
+	case "", "name":
+		return "t.name " + orderDir(order, "ASC"), nil
+	case "seeders":
+		return "s.seeders " + orderDir(order, "DESC") + " NULLS LAST, t.name ASC", nil
+	case "ratio":
+		return "s.ratio " + orderDir(order, "DESC") + " NULLS LAST, t.name ASC", nil
+	case "size":
+		return "t.size " + orderDir(order, "DESC") + ", t.name ASC", nil
+	case "last_seen":
+		return "t.last_seen " + orderDir(order, "DESC") + ", t.name ASC", nil
+	case "score":
 		if !joinedScore {
 			return "", errors.New("score sort requires scores join")
 		}
-		return "sc.score DESC NULLS LAST, t.name ASC", nil
+		return "sc.score " + orderDir(order, "DESC") + " NULLS LAST, t.name ASC", nil
+	default:
+		return "", fmt.Errorf("unknown sort key %q (want: name|seeders|ratio|size|last_seen|score)", sortBy)
 	}
-	return torrentOrderBy(sortBy)
+}
+
+// DistinctCategories returns the sorted set of non-empty torrent categories,
+// used to populate the dashboard's category filter.
+func (s *Store) DistinctCategories(ctx context.Context) ([]string, error) {
+	var cats []string
+	err := s.reader.SelectContext(ctx, &cats,
+		`SELECT DISTINCT category FROM torrents WHERE category != '' ORDER BY category`)
+	if err != nil {
+		return nil, fmt.Errorf("listing categories: %w", err)
+	}
+	return cats, nil
 }
 
 // GetTorrent returns the persisted torrent row and its latest snapshot.

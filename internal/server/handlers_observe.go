@@ -24,11 +24,16 @@ type torrentListItem struct {
 	Size       int64      `json:"size"`
 	AddedOn    time.Time  `json:"added_on"`
 	LastSeen   time.Time  `json:"last_seen"`
+	Private    bool       `json:"private"`
 	Ratio      *float64   `json:"ratio,omitempty"`
 	Seeders    *int       `json:"seeders,omitempty"`
 	Leechers   *int       `json:"leechers,omitempty"`
 	State      *string    `json:"state,omitempty"`
 	SnapshotAt *time.Time `json:"snapshot_at,omitempty"`
+
+	Score           *float64 `json:"score,omitempty"`
+	Excluded        *bool    `json:"excluded,omitempty"`
+	AnyTrackerAlive *bool    `json:"any_tracker_alive,omitempty"`
 }
 
 type torrentListResponse struct {
@@ -38,15 +43,21 @@ type torrentListResponse struct {
 	Offset   int               `json:"offset"`
 }
 
+type torrentCategoriesResponse struct {
+	Categories []string `json:"categories"`
+}
+
 func (s *Server) handleListTorrents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	opts := store.ListTorrentsOpts{
-		Sort:        q.Get("sort"),
-		Query:       q.Get("q"),
-		Category:    q.Get("category"),
-		PrivateOnly: boolParam(q, "private"),
-		Limit:       intParam(q, "limit", 50, 1, 500),
-		Offset:      intParam(q, "offset", 0, 0, 1_000_000),
+		Sort:         q.Get("sort"),
+		Order:        q.Get("order"),
+		Query:        q.Get("q"),
+		Category:     q.Get("category"),
+		PrivateOnly:  boolParam(q, "private"),
+		ExcludedOnly: boolParam(q, "excluded"),
+		Limit:        intParam(q, "limit", 50, 1, 500),
+		Offset:       intParam(q, "offset", 0, 0, 1_000_000),
 	}
 	rows, err := s.opts.Store.ListTorrentsFiltered(r.Context(), opts)
 	if err != nil {
@@ -61,22 +72,38 @@ func (s *Server) handleListTorrents(w http.ResponseWriter, r *http.Request) {
 	items := make([]torrentListItem, len(rows))
 	for i, row := range rows {
 		items[i] = torrentListItem{
-			Hash:       row.Hash,
-			Name:       row.Name,
-			Category:   row.Category,
-			Size:       row.Size,
-			AddedOn:    row.AddedOn,
-			LastSeen:   row.LastSeen,
-			Ratio:      row.Ratio,
-			Seeders:    row.Seeders,
-			Leechers:   row.Leechers,
-			State:      row.State,
-			SnapshotAt: row.SnapshotAt,
+			Hash:            row.Hash,
+			Name:            row.Name,
+			Category:        row.Category,
+			Size:            row.Size,
+			AddedOn:         row.AddedOn,
+			LastSeen:        row.LastSeen,
+			Private:         row.Private,
+			Ratio:           row.Ratio,
+			Seeders:         row.Seeders,
+			Leechers:        row.Leechers,
+			State:           row.State,
+			SnapshotAt:      row.SnapshotAt,
+			Score:           row.Score,
+			Excluded:        row.Excluded,
+			AnyTrackerAlive: row.AnyTrackerAlive,
 		}
 	}
 	writeJSON(w, http.StatusOK, torrentListResponse{
 		Torrents: items, Total: total, Limit: opts.Limit, Offset: opts.Offset,
 	})
+}
+
+func (s *Server) handleTorrentCategories(w http.ResponseWriter, r *http.Request) {
+	cats, err := s.opts.Store.DistinctCategories(r.Context())
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	if cats == nil {
+		cats = []string{}
+	}
+	writeJSON(w, http.StatusOK, torrentCategoriesResponse{Categories: cats})
 }
 
 type torrentDetailResponse struct {
@@ -232,6 +259,7 @@ func (s *Server) handleTorrentSnapshots(w http.ResponseWriter, r *http.Request) 
 
 type scoreListItem struct {
 	Hash             string          `json:"hash"`
+	Name             string          `json:"name"`
 	Score            float64         `json:"score"`
 	Private          bool            `json:"private"`
 	AnyTrackerAlive  bool            `json:"any_tracker_alive"`
@@ -260,7 +288,7 @@ func (s *Server) handleListScores(w http.ResponseWriter, r *http.Request) {
 
 func scoreItemFromRow(row store.ScoreRow) scoreListItem {
 	return scoreListItem{
-		Hash: row.Hash, Score: row.Score, Private: row.Private,
+		Hash: row.Hash, Name: row.Name, Score: row.Score, Private: row.Private,
 		AnyTrackerAlive: row.AnyTrackerAlive, Excluded: row.Excluded,
 		ExclusionReasons: row.ExclusionReasons,
 		Factors:          json.RawMessage(row.FactorsJSON),

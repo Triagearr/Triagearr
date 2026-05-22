@@ -156,6 +156,23 @@ func (s *Scorer) ScoreAll(ctx context.Context) (ScoreAllStats, error) {
 	return stats, nil
 }
 
+// ScorePass runs one ScoreAll pass and logs its outcome. It is the unit of
+// work the event-driven Loop schedules whenever a feeding poller reports
+// fresh data.
+func (s *Scorer) ScorePass(ctx context.Context) error {
+	stats, err := s.ScoreAll(ctx)
+	if err != nil {
+		return err
+	}
+	slog.Info("score pass complete",
+		"scored", stats.Scored,
+		"excluded", stats.Excluded,
+		"errors", stats.Errors,
+		"duration", stats.Duration.String(),
+	)
+	return nil
+}
+
 // computeGlobalAvgVelocity rebuilds the normaliser for the ScoreOne path. It
 // walks every torrent's snapshot stats once. The seed map lets the caller
 // avoid re-fetching the target hash that ScoreOne already loaded.

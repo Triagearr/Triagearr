@@ -97,7 +97,7 @@ func (w *DiskWatcher) Run(ctx context.Context) error {
 	}
 	return pollers.TickLoop(ctx, w.Name(), w.Interval, func(ctx context.Context) error {
 		return w.tick(ctx, grace)
-	})
+	}, nil)
 }
 
 func (w *DiskWatcher) tick(ctx context.Context, grace time.Duration) error {
