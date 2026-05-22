@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- *arr connection management from the dashboard (ADR-0022). Sonarr/Radarr/etc.
+  instances now live in the new `arr_connections` SQLite table (migration
+  `0012`), the source of truth for the client registry. Settings → *arr
+  connections supports full add/edit/delete plus a per-connection "Test
+  connection" button (`registry.TestConnection`). HTTP surface:
+  `GET/POST /api/v1/arr-connections`, `PUT/DELETE /api/v1/arr-connections/{id}`,
+  `POST /api/v1/arr-connections/test`. A mutation triggers the daemon
+  self-SIGHUP so the registry rebuilds without a manual restart.
+- The YAML `arrs:` block is now a one-time seed: on first boot, when
+  `arr_connections` is empty, its instances are imported. Existing configs
+  migrate transparently.
+
+### Fixed
+- `internal/notify`: gosec G115 lint failure on the disk-free-bytes
+  `uint64 → int64` conversion in the notification message formatter.
+
 ## [0.6.1] - 2026-05-21
 
 Patch release. Same-day fix for SQLite contention observed under prod load.

@@ -312,3 +312,24 @@ export const SettingsView = z.object({
   editable_prefixes: z.array(z.string()).nullable(),
 });
 export type SettingsViewT = z.infer<typeof SettingsView>;
+
+// ArrConnection mirrors the arr_connections table (ADR-0022). api_key is sent
+// verbatim — the endpoint is behind auth and the UI renders it as a password
+// field.
+export const ArrConnection = z.object({
+  id: z.number(),
+  kind: z.string(),
+  name: z.string(),
+  url: z.string(),
+  api_key: z.string(),
+  enabled: z.boolean(),
+  poll: z.boolean(),
+  act: z.boolean(),
+  tags_exclude: z.array(z.string()).nullable(),
+  categories_only: z.array(z.string()).nullable(),
+  timeout_seconds: z.number(),
+});
+export const ArrConnectionList = z.object({
+  connections: z.array(ArrConnection).nullable(),
+});
+export type ArrConnectionT = z.infer<typeof ArrConnection>;

@@ -4,6 +4,7 @@ import {
   Database,
   Gauge,
   Info,
+  Link2,
   Settings2,
   Shield,
   SlidersHorizontal,
@@ -14,6 +15,7 @@ import { cn } from "@/lib/cn";
 // Sidebar entries. Adding a settings section = one entry here + one route
 // file (settings.<slug>.tsx). The layout stays untouched.
 const sections = [
+  { to: "/settings/arr-connections", label: "*arr connections", Icon: Link2 },
   { to: "/settings/scoring", label: "Scoring", Icon: SlidersHorizontal },
   { to: "/settings/polling", label: "Polling", Icon: Timer },
   { to: "/settings/disk-pressure", label: "Disk pressure", Icon: Gauge },

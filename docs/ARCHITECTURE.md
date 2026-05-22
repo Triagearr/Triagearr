@@ -215,7 +215,8 @@ See [`docs/STORAGE.md`](STORAGE.md) for the full schema (to be written in M1). S
 | `snapshots_daily` | Downsampled daily aggregates, 1y retention | ~180k |
 | `torrents` | Current state of each qBit torrent (last seen) | ~500 |
 | `media` | *arr media items, joined to torrents by inode | ~thousands |
-| `arr_instances` | Configured *arr instances, last health check | ~5-20 |
+| `arr_instances` | Observed *arr instances, last health check | ~5-20 |
+| `arr_connections` | Configured *arr connections (source of truth, ADR-0022) | ~5-20 |
 | `disk_pressure` | Disk usage snapshots per volume, 30-day | ~10k |
 | `scores` | Latest computed score per torrent, with breakdown | ~500 |
 | `actions` | Every action ever taken (or would-have-been) | grows slowly |

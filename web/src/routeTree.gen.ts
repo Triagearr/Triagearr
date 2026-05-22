@@ -22,6 +22,7 @@ import { Route as SettingsPollingRouteImport } from './routes/settings.polling'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
 import { Route as SettingsDiskPressureRouteImport } from './routes/settings.disk-pressure'
 import { Route as SettingsDebugRouteImport } from './routes/settings.debug'
+import { Route as SettingsArrConnectionsRouteImport } from './routes/settings.arr-connections'
 import { Route as SettingsAboutRouteImport } from './routes/settings.about'
 
 const TorrentsRoute = TorrentsRouteImport.update({
@@ -89,6 +90,11 @@ const SettingsDebugRoute = SettingsDebugRouteImport.update({
   path: '/debug',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsArrConnectionsRoute = SettingsArrConnectionsRouteImport.update({
+  id: '/arr-connections',
+  path: '/arr-connections',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsAboutRoute = SettingsAboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRouteWithChildren
   '/torrents': typeof TorrentsRouteWithChildren
   '/settings/about': typeof SettingsAboutRoute
+  '/settings/arr-connections': typeof SettingsArrConnectionsRoute
   '/settings/debug': typeof SettingsDebugRoute
   '/settings/disk-pressure': typeof SettingsDiskPressureRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
@@ -115,6 +122,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/actions': typeof ActionsRoute
   '/settings/about': typeof SettingsAboutRoute
+  '/settings/arr-connections': typeof SettingsArrConnectionsRoute
   '/settings/debug': typeof SettingsDebugRoute
   '/settings/disk-pressure': typeof SettingsDiskPressureRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
@@ -132,6 +140,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRouteWithChildren
   '/torrents': typeof TorrentsRouteWithChildren
   '/settings/about': typeof SettingsAboutRoute
+  '/settings/arr-connections': typeof SettingsArrConnectionsRoute
   '/settings/debug': typeof SettingsDebugRoute
   '/settings/disk-pressure': typeof SettingsDiskPressureRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
@@ -150,6 +159,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/torrents'
     | '/settings/about'
+    | '/settings/arr-connections'
     | '/settings/debug'
     | '/settings/disk-pressure'
     | '/settings/notifications'
@@ -164,6 +174,7 @@ export interface FileRouteTypes {
     | '/'
     | '/actions'
     | '/settings/about'
+    | '/settings/arr-connections'
     | '/settings/debug'
     | '/settings/disk-pressure'
     | '/settings/notifications'
@@ -180,6 +191,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/torrents'
     | '/settings/about'
+    | '/settings/arr-connections'
     | '/settings/debug'
     | '/settings/disk-pressure'
     | '/settings/notifications'
@@ -291,6 +303,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsDebugRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/arr-connections': {
+      id: '/settings/arr-connections'
+      path: '/arr-connections'
+      fullPath: '/settings/arr-connections'
+      preLoaderRoute: typeof SettingsArrConnectionsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/about': {
       id: '/settings/about'
       path: '/about'
@@ -303,6 +322,7 @@ declare module '@tanstack/react-router' {
 
 interface SettingsRouteChildren {
   SettingsAboutRoute: typeof SettingsAboutRoute
+  SettingsArrConnectionsRoute: typeof SettingsArrConnectionsRoute
   SettingsDebugRoute: typeof SettingsDebugRoute
   SettingsDiskPressureRoute: typeof SettingsDiskPressureRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
@@ -314,6 +334,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAboutRoute: SettingsAboutRoute,
+  SettingsArrConnectionsRoute: SettingsArrConnectionsRoute,
   SettingsDebugRoute: SettingsDebugRoute,
   SettingsDiskPressureRoute: SettingsDiskPressureRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,

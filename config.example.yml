@@ -42,6 +42,10 @@ storage:
 # Each *arr type is a *list* of instances. Empty list = type disabled.
 # Each instance has its own enabled/poll/act switches.
 # Defaults are conservative: nothing is enabled until you say so.
+#
+# SEED-ONLY (ADR-0022): this block seeds the arr_connections database table on
+# first boot only. After that the table is the source of truth and is managed
+# from the dashboard (Settings → *arr connections); edits here have no effect.
 arrs:
   sonarr:
     - name: main

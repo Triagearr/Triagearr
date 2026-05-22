@@ -3,6 +3,8 @@ import { apiFetch } from "./client";
 import {
   ActionDetail,
   ActionList,
+  ArrConnection,
+  ArrConnectionList,
   ArrList,
   AuthChangePasswordResponse,
   AuthEnableResponse,
@@ -39,6 +41,7 @@ export const queryKeys = {
   actions: (limit: number, offset: number) => ["actions", limit, offset] as const,
   action: (id: number) => ["action", id] as const,
   arrs: ["arrs"] as const,
+  arrConnections: ["arr-connections"] as const,
   config: ["config"] as const,
   settings: ["settings"] as const,
 };
@@ -302,6 +305,110 @@ export function useTestNotification() {
       const res = await fetch("/api/v1/notifications/test", {
         method: "POST",
         credentials: "include",
+      });
+      if (!res.ok) {
+        let msg = res.statusText;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body?.error) msg = body.error;
+        } catch {
+          // non-JSON body — keep statusText
+        }
+        throw new Error(msg);
+      }
+    },
+  });
+}
+
+// --- *arr connections (ADR-0022) ----------------------------------------
+
+export type ArrConnectionInput = {
+  kind: string;
+  name: string;
+  url: string;
+  api_key: string;
+  enabled: boolean;
+  poll: boolean;
+  act: boolean;
+  tags_exclude: string[];
+  categories_only: string[];
+  timeout_seconds: number;
+};
+
+export function useArrConnections() {
+  return useQuery({
+    queryKey: queryKeys.arrConnections,
+    queryFn: () => apiFetch("/api/v1/arr-connections", ArrConnectionList),
+  });
+}
+
+// A connection change triggers a daemon self-SIGHUP; the registry rebuilds
+// after a short window, so we re-invalidate the arr views once it settles.
+function invalidateArrConnections(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: queryKeys.arrConnections });
+  setTimeout(() => {
+    qc.invalidateQueries({ queryKey: queryKeys.arrConnections });
+    qc.invalidateQueries({ queryKey: queryKeys.arrs });
+    qc.invalidateQueries({ queryKey: queryKeys.summary });
+  }, 1500);
+}
+
+export function useCreateArrConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ArrConnectionInput) =>
+      apiFetch("/api/v1/arr-connections", ArrConnection, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => invalidateArrConnections(qc),
+  });
+}
+
+export function useUpdateArrConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: ArrConnectionInput }) =>
+      apiFetch(`/api/v1/arr-connections/${id}`, ArrConnection, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => invalidateArrConnections(qc),
+  });
+}
+
+export function useDeleteArrConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/v1/arr-connections/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || res.statusText);
+      }
+    },
+    onSuccess: () => invalidateArrConnections(qc),
+  });
+}
+
+// POST /api/v1/arr-connections/test — pings the posted credentials so the
+// operator can verify a connection before saving it.
+export function useTestArrConnection() {
+  return useMutation({
+    mutationFn: async (input: {
+      kind: string;
+      url: string;
+      api_key: string;
+      timeout_seconds: number;
+    }) => {
+      const res = await fetch("/api/v1/arr-connections/test", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
       });
       if (!res.ok) {
         let msg = res.statusText;

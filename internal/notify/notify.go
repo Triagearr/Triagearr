@@ -133,8 +133,9 @@ func FormatText(r Report) string {
 	fmt.Fprintf(&b, "Triagearr — disk pressure on %q\n", r.VolumeName)
 	fmt.Fprintf(&b, "Free space: %.1f%% -> %.1f%% (target %.1f%%)\n",
 		r.FreePctBefore, r.FreePctAfter, r.TargetFreePct)
+	// disk free bytes physically cannot exceed int64 max (9.2 EB)
 	fmt.Fprintf(&b, "Disk free: %s -> %s\n",
-		HumanBytes(int64(r.FreeBytesBefore)), HumanBytes(int64(r.FreeBytesAfter)))
+		HumanBytes(int64(r.FreeBytesBefore)), HumanBytes(int64(r.FreeBytesAfter))) //nolint:gosec // bounded disk free bytes
 	fmt.Fprintf(&b, "Run #%d · %s mode\n\n", r.RunID, r.Mode)
 
 	fmt.Fprintf(&b, "Deleted %d/%d items, %s freed:\n",

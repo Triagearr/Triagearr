@@ -554,7 +554,16 @@ func loadWithOverrides(ctx context.Context, path string, s *store.Store) (*confi
 	for i, r := range rows {
 		ovs[i] = config.Override{Key: r.Key, ValueJSON: r.ValueJSON}
 	}
-	return config.LoadWithOverrides(path, ovs)
+	cfg, err := config.LoadWithOverrides(path, ovs)
+	if err != nil {
+		return nil, err
+	}
+	// arr_connections (the DB table) is the source of truth for *arr
+	// instances; the YAML `arrs:` block only seeds it on first boot (ADR-0022).
+	if err := resolveArrConnections(ctx, s, cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func enabledVolumes(cfg *config.Config) []pollers.Volume {
