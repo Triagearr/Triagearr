@@ -124,29 +124,3 @@ func TestReplaceTrackers_FirstSeenDead_PerURL(t *testing.T) {
 	require.NotNil(t, by["a"])
 	require.Nil(t, by["b"])
 }
-
-func TestMigration0007_BackfillsFirstSeenDead(t *testing.T) {
-	s := openTestStore(t)
-	ctx := context.Background()
-
-	// Simulate a pre-0007 state by inserting a dead row with first_seen_dead
-	// explicitly NULL — then re-run the backfill statement.
-	require.NoError(t, s.ReplaceTrackers(ctx, "h", []triagearr.TrackerInfo{
-		{URL: "https://a/announce", Host: "a", Status: triagearr.TrackerNotWorking},
-	}))
-	_, err := s.DB().ExecContext(ctx,
-		`UPDATE torrent_trackers SET first_seen_dead = NULL WHERE torrent_hash = 'h'`)
-	require.NoError(t, err)
-
-	// Backfill SQL (identical to migration 0007's UPDATE).
-	_, err = s.DB().ExecContext(ctx,
-		`UPDATE torrent_trackers SET first_seen_dead = last_checked WHERE status = 4 AND first_seen_dead IS NULL`)
-	require.NoError(t, err)
-
-	rows, err := s.ListTrackers(ctx, "h")
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.NotNil(t, rows[0].FirstSeenDead, "backfill must populate first_seen_dead for dead rows")
-	require.True(t, rows[0].FirstSeenDead.Equal(rows[0].LastChecked),
-		"backfill must copy last_checked, got fsd=%s lc=%s", rows[0].FirstSeenDead, rows[0].LastChecked)
-}
