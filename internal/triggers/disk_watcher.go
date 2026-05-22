@@ -13,6 +13,7 @@ import (
 
 	"github.com/Triagearr/Triagearr/internal/actor"
 	"github.com/Triagearr/Triagearr/internal/decider"
+	"github.com/Triagearr/Triagearr/internal/notify"
 	"github.com/Triagearr/Triagearr/internal/pollers"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
@@ -46,11 +47,14 @@ type VolumeRule struct {
 	MaxRunSizeGB         int
 }
 
-// RunStore is the subset of store ops the watcher writes through.
+// RunStore is the subset of store ops the watcher writes through. The last two
+// methods are read-only and serve the post-action notification (ADR-0021).
 type RunStore interface {
 	InsertRun(ctx context.Context, r triagearr.Run) (int64, error)
 	InsertRunItems(ctx context.Context, runID int64, items []triagearr.RunItem) error
 	LatestDiskUsage(ctx context.Context) ([]triagearr.DiskUsage, error)
+	ListActionsByRun(ctx context.Context, runID int64) ([]triagearr.Action, error)
+	TorrentNamesByHashes(ctx context.Context, hashes []triagearr.Hash) (map[triagearr.Hash]string, error)
 }
 
 // DiskWatcher fires Decider runs when a volume drops below its threshold.
@@ -69,6 +73,13 @@ type DiskWatcher struct {
 	// Actor executes runs resolved to "live". When nil the watcher behaves
 	// as in M4 (plan only, no destructive call).
 	Actor *actor.Actor
+	// Notifier delivers a post-action report after a live pressure run that
+	// reached the Actor. Nil (or empty) disables notifications (ADR-0021).
+	Notifier *notify.Dispatcher
+	// Sampler re-measures a volume's free space right after the Actor finishes,
+	// so the notification reports a real before/after delta rather than an
+	// inferred one. Nil skips the "after" figure. Wired to pollers.Statfs.
+	Sampler func(path string) (triagearr.DiskUsage, error)
 
 	now      func() time.Time
 	lastFire map[string]time.Time
@@ -178,6 +189,72 @@ func (w *DiskWatcher) fire(ctx context.Context, r VolumeRule, snap triagearr.Dis
 		if err := w.Actor.Execute(ctx, id); err != nil {
 			return fmt.Errorf("actor execute: %w", err)
 		}
+		w.notifyRun(ctx, r, snap, id, mode, plan.Items)
 	}
 	return nil
+}
+
+// notifyRun builds and dispatches the post-action report for a live
+// disk-pressure run. Best-effort throughout: any failure here is logged and
+// swallowed so it can never taint the run outcome. No notification is sent
+// when the run executed nothing (empty plan).
+func (w *DiskWatcher) notifyRun(ctx context.Context, r VolumeRule, snap triagearr.DiskUsage, runID int64, mode triagearr.RunMode, items []triagearr.RunItem) {
+	if w.Notifier == nil || w.Notifier.Empty() {
+		return
+	}
+	actions, err := w.Store.ListActionsByRun(ctx, runID)
+	if err != nil {
+		slog.Warn("notify: loading actions failed", "run_id", runID, "err", err)
+		return
+	}
+	if len(actions) == 0 {
+		return // nothing executed — nothing worth notifying about
+	}
+
+	// Real torrent sizes come from the run plan; actions.freed_bytes is 0 on
+	// failure, so it cannot stand in for the size of a failed item.
+	sizeByHash := make(map[triagearr.Hash]int64, len(items))
+	for _, it := range items {
+		sizeByHash[it.TorrentHash] = it.SizeBytes
+	}
+
+	hashes := make([]triagearr.Hash, len(actions))
+	for i, a := range actions {
+		hashes[i] = a.TorrentHash
+	}
+	names, err := w.Store.TorrentNamesByHashes(ctx, hashes)
+	if err != nil {
+		slog.Warn("notify: resolving torrent names failed", "run_id", runID, "err", err)
+		names = map[triagearr.Hash]string{}
+	}
+
+	report := notify.Report{
+		VolumeName:      r.Name,
+		Mode:            string(mode),
+		RunID:           runID,
+		FreePctBefore:   snap.FreePercent,
+		FreeBytesBefore: snap.FreeBytes,
+		TargetFreePct:   r.TargetFreePercent,
+	}
+	if w.Sampler != nil {
+		after, err := w.Sampler(r.Path)
+		if err != nil {
+			slog.Warn("notify: post-action disk re-sample failed", "volume", r.Name, "err", err)
+		} else {
+			report.FreePctAfter = after.FreePercent
+			report.FreeBytesAfter = after.FreeBytes
+		}
+	}
+	for _, a := range actions {
+		report.Items = append(report.Items, notify.ReportItem{
+			Name:      names[a.TorrentHash],
+			Hash:      a.TorrentHash,
+			SizeBytes: sizeByHash[a.TorrentHash],
+			Status:    a.Status,
+		})
+		if a.Status == triagearr.ActionSucceeded {
+			report.TotalFreedBytes += a.FreedBytes
+		}
+	}
+	w.Notifier.Dispatch(ctx, report)
 }

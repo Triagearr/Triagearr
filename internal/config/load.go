@@ -268,6 +268,15 @@ func Validate(c *Config) error {
 		}
 	}
 
+	if tg := c.Notifications.Telegram; tg.Enabled {
+		if tg.BotToken == "" {
+			return fmt.Errorf("notifications.telegram.bot_token: required when enabled")
+		}
+		if tg.ChatID == "" {
+			return fmt.Errorf("notifications.telegram.chat_id: required when enabled")
+		}
+	}
+
 	for i, v := range c.Volumes {
 		dp := v.DiskPressure
 		if !dp.Enabled {

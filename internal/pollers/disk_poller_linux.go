@@ -10,10 +10,12 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-// statfs reads filesystem statistics via the Linux statfs(2) syscall.
+// Statfs reads filesystem statistics via the Linux statfs(2) syscall.
 // The "available to unprivileged" count (Bavail) is what we surface as free —
 // it matches what `df` reports and what real applications can consume.
-func statfs(path string) (triagearr.DiskUsage, error) {
+// Exported so the disk-pressure trigger can re-sample a volume on demand
+// (post-action freed-space measurement).
+func Statfs(path string) (triagearr.DiskUsage, error) {
 	var s unix.Statfs_t
 	if err := unix.Statfs(path, &s); err != nil {
 		return triagearr.DiskUsage{}, fmt.Errorf("statfs %q: %w", path, err)

@@ -293,6 +293,30 @@ export function useUpdateSettings() {
   });
 }
 
+// POST /api/v1/notifications/test — delivers a synthetic notification through
+// the saved provider config so the operator can verify credentials. Tests the
+// currently-loaded config, so unsaved edits must be saved first.
+export function useTestNotification() {
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/v1/notifications/test", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let msg = res.statusText;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body?.error) msg = body.error;
+        } catch {
+          // non-JSON body — keep statusText
+        }
+        throw new Error(msg);
+      }
+    },
+  });
+}
+
 export function useTriggerRun() {
   const qc = useQueryClient();
   return useMutation({

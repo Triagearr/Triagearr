@@ -145,7 +145,7 @@ d. if nlink == 1 (only the torrent copy remains) → qbit delete with deleteFile
    if nlink > 1 (cross-seed: another torrent shares the inode) → qbit delete without files,
         log a warning; the other torrent keeps seeding
 e. persist actions + audit_log atomically in SQLite
-f. notify via configured notifiers
+f. for disk-pressure runs only, a post-action notification is dispatched (ADR-0021)
 ```
 
 **Pre-flight safety check** before any of the above:
@@ -161,7 +161,7 @@ If `mode: dry-run`, steps (a)–(d) are skipped; only (e) records a "would-have-
 Every action emits:
 - A `actions` row (structured: who, when, what, why, score breakdown, reversibility info)
 - An `audit_log` row (free-form with full context dump)
-- A notification (if configured)
+- A notification — disk-pressure runs only, if configured (ADR-0021)
 - A `triagearr_actions_total{result="...",arr="..."}` Prometheus counter increment (V2)
 
 The dashboard renders these as a timeline.
@@ -195,13 +195,15 @@ type Scorer interface {
     Score(t Torrent, m []MediaItem, snaps []Snapshot, cfg ScoringConfig) Score
 }
 
-// Notifier dispatches a structured action event.
+// Notifier delivers one post-action Report to a single provider.
+// Defined in internal/notify (not types.go); see ADR-0021.
 type Notifier interface {
-    Notify(ctx context.Context, event ActionEvent) error
+    Send(ctx context.Context, r notify.Report) error
+    Name() string
 }
 ```
 
-Concrete implementations live in `internal/arrs/{sonarr,radarr,lidarr,readarr,whisparr}/`, `internal/qbit/`, `internal/scorer/`, `internal/notifier/{telegram,webhook}/`.
+Concrete implementations live in `internal/clients/{sonarr,radarr,lidarr,readarr,whisparr_v2,whisparr_v3,qbit}/`, `internal/scorer/`, and `internal/notify/telegram/`.
 
 ## Storage schema
 

@@ -159,6 +159,34 @@ func (s *Store) ListTorrentHashes(ctx context.Context) ([]triagearr.Hash, error)
 	return out, nil
 }
 
+// TorrentNamesByHashes resolves display names for a set of torrent hashes.
+// Hashes absent from the torrents table are omitted from the result — callers
+// fall back to the raw hash for display.
+func (s *Store) TorrentNamesByHashes(ctx context.Context, hashes []triagearr.Hash) (map[triagearr.Hash]string, error) {
+	out := make(map[triagearr.Hash]string, len(hashes))
+	if len(hashes) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, len(hashes))
+	args := make([]any, len(hashes))
+	for i, h := range hashes {
+		placeholders[i] = "?"
+		args[i] = string(h)
+	}
+	var rows []struct {
+		Hash string `db:"hash"`
+		Name string `db:"name"`
+	}
+	q := "SELECT hash, name FROM torrents WHERE hash IN (" + strings.Join(placeholders, ",") + ")"
+	if err := s.reader.SelectContext(ctx, &rows, q, args...); err != nil {
+		return nil, fmt.Errorf("resolving torrent names: %w", err)
+	}
+	for _, r := range rows {
+		out[triagearr.Hash(r.Hash)] = r.Name
+	}
+	return out, nil
+}
+
 // InsertSnapshot appends a point-in-time observation for a torrent.
 func (s *Store) InsertSnapshot(ctx context.Context, snap triagearr.Snapshot) error {
 	_, err := s.writer.ExecContext(ctx, `

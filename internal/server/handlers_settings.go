@@ -32,9 +32,23 @@ type settingsView struct {
 }
 
 type settingsValues struct {
-	Scoring scoringDTO          `json:"scoring"`
-	Polling pollingDTO          `json:"polling"`
-	Volumes []volumeSettingsDTO `json:"volumes"`
+	Scoring       scoringDTO          `json:"scoring"`
+	Polling       pollingDTO          `json:"polling"`
+	Volumes       []volumeSettingsDTO `json:"volumes"`
+	Notifications notificationsDTO    `json:"notifications"`
+}
+
+type notificationsDTO struct {
+	Telegram telegramDTO `json:"telegram"`
+}
+
+// telegramDTO carries the Telegram provider settings. bot_token is sent
+// verbatim (not redacted) because the operator opted into editing it from the
+// dashboard — the field is rendered as a password input client-side.
+type telegramDTO struct {
+	Enabled  bool   `json:"enabled"`
+	BotToken string `json:"bot_token"`
+	ChatID   string `json:"chat_id"`
 }
 
 type scoringDTO struct {
@@ -101,6 +115,16 @@ func pollingToDTO(p config.PollingConfig) pollingDTO {
 	}
 }
 
+func notificationsToDTO(n config.NotificationsConfig) notificationsDTO {
+	return notificationsDTO{
+		Telegram: telegramDTO{
+			Enabled:  n.Telegram.Enabled,
+			BotToken: n.Telegram.BotToken,
+			ChatID:   n.Telegram.ChatID,
+		},
+	}
+}
+
 func volumeToDTO(v config.VolumeConfig) volumeSettingsDTO {
 	return volumeSettingsDTO{
 		Name: v.Name,
@@ -135,9 +159,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, settingsView{
 		Values: settingsValues{
-			Scoring: scoringToDTO(s.opts.Config.Scoring),
-			Polling: pollingToDTO(s.opts.Config.Polling),
-			Volumes: vols,
+			Scoring:       scoringToDTO(s.opts.Config.Scoring),
+			Polling:       pollingToDTO(s.opts.Config.Polling),
+			Volumes:       vols,
+			Notifications: notificationsToDTO(s.opts.Config.Notifications),
 		},
 		OverriddenKeys: keys,
 		Editable:       config.EditableKeys(),
@@ -247,6 +272,23 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 		s.opts.Reload()
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// handleTestNotification delivers a synthetic notification through every
+// configured provider so the operator can verify credentials from the
+// dashboard. Unlike the run-time dispatch this surfaces provider failures.
+// It tests the currently-loaded config, so unsaved edits must be saved first.
+func (s *Server) handleTestNotification(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Notifier == nil || s.opts.Notifier.Empty() {
+		writeError(w, http.StatusBadRequest,
+			"no notification provider is enabled — enable one and save before testing")
+		return
+	}
+	if err := s.opts.Notifier.SendTest(r.Context()); err != nil {
+		writeError(w, http.StatusBadGateway, "test notification failed: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // mergeOverrides folds a PUT request onto the existing rows: upserts replace

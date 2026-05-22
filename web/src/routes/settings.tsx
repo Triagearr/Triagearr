@@ -1,5 +1,14 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { Database, Gauge, Info, Settings2, Shield, SlidersHorizontal, Timer } from "lucide-react";
+import {
+  Bell,
+  Database,
+  Gauge,
+  Info,
+  Settings2,
+  Shield,
+  SlidersHorizontal,
+  Timer,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
 
 // Sidebar entries. Adding a settings section = one entry here + one route
@@ -8,6 +17,7 @@ const sections = [
   { to: "/settings/scoring", label: "Scoring", Icon: SlidersHorizontal },
   { to: "/settings/polling", label: "Polling", Icon: Timer },
   { to: "/settings/disk-pressure", label: "Disk pressure", Icon: Gauge },
+  { to: "/settings/notifications", label: "Notifications", Icon: Bell },
   { to: "/settings/security", label: "Security", Icon: Shield },
   { to: "/settings/debug", label: "Effective config", Icon: Database },
   { to: "/settings/about", label: "About", Icon: Info },

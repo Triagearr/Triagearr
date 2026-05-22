@@ -13,6 +13,7 @@ import (
 // macOS/Windows.
 var errStatfsUnsupported = errors.New("statfs: unsupported platform")
 
-func statfs(_ string) (triagearr.DiskUsage, error) {
+// Statfs is the non-Linux stub; the daemon target is Linux.
+func Statfs(_ string) (triagearr.DiskUsage, error) {
 	return triagearr.DiskUsage{}, errStatfsUnsupported
 }

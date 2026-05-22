@@ -172,17 +172,12 @@ action:
 # -----------------------------------------------------------------------------
 # Notifications
 # -----------------------------------------------------------------------------
+# A notification is sent only when a disk-pressure run actually reaches the
+# Actor and deletes (or attempts to delete) at least one item — manual HTTP/CLI
+# runs stay silent on purpose (ADR-0021). bot_token + chat_id are also editable
+# from the dashboard (Settings → Notifications).
 notifications:
   telegram:
-    enabled: true
-    chat_id: ${TELEGRAM_CHAT_ID}
-    bot_token: ${TELEGRAM_BOT_TOKEN}
-    on:
-      - action_executed
-      - action_failed
-      - disk_pressure_triggered
-      - health_degraded
-  webhook:
     enabled: false
-    url: ""
-    headers: {}
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    chat_id: ${TELEGRAM_CHAT_ID}

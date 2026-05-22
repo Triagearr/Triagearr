@@ -51,7 +51,7 @@ func (p *DiskPoller) tick(ctx context.Context) error {
 		if v.Sample != nil {
 			usage, err = v.Sample(ctx)
 		} else {
-			usage, err = statfs(v.Path)
+			usage, err = Statfs(v.Path)
 		}
 		if err != nil {
 			slog.Warn("disk sample failed", "volume", v.Name, "path", v.Path, "err", err)

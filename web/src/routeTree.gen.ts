@@ -19,6 +19,7 @@ import { Route as TorrentsHashRouteImport } from './routes/torrents.$hash'
 import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
 import { Route as SettingsScoringRouteImport } from './routes/settings.scoring'
 import { Route as SettingsPollingRouteImport } from './routes/settings.polling'
+import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
 import { Route as SettingsDiskPressureRouteImport } from './routes/settings.disk-pressure'
 import { Route as SettingsDebugRouteImport } from './routes/settings.debug'
 import { Route as SettingsAboutRouteImport } from './routes/settings.about'
@@ -73,6 +74,11 @@ const SettingsPollingRoute = SettingsPollingRouteImport.update({
   path: '/polling',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsDiskPressureRoute = SettingsDiskPressureRouteImport.update({
   id: '/disk-pressure',
   path: '/disk-pressure',
@@ -97,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/settings/about': typeof SettingsAboutRoute
   '/settings/debug': typeof SettingsDebugRoute
   '/settings/disk-pressure': typeof SettingsDiskPressureRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/polling': typeof SettingsPollingRoute
   '/settings/scoring': typeof SettingsScoringRoute
   '/settings/security': typeof SettingsSecurityRoute
@@ -110,6 +117,7 @@ export interface FileRoutesByTo {
   '/settings/about': typeof SettingsAboutRoute
   '/settings/debug': typeof SettingsDebugRoute
   '/settings/disk-pressure': typeof SettingsDiskPressureRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/polling': typeof SettingsPollingRoute
   '/settings/scoring': typeof SettingsScoringRoute
   '/settings/security': typeof SettingsSecurityRoute
@@ -126,6 +134,7 @@ export interface FileRoutesById {
   '/settings/about': typeof SettingsAboutRoute
   '/settings/debug': typeof SettingsDebugRoute
   '/settings/disk-pressure': typeof SettingsDiskPressureRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/polling': typeof SettingsPollingRoute
   '/settings/scoring': typeof SettingsScoringRoute
   '/settings/security': typeof SettingsSecurityRoute
@@ -143,6 +152,7 @@ export interface FileRouteTypes {
     | '/settings/about'
     | '/settings/debug'
     | '/settings/disk-pressure'
+    | '/settings/notifications'
     | '/settings/polling'
     | '/settings/scoring'
     | '/settings/security'
@@ -156,6 +166,7 @@ export interface FileRouteTypes {
     | '/settings/about'
     | '/settings/debug'
     | '/settings/disk-pressure'
+    | '/settings/notifications'
     | '/settings/polling'
     | '/settings/scoring'
     | '/settings/security'
@@ -171,6 +182,7 @@ export interface FileRouteTypes {
     | '/settings/about'
     | '/settings/debug'
     | '/settings/disk-pressure'
+    | '/settings/notifications'
     | '/settings/polling'
     | '/settings/scoring'
     | '/settings/security'
@@ -258,6 +270,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsPollingRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/notifications': {
+      id: '/settings/notifications'
+      path: '/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof SettingsNotificationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/disk-pressure': {
       id: '/settings/disk-pressure'
       path: '/disk-pressure'
@@ -286,6 +305,7 @@ interface SettingsRouteChildren {
   SettingsAboutRoute: typeof SettingsAboutRoute
   SettingsDebugRoute: typeof SettingsDebugRoute
   SettingsDiskPressureRoute: typeof SettingsDiskPressureRoute
+  SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsPollingRoute: typeof SettingsPollingRoute
   SettingsScoringRoute: typeof SettingsScoringRoute
   SettingsSecurityRoute: typeof SettingsSecurityRoute
@@ -296,6 +316,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAboutRoute: SettingsAboutRoute,
   SettingsDebugRoute: SettingsDebugRoute,
   SettingsDiskPressureRoute: SettingsDiskPressureRoute,
+  SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsPollingRoute: SettingsPollingRoute,
   SettingsScoringRoute: SettingsScoringRoute,
   SettingsSecurityRoute: SettingsSecurityRoute,

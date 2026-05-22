@@ -9,9 +9,21 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Triagearr/Triagearr/internal/decider"
+	"github.com/Triagearr/Triagearr/internal/notify"
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
+
+// fakeNotifier records every report it is handed.
+type fakeNotifier struct {
+	got []notify.Report
+}
+
+func (f *fakeNotifier) Name() string { return "fake" }
+func (f *fakeNotifier) Send(_ context.Context, r notify.Report) error {
+	f.got = append(f.got, r)
+	return nil
+}
 
 func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
@@ -119,6 +131,85 @@ func TestDiskWatcher_ReFireAfterGrace(t *testing.T) {
 	runs, err := s.ListRuns(ctx, store.ListRunsOpts{})
 	require.NoError(t, err)
 	require.Len(t, runs, 2)
+}
+
+func TestDiskWatcher_NotifyRun(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	w := newWatcher(s, &clock)
+
+	fn := &fakeNotifier{}
+	w.Notifier = notify.NewDispatcher(fn)
+	w.Sampler = func(_ string) (triagearr.DiskUsage, error) {
+		return triagearr.DiskUsage{FreePercent: 22, FreeBytes: 22 * 1024 * 1024 * 1024}, nil
+	}
+
+	seedScoredTorrent(t, s, "h1", "/data/dl", 5, 100)
+	seedScoredTorrent(t, s, "h2", "/data/dl", 3, 90)
+
+	runID, err := s.InsertRun(ctx, triagearr.Run{
+		TriggeredBy: triagearr.RunTriggerDiskPressure, TriggeredAt: clock,
+		Mode: "live", VolumeName: "data", StopReason: triagearr.StopNoMoreCandidates,
+		Status: "completed",
+	})
+	require.NoError(t, err)
+	items := []triagearr.RunItem{
+		{RunID: runID, Rank: 0, TorrentHash: "h1", SizeBytes: 5 * 1024 * 1024 * 1024},
+		{RunID: runID, Rank: 1, TorrentHash: "h2", SizeBytes: 3 * 1024 * 1024 * 1024},
+	}
+	require.NoError(t, s.InsertRunItems(ctx, runID, items))
+
+	a1, err := s.InsertAction(ctx, triagearr.Action{
+		RunID: runID, Rank: 0, TorrentHash: "h1", StartedAt: clock, Status: triagearr.ActionRunning,
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.FinishAction(ctx, a1, triagearr.ActionSucceeded, clock, 5*1024*1024*1024))
+	a2, err := s.InsertAction(ctx, triagearr.Action{
+		RunID: runID, Rank: 1, TorrentHash: "h2", StartedAt: clock, Status: triagearr.ActionRunning,
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.FinishAction(ctx, a2, triagearr.ActionFailedQbit, clock, 0))
+
+	snap := triagearr.DiskUsage{
+		VolumeName: "data", Path: "/data",
+		FreePercent: 5, FreeBytes: 5 * 1024 * 1024 * 1024,
+	}
+	w.notifyRun(ctx, w.Rules[0], snap, runID, triagearr.RunModeLive, items)
+
+	require.Len(t, fn.got, 1)
+	rep := fn.got[0]
+	require.Equal(t, runID, rep.RunID)
+	require.Equal(t, "data", rep.VolumeName)
+	require.Equal(t, 5.0, rep.FreePctBefore)
+	require.Equal(t, 22.0, rep.FreePctAfter)
+	require.Len(t, rep.Items, 2)
+	// Display names resolve from the torrents table (seeded name == hash).
+	require.Equal(t, "h1", rep.Items[0].Name)
+	require.Equal(t, 1, rep.SucceededCount())
+	require.Equal(t, int64(5*1024*1024*1024), rep.TotalFreedBytes)
+	// The failed item must still carry its real size (not actions.freed_bytes).
+	require.Equal(t, int64(3*1024*1024*1024), rep.Items[1].SizeBytes)
+}
+
+func TestDiskWatcher_NotifyRun_NoActionsIsSilent(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	w := newWatcher(s, &clock)
+
+	fn := &fakeNotifier{}
+	w.Notifier = notify.NewDispatcher(fn)
+
+	runID, err := s.InsertRun(ctx, triagearr.Run{
+		TriggeredBy: triagearr.RunTriggerDiskPressure, TriggeredAt: clock,
+		Mode: "live", VolumeName: "data", StopReason: triagearr.StopNoMoreCandidates,
+		Status: "completed",
+	})
+	require.NoError(t, err)
+
+	w.notifyRun(ctx, w.Rules[0], triagearr.DiskUsage{}, runID, triagearr.RunModeLive, nil)
+	require.Empty(t, fn.got, "a run that executed nothing must not notify")
 }
 
 func TestDiskWatcher_NoFireWhenAboveThreshold(t *testing.T) {

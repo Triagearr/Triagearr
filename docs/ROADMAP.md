@@ -183,10 +183,16 @@ Run for 2 weeks in `live` mode on my own homelab. Zero accidental deletions. Aud
 
 **Estimated**: 1 evening · **Tag**: `v0.8.0`
 
-- [ ] Notifier interface + Telegram adapter
-- [ ] Webhook adapter (generic POST JSON)
-- [ ] Templates per event type (configurable)
-- [ ] Event types: `action_executed`, `action_failed`, `pressure_triggered`, `health_degraded`
+Scope narrowed by ADR-0021: notify only on disk-pressure runs that actually
+executed — manual HTTP/CLI runs stay silent. One event, not four.
+
+- [x] Notifier interface + Dispatcher (best-effort fan-out)
+- [x] Telegram adapter (`net/http`, no SDK)
+- [x] `notifications` config section + dashboard settings page (UI-editable credentials)
+- [x] Post-action report: items deleted + sizes, total freed, disk free before/after
+- [x] "Send test notification" endpoint + dashboard button
+- [ ] Webhook adapter (generic POST JSON) — deferred until a second provider needs it
+- [ ] Additional event types (`health_degraded`, …) — deferred (ADR-0021 "Revisit when")
 
 ## M8 — Polish & v1.0
 

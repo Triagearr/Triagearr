@@ -7,6 +7,7 @@ package config
 // Secrets covered:
 //   - Qbit.Password
 //   - Arrs.<type>[].APIKey
+//   - Notifications.Telegram.BotToken
 //
 // Non-secret values (URLs, names, intervals, etc.) are preserved verbatim so
 // the UI can still display effective config.
@@ -15,6 +16,10 @@ func (c Config) Redacted() Config {
 
 	if out.Qbit.Password != "" {
 		out.Qbit.Password = RedactedPlaceholder
+	}
+
+	if out.Notifications.Telegram.BotToken != "" {
+		out.Notifications.Telegram.BotToken = RedactedPlaceholder
 	}
 
 	for _, slot := range []*[]ArrInstanceConfig{

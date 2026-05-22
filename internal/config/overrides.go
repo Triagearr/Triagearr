@@ -108,9 +108,10 @@ func IsEditableKey(key string) bool {
 //
 // Kept as a map for O(1) lookup and so adding a new section is a one-liner.
 var editablePrefixes = map[string]struct{}{
-	"scoring": {},
-	"polling": {},
-	"volumes": {}, // only disk_pressure.* subkeys in practice; the HTTP layer narrows further
+	"scoring":       {},
+	"polling":       {},
+	"volumes":       {}, // only disk_pressure.* subkeys in practice; the HTTP layer narrows further
+	"notifications": {}, // includes provider credentials — operator opted into UI-managed secrets
 }
 
 // EditableKeys returns the whitelist as a sorted slice — useful for the

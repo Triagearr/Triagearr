@@ -25,6 +25,8 @@ import (
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/linker"
 	"github.com/Triagearr/Triagearr/internal/logging"
+	"github.com/Triagearr/Triagearr/internal/notify"
+	"github.com/Triagearr/Triagearr/internal/notify/telegram"
 	"github.com/Triagearr/Triagearr/internal/pollers"
 	"github.com/Triagearr/Triagearr/internal/scorer"
 	"github.com/Triagearr/Triagearr/internal/server"
@@ -336,6 +338,10 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 		})
 	}
 
+	// One dispatcher, shared by the disk-pressure trigger (run notifications)
+	// and the HTTP server (the "send test" endpoint).
+	notifier := buildNotifier(cfg.Notifications)
+
 	if rules := pressureRules(cfg); len(rules) > 0 {
 		ps = append(ps, &triggers.DiskWatcher{
 			Rules:      rules,
@@ -344,6 +350,8 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 			Interval:   cfg.Polling.DiskInterval,
 			DaemonLive: daemonLive,
 			Actor:      act,
+			Notifier:   notifier,
+			Sampler:    pollers.Statfs,
 		})
 	}
 
@@ -376,6 +384,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 			Volumes:       func() []decider.Volume { return allVolumes(cfg) },
 			DaemonLive:    daemonLive,
 			Actor:         act,
+			Notifier:      notifier,
 			Reload:        selfReload,
 			ReloadValidate: func(ovs []config.Override) error {
 				_, err := config.LoadWithOverrides(cfgPath, ovs)
@@ -418,6 +427,27 @@ func registryDeleter(reg *registry.Registry) actor.DeleterResolver {
 	return func(name string) (triagearr.FileDeleter, bool) {
 		return reg.Deleter(name)
 	}
+}
+
+// buildNotifier assembles the notification dispatcher from config. A provider
+// that fails to construct is logged and skipped — a bad bot token must not
+// prevent the daemon from starting. An all-disabled config yields an empty
+// dispatcher whose Dispatch is a no-op.
+func buildNotifier(cfg config.NotificationsConfig) *notify.Dispatcher {
+	var notifiers []notify.Notifier
+	if cfg.Telegram.Enabled {
+		tg, err := telegram.New(telegram.Options{
+			BotToken: cfg.Telegram.BotToken,
+			ChatID:   cfg.Telegram.ChatID,
+		})
+		if err != nil {
+			slog.Error("notifications: telegram provider disabled", "err", err)
+		} else {
+			notifiers = append(notifiers, tg)
+			slog.Info("notifications: telegram provider enabled")
+		}
+	}
+	return notify.NewDispatcher(notifiers...)
 }
 
 // buildActor constructs an Actor for one-shot CLI invocations. It mirrors

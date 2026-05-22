@@ -143,7 +143,7 @@ export type SectionHelpers = {
   settings: import("@/api/schemas").SettingsViewT;
   pending: Pending;
   setField: (key: string, value: string | null) => void;
-  fieldValue: (key: string, fallback: string | number | undefined) => string;
+  fieldValue: (key: string, fallback: string | number | boolean | undefined) => string;
   isDirty: (key: string) => boolean;
   isOverridden: (key: string) => boolean;
   revert: (key: string) => void;
@@ -163,7 +163,7 @@ export function Subsection({ title, children }: { title: string; children: React
 export type FieldProps = {
   label: string;
   keyName: string;
-  type: "number" | "text";
+  type: "number" | "text" | "password" | "checkbox";
   value: string;
   placeholder?: string;
   onChange: (v: string) => void;
@@ -178,12 +178,21 @@ export function Field(p: FieldProps) {
       <label className="text-muted-foreground font-mono text-xs" title={p.keyName}>
         {p.label}
       </label>
-      <Input
-        type={p.type}
-        value={p.value}
-        placeholder={p.placeholder}
-        onChange={(e) => p.onChange(e.target.value)}
-      />
+      {p.type === "checkbox" ? (
+        <input
+          type="checkbox"
+          className="h-4 w-4 justify-self-start accent-primary"
+          checked={p.value === "true"}
+          onChange={(e) => p.onChange(String(e.target.checked))}
+        />
+      ) : (
+        <Input
+          type={p.type}
+          value={p.value}
+          placeholder={p.placeholder}
+          onChange={(e) => p.onChange(e.target.value)}
+        />
+      )}
       <div className="flex items-center gap-1">
         {p.dirty && <Badge variant="warning">edited</Badge>}
         {!p.dirty && p.overridden && (
@@ -204,9 +213,13 @@ export function Field(p: FieldProps) {
 // backend re-validates via config.LoadWithOverrides — so this is just a
 // best-effort serialization, not a security boundary.
 function parseValueForKey(key: string, raw: string): unknown | Error {
+  // Boolean toggle — value is always "true"/"false", never empty.
+  if (key === "notifications.telegram.enabled") return raw === "true";
   if (raw.trim() === "") {
     return new Error("empty value (use the revert button to remove the override)");
   }
+  // Notification credentials and polling/cron fields go as JSON strings.
+  if (key.startsWith("notifications.")) return raw;
   if (key.startsWith("polling.")) return raw;
   const n = Number(raw);
   if (Number.isNaN(n)) return new Error(`expected a number, got ${JSON.stringify(raw)}`);

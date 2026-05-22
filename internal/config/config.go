@@ -28,6 +28,23 @@ type Config struct {
 	Polling PollingConfig  `koanf:"polling"`
 	Scoring ScoringConfig  `koanf:"scoring"`
 	Action  ActionConfig   `koanf:"action"`
+	// Notifications configures post-action operator notifications. Only
+	// disk-pressure runs that reach the Actor are notified (ADR-0021).
+	Notifications NotificationsConfig `koanf:"notifications"`
+}
+
+// NotificationsConfig groups the configured notification providers. Each
+// provider is independently toggled; an empty/disabled section is a no-op.
+type NotificationsConfig struct {
+	Telegram TelegramConfig `koanf:"telegram"`
+}
+
+// TelegramConfig configures the Telegram Bot API notifier. BotToken and
+// ChatID are required when Enabled.
+type TelegramConfig struct {
+	Enabled  bool   `koanf:"enabled"`
+	BotToken string `koanf:"bot_token"`
+	ChatID   string `koanf:"chat_id"`
 }
 
 // ActionConfig tunes the M5 Actor's destructive pipeline.

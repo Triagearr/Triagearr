@@ -237,22 +237,28 @@ action:
 
 ## `notifications`
 
+A notification is sent **only** when a disk-pressure run reaches the Actor and
+executed at least one candidate — manual HTTP/CLI runs stay silent (ADR-0021).
+The message details the items deleted, their sizes, the total freed, and the
+volume's free space before/after.
+
 ```yaml
 notifications:
   telegram:
-    enabled: true
-    chat_id: "${TELEGRAM_CHAT_ID}"
-    bot_token: "${TELEGRAM_BOT_TOKEN}"
-    on:
-      - action_executed
-      - action_failed
-      - disk_pressure_triggered
-      - health_degraded
-  webhook:
     enabled: false
-    url: ""
-    headers: {}
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
 ```
+
+| Key                  | Meaning                                                        |
+| -------------------- | -------------------------------------------------------------- |
+| `telegram.enabled`   | Master switch for the Telegram provider.                       |
+| `telegram.bot_token` | Bot API token from BotFather. Required when enabled.           |
+| `telegram.chat_id`   | Target chat/channel id. Required when enabled.                  |
+
+`bot_token` and `chat_id` are also editable at runtime from the dashboard
+(Settings → Notifications) — the `notifications` section is on the override
+whitelist. The token is redacted from the effective-config view.
 
 ## Environment variable substitution
 
@@ -330,9 +336,9 @@ action:
 
 notifications:
   telegram:
-    enabled: true
-    chat_id: ${TELEGRAM_CHAT_ID}
+    enabled: false
     bot_token: ${TELEGRAM_BOT_TOKEN}
+    chat_id: ${TELEGRAM_CHAT_ID}
 ```
 
 For a heavily-commented full reference, see [`config.example.yml`](../config.example.yml) at the repo root.

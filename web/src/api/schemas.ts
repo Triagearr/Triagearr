@@ -293,11 +293,20 @@ export const VolumeSettings = z.object({
   name: z.string(),
   disk_pressure: VolumeDiskPressure,
 });
+export const TelegramSettings = z.object({
+  enabled: z.boolean().optional(),
+  bot_token: z.string().optional(),
+  chat_id: z.string().optional(),
+});
+export const NotificationSettings = z.object({
+  telegram: TelegramSettings,
+});
 export const SettingsView = z.object({
   values: z.object({
     scoring: ScoringSettings,
     polling: PollingSettings,
     volumes: z.array(VolumeSettings).nullable(),
+    notifications: NotificationSettings,
   }),
   overridden_keys: z.array(z.string()).nullable(),
   editable_prefixes: z.array(z.string()).nullable(),

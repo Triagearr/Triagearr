@@ -21,6 +21,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/config"
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/linker"
+	"github.com/Triagearr/Triagearr/internal/notify"
 	"github.com/Triagearr/Triagearr/internal/store"
 )
 
@@ -52,6 +53,10 @@ type Options struct {
 	// opt-ins are forced back to dry-run (ADR-0015).
 	DaemonLive bool
 	Actor      *actor.Actor
+
+	// Notifier is the configured notification dispatcher. It backs the
+	// "send test notification" endpoint. Nil/empty when no provider is set.
+	Notifier *notify.Dispatcher
 
 	// RunsPerMinute and AuthPerMinute control the per-IP rate limits. 0
 	// applies the package default (60 / 30); negative disables. See
@@ -122,6 +127,7 @@ func New(opts Options) *Server {
 	mux.HandleFunc("GET /api/v1/settings", s.security(s.auth(s.handleGetSettings)))
 	mux.HandleFunc("PUT /api/v1/settings", s.security(s.auth(s.handlePutSettings)))
 	mux.HandleFunc("DELETE /api/v1/settings/{key}", s.security(s.auth(s.handleDeleteSetting)))
+	mux.HandleFunc("POST /api/v1/notifications/test", s.security(s.auth(s.handleTestNotification)))
 
 	// Auth endpoints. GET /session is unauthenticated (the SPA uses it to
 	// decide whether to show the login screen). POST /session and the
