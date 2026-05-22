@@ -16,7 +16,7 @@ LDFLAGS     := -s -w \
 GO          ?= go
 GOFLAGS     ?=
 
-.PHONY: all build run test cover lint tidy clean docker help web-install web-build web-dev web-test
+.PHONY: all build run test cover lint tidy clean docker help web-install web-build web-dev web-test dev-fakes dev-ui
 
 all: lint test build
 
@@ -58,6 +58,16 @@ clean: ## Remove build artifacts
 
 docker: ## Build docker image locally via goreleaser snapshot
 	goreleaser release --snapshot --clean --skip=publish
+
+# ---- Dev fixtures (fake Sonarr/Radarr/qBit for UI iteration) ----
+
+SCENARIO ?= default
+
+dev-fakes: ## Boot fake Sonarr/Radarr/qBit (SCENARIO=default by default)
+	$(GO) run ./cmd/devfixtures --scenario fixtures/scenarios/$(SCENARIO).yaml
+
+dev-ui: ## Boot fakes + triagearr + vite dev together (Ctrl-C tears down all 3)
+	@./scripts/dev-ui.sh
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "Targets:\n"} /^[a-zA-Z_-]+:.*##/ { printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)

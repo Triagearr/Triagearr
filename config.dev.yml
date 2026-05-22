@@ -1,0 +1,105 @@
+# =============================================================================
+# Triagearr — dev configuration, points at the in-memory fakes from
+# cmd/devfixtures. Boot with: triagearr serve --config config.dev.yml
+# (or use `make dev-ui` which orchestrates everything together).
+#
+# Mode is forced to dry-run and per-instance act:false so no destructive call
+# can ever leak to prod even if URLs were misconfigured.
+# =============================================================================
+
+mode: dry-run
+
+http:
+  bind: "127.0.0.1:9494"
+  cors_origins:
+    - "http://localhost:5173"   # vite dev server
+
+storage:
+  sqlite_path: ./.dev/triagearr.db
+  retention:
+    snapshots_raw: 168h
+    snapshots_daily: 8760h
+  vacuum:
+    enabled: false
+
+arrs:
+  sonarr:
+    - name: dev
+      enabled: true
+      url: http://127.0.0.1:18989
+      api_key: dev-key-sonarr
+      poll: true
+      act: false
+  radarr:
+    - name: dev
+      enabled: true
+      url: http://127.0.0.1:17878
+      api_key: dev-key-radarr
+      poll: true
+      act: false
+  lidarr: []
+  readarr: []
+  whisparr_v2: []
+  whisparr_v3: []
+
+qbit:
+  enabled: true
+  url: http://127.0.0.1:18090
+  username: admin
+  password: adminadmin
+  category_exclude: [keep]
+  tags_exclude: [triagearr-keep]
+  delete_with_files: true
+
+maintainerr:
+  enabled: false
+
+volumes:
+  - name: dev
+    path: /tmp
+    # `source` redirects the disk poller to a fake disk over HTTP instead of
+    # statfs(2). Set/adjust at runtime:
+    #   curl -X POST http://127.0.0.1:18091/disk/dev -d '{"total_bytes":1000000000000,"free_bytes":50000000000}'
+    #   curl -X POST http://127.0.0.1:18091/disk/dev/fill -d '{"bytes":100000000000}'
+    source: http://127.0.0.1:18091/disk/dev
+    disk_pressure:
+      enabled: true
+      threshold_free_percent: 15
+      target_free_percent: 25
+      max_run_size_gb: 50
+
+polling:
+  qbit_interval: 30s        # short intervals so the UI sees updates quickly
+  arr_interval: 30s
+  arr_file_min_interval: 50ms
+  tracker_interval: 1m
+  disk_interval: 30s
+  maintainerr_interval: 1h
+  downsample_cron: "0 3 * * *"
+
+scoring:
+  weights:
+    ratio_obligation_met:  +50
+    upload_velocity_inv:   +30
+    age_days:              +0.1
+    seeders_low_guard:     -1000
+    swarm_health_bonus:    +5
+  rare_content_threshold: 3
+  hnr_window_days: 14
+  per_tracker: {}
+
+triggers:
+  schedule: ""
+  disk_pressure: false
+  manual_api: true
+
+action:
+  max_deletions_per_run: 10
+  inter_action_delay: 100ms
+  add_import_exclusion: false
+
+notifications:
+  telegram:
+    enabled: false
+  webhook:
+    enabled: false

@@ -1,0 +1,122 @@
+# Lib graveyard — primary Triagearr target (mémoire: lib_graveyard_mode).
+#
+# 100% of torrents have a dead tracker. Stress-tests the scoring path that
+# Factor 4 (tracker_alive) drives, and the UI's display of graveyard signals.
+# Most items also have ratio < 1.0 — no obligation already met.
+
+name: lib-graveyard
+
+# Below threshold by default — the graveyard scenario is meant to exercise
+# the disk-pressure trigger firing on a real-feeling load. 8% free vs 15%
+# threshold → pressure trigger fires on the first tick.
+disks:
+  - name: dev
+    total_bytes: 1000000000000      # 1 TB
+    free_bytes: 80000000000         # 80 GB → 8% free, BELOW threshold
+
+qbit:
+  username: admin
+  password: adminadmin
+  torrents:
+    - hash: "a000000000000000000000000000000000000001"
+      name: "Dead.Tracker.Show.S01.1080p-FAKE"
+      category: "tv-sonarr"
+      save_path: "/data/torrents/tv"
+      size: 15000000000
+      added_on: 1715000000
+      completion_on: 1715050000
+      ratio: 0.3
+      uploaded: 4500000000
+      state: "stalledUP"
+      last_activity: 1717000000
+      private: true
+      tags: "ygg,graveyard"
+      files:
+        - { name: "Show.S01E01.mkv", size: 5000000000, progress: 1.0 }
+        - { name: "Show.S01E02.mkv", size: 5000000000, progress: 1.0 }
+        - { name: "Show.S01E03.mkv", size: 5000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "host unreachable" }
+
+    - hash: "a000000000000000000000000000000000000002"
+      name: "Another.Dead.Show.S05.720p-FAKE"
+      category: "tv-sonarr"
+      save_path: "/data/torrents/tv"
+      size: 8000000000
+      added_on: 1710000000
+      completion_on: 1710050000
+      ratio: 0.18
+      uploaded: 1440000000
+      state: "stalledUP"
+      private: true
+      tags: "ygg,graveyard"
+      files:
+        - { name: "AnotherShow.S05E01.mkv", size: 8000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "host unreachable" }
+
+    - hash: "a000000000000000000000000000000000000003"
+      name: "Forgotten.Movie.2019.1080p-FAKE"
+      category: "movies-radarr"
+      save_path: "/data/torrents/movies"
+      size: 6000000000
+      added_on: 1700000000
+      completion_on: 1700050000
+      ratio: 0.0
+      state: "stalledUP"
+      private: true
+      tags: "ygg,graveyard"
+      files:
+        - { name: "Forgotten.Movie.mkv", size: 6000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "tracker offline" }
+
+    - hash: "a000000000000000000000000000000000000004"
+      name: "Random.Public.Torrent.1080p-FAKE"
+      category: ""
+      save_path: "/data/torrents/orphans"
+      size: 3000000000
+      added_on: 1705000000
+      completion_on: 1705050000
+      ratio: 0.05
+      state: "stalledUP"
+      private: false
+      files:
+        - { name: "Random.Public.mkv", size: 3000000000, progress: 1.0 }
+      trackers:
+        - { url: "udp://defunct.tracker.example.org:6969/announce", status: 4 }
+
+sonarr:
+  api_key: "dev-key-sonarr"
+  tags:
+    - { id: 1, label: "graveyard" }
+  series:
+    - id: 10
+      title: "Dead Tracker Show"
+      path: "/data/tv/Dead Tracker Show"
+      tags: [1]
+      statistics: { sizeOnDisk: 15000000000 }
+      files:
+        - { id: 1001, seriesId: 10, path: "/data/tv/Dead Tracker Show/S01E01.mkv", size: 5000000000 }
+        - { id: 1002, seriesId: 10, path: "/data/tv/Dead Tracker Show/S01E02.mkv", size: 5000000000 }
+        - { id: 1003, seriesId: 10, path: "/data/tv/Dead Tracker Show/S01E03.mkv", size: 5000000000 }
+    - id: 11
+      title: "Another Dead Show"
+      path: "/data/tv/Another Dead Show"
+      tags: [1]
+      statistics: { sizeOnDisk: 8000000000 }
+      files:
+        - { id: 1004, seriesId: 11, path: "/data/tv/Another Dead Show/S05E01.mkv", size: 8000000000 }
+
+radarr:
+  api_key: "dev-key-radarr"
+  tags:
+    - { id: 1, label: "graveyard" }
+  movies:
+    - id: 10
+      title: "Forgotten Movie (2019)"
+      path: "/data/movies/Forgotten Movie (2019)"
+      sizeOnDisk: 6000000000
+      tags: [1]
+      files:
+        - { id: 2001, movieId: 10, path: "/data/movies/Forgotten Movie (2019)/Forgotten.Movie.mkv", size: 6000000000 }

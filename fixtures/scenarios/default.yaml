@@ -1,0 +1,280 @@
+# Default dev scenario — realistic baseline for UI iteration.
+#
+# Contains a deliberate mix of edge cases that should be visible in the UI:
+#   * One private torrent with a healthy tracker (Factor 4 working path)
+#   * Two private torrents with a dead tracker (graveyard signal, primary target)
+#   * One public torrent (no ratio obligation)
+#   * One season pack with multiple episode files (multi-file granularity)
+#   * One HnR-window torrent (low ratio, recent — must score -10000)
+#
+# Hashes are deterministic 40-hex info-hash-shaped strings (not real torrents).
+# Timestamps are unix seconds; pick values relative to 2026-05-21.
+
+name: default
+
+# Initial values for the fake disk source (cmd/devfixtures exposes
+# /disk/{name} on port 18091). Picked above the dev threshold so the UI shows
+# a healthy gauge by default — `curl -X POST .../disk/dev/fill` to simulate
+# pressure and exercise the trigger path.
+disks:
+  - name: dev
+    total_bytes: 1000000000000      # 1 TB
+    free_bytes: 250000000000        # 250 GB → 25% free, healthy
+
+qbit:
+  username: admin
+  password: adminadmin
+  torrents:
+    - hash: "1111111111111111111111111111111111111111"
+      name: "Cosmic.Drift.S01.COMPLETE.1080p.WEB.H264-FAKE"
+      category: "tv-sonarr"
+      save_path: "/data/torrents/tv"
+      size: 12000000000
+      added_on: 1746000000      # ~2025-04-30
+      completion_on: 1746100000
+      ratio: 1.8
+      uploaded: 21600000000
+      num_complete: 12
+      num_incomplete: 3
+      state: "uploading"
+      last_activity: 1747600000
+      private: true
+      tags: "hd,french"
+      files:
+        - { name: "Cosmic.Drift.S01E01.mkv", size: 3000000000, progress: 1.0 }
+        - { name: "Cosmic.Drift.S01E02.mkv", size: 3000000000, progress: 1.0 }
+        - { name: "Cosmic.Drift.S01E03.mkv", size: 3000000000, progress: 1.0 }
+        - { name: "Cosmic.Drift.S01E04.mkv", size: 3000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://tracker.alive.example.org/announce", status: 2 }
+
+    - hash: "2222222222222222222222222222222222222222"
+      name: "Lonely.Show.S03E07.1080p.HDTV-FAKE"
+      category: "tv-sonarr"
+      save_path: "/data/torrents/tv"
+      size: 2500000000
+      added_on: 1740000000      # ~2025-02-19
+      completion_on: 1740050000
+      ratio: 0.45
+      uploaded: 1125000000
+      num_complete: 0
+      num_incomplete: 0
+      state: "stalledUP"
+      last_activity: 1740100000
+      private: true
+      tags: "ygg"
+      files:
+        - { name: "Lonely.Show.S03E07.mkv", size: 2500000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "tracker offline" }
+
+    - hash: "3333333333333333333333333333333333333333"
+      name: "Cosmic.Voyage.2024.1080p.WEB.H264-FAKE"
+      category: "movies-radarr"
+      save_path: "/data/torrents/movies"
+      size: 8000000000
+      added_on: 1743000000
+      completion_on: 1743050000
+      ratio: 2.4
+      uploaded: 19200000000
+      num_complete: 8
+      num_incomplete: 1
+      state: "uploading"
+      last_activity: 1747600000
+      private: true
+      tags: "hd"
+      files:
+        - { name: "Cosmic.Voyage.2024.mkv", size: 8000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://tracker.alive.example.org/announce", status: 2 }
+
+    - hash: "4444444444444444444444444444444444444444"
+      name: "Old.Forgotten.Movie.1080p.BluRay-FAKE"
+      category: "movies-radarr"
+      save_path: "/data/torrents/movies"
+      size: 6000000000
+      added_on: 1715000000      # ~2024-05-06
+      completion_on: 1715050000
+      ratio: 0.2
+      uploaded: 1200000000
+      num_complete: 0
+      num_incomplete: 0
+      state: "stalledUP"
+      last_activity: 1715200000
+      private: true
+      tags: "ygg"
+      files:
+        - { name: "Old.Forgotten.Movie.mkv", size: 6000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "tracker offline" }
+
+    - hash: "5555555555555555555555555555555555555555"
+      name: "Public.Linux.Distro.iso"
+      category: ""
+      save_path: "/data/torrents"
+      size: 4000000000
+      added_on: 1747000000
+      completion_on: 1747050000
+      ratio: 0.0
+      uploaded: 0
+      num_complete: 0
+      num_incomplete: 0
+      state: "stalledUP"
+      last_activity: 1747100000
+      private: false
+      files:
+        - { name: "linux-distro.iso", size: 4000000000, progress: 1.0 }
+      trackers:
+        - { url: "udp://tracker.opentrackr.example.org:1337/announce", status: 2 }
+
+    # HnR window: ratio < threshold AND added < 14d ago (relative to 2026-05-21).
+    # The scorer must veto deletion with -10000 — visible in the UI breakdown.
+    - hash: "6666666666666666666666666666666666666666"
+      name: "Fresh.Grab.S01E01.1080p.WEB-FAKE"
+      category: "tv-sonarr"
+      save_path: "/data/torrents/tv"
+      size: 2000000000
+      added_on: 1747200000      # within the last ~10 days
+      completion_on: 1747250000
+      ratio: 0.15
+      uploaded: 300000000
+      num_complete: 5
+      num_incomplete: 2
+      state: "uploading"
+      last_activity: 1747600000
+      private: true
+      tags: "hnr-window"
+      files:
+        - { name: "Fresh.Grab.S01E01.mkv", size: 2000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://tracker.alive.example.org/announce", status: 2 }
+
+    - hash: "7777777777777777777777777777777777777777"
+      name: "Orphan.Movie.NotInRadarr-FAKE"
+      category: ""
+      save_path: "/data/torrents/orphans"
+      size: 5000000000
+      added_on: 1730000000
+      completion_on: 1730050000
+      ratio: 1.1
+      uploaded: 5500000000
+      num_complete: 3
+      num_incomplete: 0
+      state: "stalledUP"
+      last_activity: 1747600000
+      private: true
+      files:
+        - { name: "Orphan.Movie.mkv", size: 5000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://tracker.alive.example.org/announce", status: 2 }
+
+sonarr:
+  api_key: "dev-key-sonarr"
+  tags:
+    - { id: 1, label: "french" }
+    - { id: 2, label: "hd" }
+    - { id: 3, label: "kept" }
+  series:
+    - id: 1
+      title: "Cosmic Drift"
+      path: "/data/tv/Cosmic Drift"
+      tags: [1, 2]
+      statistics: { sizeOnDisk: 12000000000 }
+      files:
+        - { id: 101, seriesId: 1, path: "/data/tv/Cosmic Drift/S01E01.mkv", size: 3000000000 }
+        - { id: 102, seriesId: 1, path: "/data/tv/Cosmic Drift/S01E02.mkv", size: 3000000000 }
+        - { id: 103, seriesId: 1, path: "/data/tv/Cosmic Drift/S01E03.mkv", size: 3000000000 }
+        - { id: 104, seriesId: 1, path: "/data/tv/Cosmic Drift/S01E04.mkv", size: 3000000000 }
+    - id: 2
+      title: "Lonely Show"
+      path: "/data/tv/Lonely Show"
+      tags: [1]
+      statistics: { sizeOnDisk: 2500000000 }
+      files:
+        - { id: 105, seriesId: 2, path: "/data/tv/Lonely Show/S03E07.mkv", size: 2500000000 }
+    - id: 3
+      title: "Fresh Grab"
+      path: "/data/tv/Fresh Grab"
+      tags: [2]
+      statistics: { sizeOnDisk: 2000000000 }
+      files:
+        - { id: 106, seriesId: 3, path: "/data/tv/Fresh Grab/S01E01.mkv", size: 2000000000 }
+  history:
+    - id: 1001
+      date: 2026-04-30T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "1111111111111111111111111111111111111111"
+      data:
+        fileId: "101"
+        downloadClient: "qBittorrent"
+        droppedPath: "/downloads/Cosmic.Drift.S01E01.mkv"
+        importedPath: "/data/tv/Cosmic Drift/S01E01.mkv"
+        size: "3000000000"
+    - id: 1002
+      date: 2026-04-30T00:05:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "1111111111111111111111111111111111111111"
+      data:
+        fileId: "102"
+        downloadClient: "qBittorrent"
+        droppedPath: "/downloads/Cosmic.Drift.S01E02.mkv"
+        importedPath: "/data/tv/Cosmic Drift/S01E02.mkv"
+        size: "3000000000"
+    - id: 1003
+      date: 2025-02-19T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "2222222222222222222222222222222222222222"
+      data:
+        fileId: "105"
+        downloadClient: "qBittorrent"
+        importedPath: "/data/tv/Lonely Show/S03E07.mkv"
+        size: "2500000000"
+    - id: 1004
+      date: 2026-05-15T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "6666666666666666666666666666666666666666"
+      data:
+        fileId: "106"
+        downloadClient: "qBittorrent"
+        importedPath: "/data/tv/Fresh Grab/S01E01.mkv"
+        size: "2000000000"
+
+radarr:
+  api_key: "dev-key-radarr"
+  tags:
+    - { id: 1, label: "french" }
+    - { id: 2, label: "hd" }
+  movies:
+    - id: 1
+      title: "Cosmic Voyage (2024)"
+      path: "/data/movies/Cosmic Voyage (2024)"
+      sizeOnDisk: 8000000000
+      tags: [1, 2]
+      files:
+        - { id: 201, movieId: 1, path: "/data/movies/Cosmic Voyage (2024)/Cosmic.Voyage.mkv", size: 8000000000 }
+    - id: 2
+      title: "Old Forgotten Movie"
+      path: "/data/movies/Old Forgotten Movie"
+      sizeOnDisk: 6000000000
+      tags: []
+      files:
+        - { id: 202, movieId: 2, path: "/data/movies/Old Forgotten Movie/Old.Forgotten.Movie.mkv", size: 6000000000 }
+  history:
+    - id: 2001
+      date: 2025-03-26T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "3333333333333333333333333333333333333333"
+      data:
+        fileId: "201"
+        downloadClient: "qBittorrent"
+        importedPath: "/data/movies/Cosmic Voyage (2024)/Cosmic.Voyage.mkv"
+        size: "8000000000"
+    - id: 2002
+      date: 2024-05-06T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "4444444444444444444444444444444444444444"
+      data:
+        fileId: "202"
+        downloadClient: "qBittorrent"
+        importedPath: "/data/movies/Old Forgotten Movie/Old.Forgotten.Movie.mkv"
+        size: "6000000000"
