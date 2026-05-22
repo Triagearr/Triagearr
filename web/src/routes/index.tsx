@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Callout } from "@/components/ui/Callout";
 import { PressureGauge } from "@/components/PressureGauge";
 import { Badge } from "@/components/ui/Badge";
-import { humanBytes, relativeTime, shortHash } from "@/lib/format";
+import { humanBytes, relativeTime } from "@/lib/format";
 
 function Dashboard() {
   const summary = useSummary();
@@ -89,14 +89,24 @@ function Dashboard() {
                     key={s.hash}
                     to="/torrents/$hash"
                     params={{ hash: s.hash }}
-                    className="flex items-baseline justify-between rounded-md px-3 py-2 hover:bg-muted/50"
+                    className="flex items-baseline justify-between gap-3 rounded-md px-3 py-2 hover:bg-muted/50"
                   >
-                    <div className="flex items-baseline gap-2 text-sm">
-                      <span className="font-mono">{shortHash(s.hash, 10)}</span>
-                      {s.private && <Badge variant="muted">private</Badge>}
-                      {!s.any_tracker_alive && <Badge variant="warning">tracker dead</Badge>}
+                    <div className="flex items-baseline gap-2 text-sm min-w-0">
+                      <span className="truncate" title={s.name}>
+                        {s.name}
+                      </span>
+                      {s.private && (
+                        <Badge variant="muted" className="shrink-0">
+                          private
+                        </Badge>
+                      )}
+                      {!s.any_tracker_alive && (
+                        <Badge variant="warning" className="shrink-0">
+                          tracker dead
+                        </Badge>
+                      )}
                     </div>
-                    <span className="font-mono text-sm">{s.score.toFixed(2)}</span>
+                    <span className="font-mono text-sm shrink-0">{s.score.toFixed(2)}</span>
                   </Link>
                 ))}
               </CardContent>

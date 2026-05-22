@@ -13,7 +13,15 @@ import { Route as TorrentsRouteImport } from './routes/torrents'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ActionsRouteImport } from './routes/actions'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TorrentsIndexRouteImport } from './routes/torrents.index'
+import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as TorrentsHashRouteImport } from './routes/torrents.$hash'
+import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
+import { Route as SettingsScoringRouteImport } from './routes/settings.scoring'
+import { Route as SettingsPollingRouteImport } from './routes/settings.polling'
+import { Route as SettingsDiskPressureRouteImport } from './routes/settings.disk-pressure'
+import { Route as SettingsDebugRouteImport } from './routes/settings.debug'
+import { Route as SettingsAboutRouteImport } from './routes/settings.about'
 
 const TorrentsRoute = TorrentsRouteImport.update({
   id: '/torrents',
@@ -35,52 +43,146 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TorrentsIndexRoute = TorrentsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TorrentsRoute,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const TorrentsHashRoute = TorrentsHashRouteImport.update({
   id: '/$hash',
   path: '/$hash',
   getParentRoute: () => TorrentsRoute,
 } as any)
+const SettingsSecurityRoute = SettingsSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsScoringRoute = SettingsScoringRouteImport.update({
+  id: '/scoring',
+  path: '/scoring',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsPollingRoute = SettingsPollingRouteImport.update({
+  id: '/polling',
+  path: '/polling',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsDiskPressureRoute = SettingsDiskPressureRouteImport.update({
+  id: '/disk-pressure',
+  path: '/disk-pressure',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsDebugRoute = SettingsDebugRouteImport.update({
+  id: '/debug',
+  path: '/debug',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAboutRoute = SettingsAboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => SettingsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/actions': typeof ActionsRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/torrents': typeof TorrentsRouteWithChildren
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/debug': typeof SettingsDebugRoute
+  '/settings/disk-pressure': typeof SettingsDiskPressureRoute
+  '/settings/polling': typeof SettingsPollingRoute
+  '/settings/scoring': typeof SettingsScoringRoute
+  '/settings/security': typeof SettingsSecurityRoute
   '/torrents/$hash': typeof TorrentsHashRoute
+  '/settings/': typeof SettingsIndexRoute
+  '/torrents/': typeof TorrentsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/actions': typeof ActionsRoute
-  '/settings': typeof SettingsRoute
-  '/torrents': typeof TorrentsRouteWithChildren
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/debug': typeof SettingsDebugRoute
+  '/settings/disk-pressure': typeof SettingsDiskPressureRoute
+  '/settings/polling': typeof SettingsPollingRoute
+  '/settings/scoring': typeof SettingsScoringRoute
+  '/settings/security': typeof SettingsSecurityRoute
   '/torrents/$hash': typeof TorrentsHashRoute
+  '/settings': typeof SettingsIndexRoute
+  '/torrents': typeof TorrentsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/actions': typeof ActionsRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/torrents': typeof TorrentsRouteWithChildren
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/debug': typeof SettingsDebugRoute
+  '/settings/disk-pressure': typeof SettingsDiskPressureRoute
+  '/settings/polling': typeof SettingsPollingRoute
+  '/settings/scoring': typeof SettingsScoringRoute
+  '/settings/security': typeof SettingsSecurityRoute
   '/torrents/$hash': typeof TorrentsHashRoute
+  '/settings/': typeof SettingsIndexRoute
+  '/torrents/': typeof TorrentsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/actions' | '/settings' | '/torrents' | '/torrents/$hash'
+  fullPaths:
+    | '/'
+    | '/actions'
+    | '/settings'
+    | '/torrents'
+    | '/settings/about'
+    | '/settings/debug'
+    | '/settings/disk-pressure'
+    | '/settings/polling'
+    | '/settings/scoring'
+    | '/settings/security'
+    | '/torrents/$hash'
+    | '/settings/'
+    | '/torrents/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/actions' | '/settings' | '/torrents' | '/torrents/$hash'
+  to:
+    | '/'
+    | '/actions'
+    | '/settings/about'
+    | '/settings/debug'
+    | '/settings/disk-pressure'
+    | '/settings/polling'
+    | '/settings/scoring'
+    | '/settings/security'
+    | '/torrents/$hash'
+    | '/settings'
+    | '/torrents'
   id:
     | '__root__'
     | '/'
     | '/actions'
     | '/settings'
     | '/torrents'
+    | '/settings/about'
+    | '/settings/debug'
+    | '/settings/disk-pressure'
+    | '/settings/polling'
+    | '/settings/scoring'
+    | '/settings/security'
     | '/torrents/$hash'
+    | '/settings/'
+    | '/torrents/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActionsRoute: typeof ActionsRoute
-  SettingsRoute: typeof SettingsRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   TorrentsRoute: typeof TorrentsRouteWithChildren
 }
 
@@ -114,6 +216,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/torrents/': {
+      id: '/torrents/'
+      path: '/'
+      fullPath: '/torrents/'
+      preLoaderRoute: typeof TorrentsIndexRouteImport
+      parentRoute: typeof TorrentsRoute
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/torrents/$hash': {
       id: '/torrents/$hash'
       path: '/$hash'
@@ -121,15 +237,83 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TorrentsHashRouteImport
       parentRoute: typeof TorrentsRoute
     }
+    '/settings/security': {
+      id: '/settings/security'
+      path: '/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof SettingsSecurityRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/scoring': {
+      id: '/settings/scoring'
+      path: '/scoring'
+      fullPath: '/settings/scoring'
+      preLoaderRoute: typeof SettingsScoringRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/polling': {
+      id: '/settings/polling'
+      path: '/polling'
+      fullPath: '/settings/polling'
+      preLoaderRoute: typeof SettingsPollingRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/disk-pressure': {
+      id: '/settings/disk-pressure'
+      path: '/disk-pressure'
+      fullPath: '/settings/disk-pressure'
+      preLoaderRoute: typeof SettingsDiskPressureRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/debug': {
+      id: '/settings/debug'
+      path: '/debug'
+      fullPath: '/settings/debug'
+      preLoaderRoute: typeof SettingsDebugRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/about': {
+      id: '/settings/about'
+      path: '/about'
+      fullPath: '/settings/about'
+      preLoaderRoute: typeof SettingsAboutRouteImport
+      parentRoute: typeof SettingsRoute
+    }
   }
 }
 
+interface SettingsRouteChildren {
+  SettingsAboutRoute: typeof SettingsAboutRoute
+  SettingsDebugRoute: typeof SettingsDebugRoute
+  SettingsDiskPressureRoute: typeof SettingsDiskPressureRoute
+  SettingsPollingRoute: typeof SettingsPollingRoute
+  SettingsScoringRoute: typeof SettingsScoringRoute
+  SettingsSecurityRoute: typeof SettingsSecurityRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAboutRoute: SettingsAboutRoute,
+  SettingsDebugRoute: SettingsDebugRoute,
+  SettingsDiskPressureRoute: SettingsDiskPressureRoute,
+  SettingsPollingRoute: SettingsPollingRoute,
+  SettingsScoringRoute: SettingsScoringRoute,
+  SettingsSecurityRoute: SettingsSecurityRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
 interface TorrentsRouteChildren {
   TorrentsHashRoute: typeof TorrentsHashRoute
+  TorrentsIndexRoute: typeof TorrentsIndexRoute
 }
 
 const TorrentsRouteChildren: TorrentsRouteChildren = {
   TorrentsHashRoute: TorrentsHashRoute,
+  TorrentsIndexRoute: TorrentsIndexRoute,
 }
 
 const TorrentsRouteWithChildren = TorrentsRoute._addFileChildren(
@@ -139,7 +323,7 @@ const TorrentsRouteWithChildren = TorrentsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActionsRoute: ActionsRoute,
-  SettingsRoute: SettingsRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   TorrentsRoute: TorrentsRouteWithChildren,
 }
 export const routeTree = rootRouteImport

@@ -1,13 +1,68 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useAction, useActions, useRuns } from "@/api/hooks";
+import { useAction, useActions, useRuns, useVolumes } from "@/api/hooks";
 import { Badge } from "@/components/ui/Badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { Drawer } from "@/components/ui/Modal";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { RunTriggerDialog } from "@/components/RunTriggerDialog";
 import { humanBytes, relativeTime, shortHash } from "@/lib/format";
 import type { ActionStatusT, AuditOutcomeT } from "@/api/schemas";
+
+function RunsSection() {
+  const volumes = useVolumes();
+  const [volume, setVolume] = useState("");
+  const [open, setOpen] = useState<"dry-run" | "live" | null>(null);
+
+  const list = volumes.data?.volumes ?? [];
+  const selectedVolume = volume || list[0]?.name || "";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Trigger a run</CardTitle>
+        <CardDescription>
+          A dry-run plans deletions without touching anything. Live runs require the daemon to be
+          started with <code className="font-mono">mode: live</code>; otherwise the request is
+          forced back to dry-run server-side.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-sm text-muted-foreground">Volume</label>
+          <Select value={selectedVolume} onChange={(e) => setVolume(e.target.value)}>
+            {list.map((v) => (
+              <option key={v.name} value={v.name}>
+                {v.name} ({v.path})
+              </option>
+            ))}
+          </Select>
+          <Button onClick={() => setOpen("dry-run")} disabled={!selectedVolume}>
+            Plan dry-run
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => setOpen("live")}
+            disabled={!selectedVolume}
+          >
+            Execute live…
+          </Button>
+        </div>
+        {selectedVolume && open && (
+          <RunTriggerDialog open onClose={() => setOpen(null)} volume={selectedVolume} mode={open} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 const statusTone: Record<ActionStatusT, "success" | "muted" | "destructive"> = {
   succeeded: "success",
@@ -35,6 +90,8 @@ function ActionsPage() {
         <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Actions</h1>
         <p className="text-sm text-muted-foreground">Per-candidate destructive operations, ordered newest first.</p>
       </header>
+
+      <RunsSection />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-1">

@@ -7,6 +7,7 @@ import {
   AuthChangePasswordResponse,
   AuthEnableResponse,
   ConfigShape,
+  SettingsView,
   RunActionList,
   RunList,
   RunResponse,
@@ -15,6 +16,7 @@ import {
   SimpleStatus,
   Summary,
   SnapshotList,
+  TorrentCategories,
   TorrentDetail,
   TorrentList,
   Version,
@@ -38,6 +40,7 @@ export const queryKeys = {
   action: (id: number) => ["action", id] as const,
   arrs: ["arrs"] as const,
   config: ["config"] as const,
+  settings: ["settings"] as const,
 };
 
 export function useSession() {
@@ -149,7 +152,9 @@ export type TorrentsQuery = {
   q?: string;
   category?: string;
   privateOnly?: boolean;
+  excludedOnly?: boolean;
   sort?: string;
+  order?: "asc" | "desc";
   limit?: number;
   offset?: number;
 };
@@ -159,13 +164,23 @@ export function useTorrents(params: TorrentsQuery) {
   if (params.q) search.set("q", params.q);
   if (params.category) search.set("category", params.category);
   if (params.privateOnly) search.set("private", "1");
+  if (params.excludedOnly) search.set("excluded", "1");
   if (params.sort) search.set("sort", params.sort);
+  if (params.order) search.set("order", params.order);
   if (params.limit != null) search.set("limit", String(params.limit));
   if (params.offset != null) search.set("offset", String(params.offset));
   return useQuery({
     queryKey: queryKeys.torrents({ ...params }),
     queryFn: () => apiFetch(`/api/v1/torrents?${search.toString()}`, TorrentList),
     refetchInterval: 30_000,
+  });
+}
+
+export function useTorrentCategories() {
+  return useQuery({
+    queryKey: ["torrent-categories"],
+    queryFn: () => apiFetch("/api/v1/torrents/categories", TorrentCategories),
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -236,6 +251,45 @@ export function useConfig() {
   return useQuery({
     queryKey: queryKeys.config,
     queryFn: () => apiFetch("/api/v1/config", ConfigShape),
+  });
+}
+
+export function useSettings() {
+  return useQuery({
+    queryKey: queryKeys.settings,
+    queryFn: () => apiFetch("/api/v1/settings", SettingsView),
+  });
+}
+
+export type SettingsOverrideInput = { key: string; value: unknown | null };
+
+// PUT /api/v1/settings — sends one or more override changes. Passing
+// value:null deletes the key (reverts to YAML default). The server returns
+// 202 and triggers a self-SIGHUP; callers should wait ~1s and re-fetch.
+export function useUpdateSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (overrides: SettingsOverrideInput[]) => {
+      const res = await fetch("/api/v1/settings", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overrides }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || res.statusText);
+      }
+    },
+    onSuccess: () => {
+      // Refresh after the daemon's reload window. 1.5s is generous on the
+      // local sqlite + in-process restart path.
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: queryKeys.settings });
+        qc.invalidateQueries({ queryKey: queryKeys.config });
+        qc.invalidateQueries({ queryKey: queryKeys.summary });
+      }, 1500);
+    },
   });
 }
 

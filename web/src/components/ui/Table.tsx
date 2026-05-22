@@ -1,9 +1,13 @@
 import type { HTMLAttributes, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
-export function Table({ className, ...p }: TableHTMLAttributes<HTMLTableElement>) {
+export function Table({
+  className,
+  wrapperClassName,
+  ...p
+}: TableHTMLAttributes<HTMLTableElement> & { wrapperClassName?: string }) {
   return (
-    <div className="relative w-full overflow-auto">
+    <div className={cn("relative w-full overflow-auto", wrapperClassName)}>
       <table className={cn("w-full text-sm", className)} {...p} />
     </div>
   );

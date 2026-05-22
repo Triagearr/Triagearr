@@ -35,11 +35,15 @@ export const TorrentListItem = z.object({
   size: z.number(),
   added_on: ts,
   last_seen: ts,
+  private: z.boolean(),
   ratio: z.number().nullable().optional(),
   seeders: z.number().nullable().optional(),
   leechers: z.number().nullable().optional(),
   state: z.string().nullable().optional(),
   snapshot_at: ts.nullable().optional(),
+  score: z.number().nullable().optional(),
+  excluded: z.boolean().nullable().optional(),
+  any_tracker_alive: z.boolean().nullable().optional(),
 });
 export type TorrentListItemT = z.infer<typeof TorrentListItem>;
 
@@ -49,6 +53,8 @@ export const TorrentList = z.object({
   limit: z.number(),
   offset: z.number(),
 });
+
+export const TorrentCategories = z.object({ categories: z.array(z.string()) });
 
 export const TrackerStatus = z.enum([
   "working",
@@ -235,7 +241,7 @@ export const ActionDetail = z.object({
 
 export const RunActionList = z.object({ actions: z.array(ActionView) });
 
-export const ScoreListItem = ScoreView.extend({ hash: z.string() });
+export const ScoreListItem = ScoreView.extend({ hash: z.string(), name: z.string() });
 export const ScoreList = z.object({ scores: z.array(ScoreListItem) });
 
 export const Summary = z.object({
@@ -252,3 +258,48 @@ export const Summary = z.object({
 export type SummaryT = z.infer<typeof Summary>;
 
 export const ConfigShape = z.unknown();
+
+// Settings (editable overrides). The handler returns the effective values
+// for the whitelisted sections, the list of currently overridden keys, and
+// the editable-prefix whitelist (so the UI doesn't need to hardcode it).
+export const ScoringWeights = z.object({
+  ratio_obligation_met: z.number().optional(),
+  upload_velocity_inv: z.number().optional(),
+  age_days: z.number().optional(),
+  seeders_low_guard: z.number().optional(),
+  swarm_health_bonus: z.number().optional(),
+});
+export const ScoringSettings = z.object({
+  weights: ScoringWeights.optional(),
+  rare_content_threshold: z.number().optional(),
+  hnr_window_days: z.number().optional(),
+});
+export const PollingSettings = z.object({
+  qbit_interval: z.string().optional(),
+  arr_interval: z.string().optional(),
+  arr_file_min_interval: z.string().optional(),
+  tracker_interval: z.string().optional(),
+  disk_interval: z.string().optional(),
+  maintainerr_interval: z.string().optional(),
+  downsample_cron: z.string().optional(),
+});
+export const VolumeDiskPressure = z.object({
+  enabled: z.boolean().optional(),
+  threshold_free_percent: z.number().optional(),
+  target_free_percent: z.number().optional(),
+  max_run_size_gb: z.number().optional(),
+});
+export const VolumeSettings = z.object({
+  name: z.string(),
+  disk_pressure: VolumeDiskPressure,
+});
+export const SettingsView = z.object({
+  values: z.object({
+    scoring: ScoringSettings,
+    polling: PollingSettings,
+    volumes: z.array(VolumeSettings).nullable(),
+  }),
+  overridden_keys: z.array(z.string()).nullable(),
+  editable_prefixes: z.array(z.string()).nullable(),
+});
+export type SettingsViewT = z.infer<typeof SettingsView>;

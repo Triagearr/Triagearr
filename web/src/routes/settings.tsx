@@ -1,127 +1,56 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { useConfig, useVersion, useVolumes } from "@/api/hooks";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Select";
-import { RunTriggerDialog } from "@/components/RunTriggerDialog";
-import { SecuritySection } from "@/components/SecuritySection";
+import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { Database, Gauge, Info, Settings2, Shield, SlidersHorizontal, Timer } from "lucide-react";
+import { cn } from "@/lib/cn";
 
-function SettingsPage() {
-  const cfg = useConfig();
-  const version = useVersion();
-  const volumes = useVolumes();
-  const [volume, setVolume] = useState("");
-  const [open, setOpen] = useState<"dry-run" | "live" | null>(null);
+// Sidebar entries. Adding a settings section = one entry here + one route
+// file (settings.<slug>.tsx). The layout stays untouched.
+const sections = [
+  { to: "/settings/scoring", label: "Scoring", Icon: SlidersHorizontal },
+  { to: "/settings/polling", label: "Polling", Icon: Timer },
+  { to: "/settings/disk-pressure", label: "Disk pressure", Icon: Gauge },
+  { to: "/settings/security", label: "Security", Icon: Shield },
+  { to: "/settings/debug", label: "Effective config", Icon: Database },
+  { to: "/settings/about", label: "About", Icon: Info },
+] as const;
 
-  const list = volumes.data?.volumes ?? [];
-  const selectedVolume = volume || list[0]?.name || "";
-
+function SettingsLayout() {
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-4xl">
-      <header>
+    <div className="p-4 sm:p-6 space-y-6">
+      <header className="flex items-center gap-2">
+        <Settings2 className="h-5 w-5 text-muted-foreground" />
         <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Effective configuration (secrets redacted), manual run trigger, and build info.
-        </p>
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Trigger a run</CardTitle>
-          <CardDescription>
-            A dry-run plans deletions without touching anything. Live runs require the daemon to be
-            started with <code className="font-mono">mode: live</code>; otherwise the request is
-            forced back to dry-run server-side.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="text-sm text-muted-foreground">Volume</label>
-            <Select
-              value={selectedVolume}
-              onChange={(e) => setVolume(e.target.value)}
-            >
-              {list.map((v) => (
-                <option key={v.name} value={v.name}>
-                  {v.name} ({v.path})
-                </option>
-              ))}
-            </Select>
-            <Button onClick={() => setOpen("dry-run")} disabled={!selectedVolume}>
-              Plan dry-run
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => setOpen("live")}
-              disabled={!selectedVolume}
-            >
-              Execute live…
-            </Button>
-          </div>
-          {selectedVolume && open && (
-            <RunTriggerDialog
-              open
-              onClose={() => setOpen(null)}
-              volume={selectedVolume}
-              mode={open}
-            />
-          )}
-        </CardContent>
-      </Card>
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* Section nav. Horizontal scroll on mobile, vertical rail on md+. */}
+        <nav className="md:w-52 shrink-0">
+          <ul className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible">
+            {sections.map(({ to, label, Icon }) => (
+              <li key={to}>
+                <Link
+                  to={to}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-3 py-2 text-sm whitespace-nowrap",
+                    "hover:bg-accent transition-colors",
+                  )}
+                  activeProps={{ className: "bg-accent font-medium text-foreground" }}
+                  inactiveProps={{ className: "text-muted-foreground" }}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-      <SecuritySection />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Effective configuration</CardTitle>
-          <CardDescription>
-            Secret-bearing fields (qbit password, *arr API keys) are replaced with{" "}
-            <code className="font-mono">***</code>.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {cfg.isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
-          {cfg.isError && (
-            <div className="text-sm text-destructive">{String(cfg.error)}</div>
-          )}
-          {cfg.data ? (
-            <pre className="text-xs font-mono bg-muted/30 p-3 rounded-md border border-border overflow-x-auto max-h-[60vh]">
-              {JSON.stringify(cfg.data, null, 2)}
-            </pre>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>About</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm space-y-1">
-          <div>
-            version:{" "}
-            <span className="font-mono">{version.data?.version ?? "unknown"}</span>
-          </div>
-          <div>
-            commit: <span className="font-mono">{version.data?.commit ?? "unknown"}</span>
-          </div>
-          <div>
-            built: <span className="font-mono">{version.data?.date ?? "unknown"}</span>
-          </div>
-          <div className="pt-2">
-            <a
-              className="text-primary underline"
-              href="https://github.com/Triagearr/Triagearr"
-              target="_blank"
-              rel="noreferrer"
-            >
-              GitHub
-            </a>
-          </div>
-        </CardContent>
-      </Card>
+        {/* Active section. */}
+        <div className="flex-1 min-w-0 max-w-3xl space-y-6">
+          <Outlet />
+        </div>
+      </div>
     </div>
   );
 }
 
-export const Route = createFileRoute("/settings")({ component: SettingsPage });
+export const Route = createFileRoute("/settings")({ component: SettingsLayout });

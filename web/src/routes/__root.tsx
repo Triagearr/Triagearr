@@ -3,6 +3,7 @@ import { Activity, Gauge, ListChecks, Menu, Settings, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 import { useVersion } from "@/api/hooks";
+import { Logo } from "@/components/Logo";
 
 // TanStack Router navigates via pushState, which doesn't fire `popstate`, so a
 // popstate listener for closing the drawer would be dead code. The Link
@@ -40,7 +41,10 @@ function Layout() {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <div className="font-semibold tracking-tight">Triagearr</div>
+        <div className="flex items-center gap-2 font-semibold tracking-tight">
+          <Logo size={28} />
+          Triagearr
+        </div>
         <div className="text-xs text-muted-foreground font-mono">
           {version.data?.version ?? "…"}
         </div>
@@ -64,10 +68,13 @@ function Layout() {
         )}
       >
         <div className="px-5 py-5 border-b border-border flex items-center justify-between">
-          <div>
-            <div className="text-lg font-semibold tracking-tight">Triagearr</div>
-            <div className="text-xs text-muted-foreground">
-              {version.data?.version ?? "loading…"}
+          <div className="flex items-center gap-3">
+            <Logo size={36} />
+            <div>
+              <div className="text-lg font-semibold tracking-tight">Triagearr</div>
+              <div className="text-xs text-muted-foreground">
+                {version.data?.version ?? "loading…"}
+              </div>
             </div>
           </div>
           <button
