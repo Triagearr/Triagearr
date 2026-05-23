@@ -61,7 +61,7 @@ func (p *FilesPoller) tick(ctx context.Context) error {
 		return fmt.Errorf("listing torrents: %w", err)
 	}
 	now := time.Now().UTC()
-	var totalFiles, missing, conflicts int
+	var totalFiles, missing, conflicts, statErrors int
 	for _, t := range torrents {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -88,10 +88,20 @@ func (p *FilesPoller) tick(ctx context.Context) error {
 					conflicts++
 				}
 			case errors.Is(statErr, os.ErrNotExist):
+				// File genuinely gone (rename race, *arr atomic-move replacement,
+				// manual delete). NULL nlink is the truthful value to persist —
+				// the Decider treats NULL as "unknown, keep eligible" so the
+				// Actor's T3.5 will catch any TOCTOU re-appearance.
 				missing++
 			default:
+				// Transient FS error (EIO, EACCES, NFS hiccup). Skip the upsert
+				// to preserve the previously-good nlink — overwriting with NULL
+				// would silently bypass the Decider's cross-seed pre-filter for
+				// this file until the next successful tick.
+				statErrors++
 				slog.Warn("files poller: stat failed",
 					"hash", t.Hash, "path", abs, "err", statErr)
+				continue
 			}
 			if err := p.Store.UpsertTorrentFile(ctx, triagearr.Hash(t.Hash), f.Name, storedSize, nlinkArg, now); err != nil {
 				slog.Warn("files poller: upsert failed", "hash", t.Hash, "path", f.Name, "err", err)
@@ -104,6 +114,7 @@ func (p *FilesPoller) tick(ctx context.Context) error {
 		"torrents", len(torrents),
 		"files", totalFiles,
 		"missing", missing,
+		"stat_errors", statErrors,
 		"cross_seed_candidates", conflicts,
 	)
 	return nil

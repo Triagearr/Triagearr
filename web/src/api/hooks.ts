@@ -37,6 +37,7 @@ export const queryKeys = {
   snapshots: (hash: string, since: string) => ["torrent", hash, "snapshots", since] as const,
   scores: ["scores"] as const,
   runs: ["runs"] as const,
+  run: (id: number) => ["run", id] as const,
   runActions: (id: number) => ["run", id, "actions"] as const,
   actions: (limit: number, offset: number) => ["actions", limit, offset] as const,
   action: (id: number) => ["action", id] as const,
@@ -213,15 +214,29 @@ export function useRuns() {
   return useQuery({
     queryKey: queryKeys.runs,
     queryFn: () => apiFetch("/api/v1/runs?limit=50", RunList),
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
   });
 }
 
-export function useRunActions(id: number | undefined) {
+// useRun fetches a single run with its full candidate items. The /runs list
+// strips candidates (handlers_runs.go), so the detail panel must call this
+// when the user selects a run — relying on useRuns().find() leaves
+// run.candidates undefined and the dry-run plan invisible.
+export function useRun(id: number | undefined, refetchInterval?: number) {
+  return useQuery({
+    queryKey: id != null ? queryKeys.run(id) : ["run", "noop"],
+    queryFn: () => apiFetch(`/api/v1/runs/${id}`, RunResponse),
+    enabled: Boolean(id),
+    refetchInterval,
+  });
+}
+
+export function useRunActions(id: number | undefined, refetchInterval?: number) {
   return useQuery({
     queryKey: id != null ? queryKeys.runActions(id) : ["run", "noop"],
     queryFn: () => apiFetch(`/api/v1/runs/${id}/actions`, RunActionList),
     enabled: Boolean(id),
+    refetchInterval,
   });
 }
 

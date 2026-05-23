@@ -285,6 +285,13 @@ const (
 	ActionSucceeded      ActionStatus = "succeeded"
 	ActionAbortedArrFail ActionStatus = "aborted_arr_fail"
 	ActionFailedQbit     ActionStatus = "failed_qbit"
+	// ActionAbortedNlinkCheck: T3.5 hit a non-ENOENT stat error (EACCES, EIO,
+	// missing save_path) before reaching the nlink decision. *arr deletes for
+	// this candidate already succeeded — the action is aborted before the qBit
+	// step, leaving *arr to re-monitor + re-grab. Distinct from ArrFail so a
+	// post-mortem doesn't blame the *arr layer when the actual failure was the
+	// FS namespace probe.
+	ActionAbortedNlinkCheck ActionStatus = "aborted_nlink_check"
 	// ActionSkippedCrossSeed: T3.5 saw nlink>1 on at least one file after the
 	// *arr fan-out, so deleting the qBit torrent would harm a cross-seed peer
 	// without freeing disk. *arr deletes are NOT rolled back (see

@@ -401,6 +401,31 @@ func TestActor_T35_SkipsCrossSeed(t *testing.T) {
 	require.Contains(t, rows[1].Detail, "nlink=2")
 }
 
+// TestActor_T35_StatErrorAborts exercises the "fanoutArr succeeded then T3.5
+// stat hit a non-ENOENT error" case (EACCES / EIO / lost mount). The action
+// must record ActionAbortedNlinkCheck — not ActionAbortedArrFail, which would
+// misdirect the post-mortem to the *arr layer that actually succeeded.
+func TestActor_T35_StatErrorAborts(t *testing.T) {
+	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h", SizeBytes: 1000}}
+	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
+		"h": {{ArrName: "s", FileID: 1}},
+	})
+	q := &fakeQbit{files: map[triagearr.Hash][]triagearr.TorrentFile{
+		"h": {{Name: "ep01.mkv"}},
+	}}
+	d := newFakeDeleter("s")
+	stat := func(_ string) (int64, int64, error) {
+		return 0, 0, errors.New("permission denied")
+	}
+	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d), Stat: stat})
+
+	require.NoError(t, a.Execute(context.Background(), 1))
+	require.Empty(t, q.calls, "qBit delete must not run when T3.5 stat failed")
+	require.Equal(t, []int64{1}, d.calls, "*arr deletes already happened (not rolled back)")
+	require.Equal(t, triagearr.ActionAbortedNlinkCheck, src.actions[1].Status,
+		"must NOT be ActionAbortedArrFail — the *arr layer succeeded")
+}
+
 // TestActor_T35_EnoentProceeds: a stale qBit file list pointing at an inode
 // already removed (cleanup script, manual rm, prior crash) is not a conflict
 // — nothing to protect on the *arr side. Proceed with qBit delete.

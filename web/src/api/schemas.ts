@@ -195,8 +195,20 @@ export const RunResponse = z.object({
 export type RunResponseT = z.infer<typeof RunResponse>;
 export const RunList = z.object({ runs: z.array(RunResponse) });
 
+// Keep aligned with internal/triagearr/types.go ActionStatus consts.
+// .catch("pending") preserves forward compatibility — newly added Go variants
+// degrade to a muted badge instead of breaking the page — but values listed
+// here render with their dedicated tone in actions.tsx.
 export const ActionStatus = z
-  .enum(["succeeded", "pending", "running", "failed_qbit", "aborted_arr_fail"])
+  .enum([
+    "succeeded",
+    "pending",
+    "running",
+    "failed_qbit",
+    "aborted_arr_fail",
+    "aborted_nlink_check",
+    "skipped_cross_seed",
+  ])
   .catch("pending");
 export type ActionStatusT = z.infer<typeof ActionStatus>;
 

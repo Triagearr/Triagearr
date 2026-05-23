@@ -27,6 +27,14 @@ if [ ! -f "$SCENARIO_PATH" ]; then
 fi
 
 mkdir -p .dev
+
+# Stub directories that the fake qBit save_paths reference (dev fixture uses
+# /tmp/triagearr-dev/ so the preflight mount check passes without Docker).
+mkdir -p /tmp/triagearr-dev/torrents/tv \
+         /tmp/triagearr-dev/torrents/movies \
+         /tmp/triagearr-dev/torrents/orphans \
+         /tmp/triagearr-dev/torrents
+
 PIDS=()
 
 cleanup() {

@@ -195,7 +195,10 @@ func (a *Actor) processCandidate(ctx context.Context, runID int64, item triagear
 	// We abort the qBit step; *arr deletes are NOT rolled back — *arr will
 	// re-monitor and re-grab, and the surviving nlink protects the disk.
 	if skip, err := a.checkNlink(ctx, actionID, item.TorrentHash); err != nil {
-		return a.finish(ctx, actionID, triagearr.ActionAbortedArrFail, 0, err)
+		// Distinct from ActionAbortedArrFail: fanoutArr already succeeded above,
+		// so blaming the *arr layer in the post-mortem would mislead the operator.
+		// The audit chain (AuditStepNlinkCheck failed) names the actual culprit.
+		return a.finish(ctx, actionID, triagearr.ActionAbortedNlinkCheck, 0, err)
 	} else if skip {
 		return a.finish(ctx, actionID, triagearr.ActionSkippedCrossSeed, 0, nil)
 	}

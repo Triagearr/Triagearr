@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 
@@ -47,6 +48,9 @@ func Validate(ctx context.Context, qb Qbit, volumePath string, stat StatFn) erro
 			if errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("preflight: configured volume.path %q does not exist in Triagearr's mount namespace — verify the container's volume mount matches the qBit/*arr stack (ADR-0023)", volumePath)
 			}
+			if errors.Is(err, fs.ErrPermission) {
+				return fmt.Errorf("preflight: configured volume.path %q is unreadable by Triagearr's UID — adjust the container user (typically PUID/PGID of the media owner) or relax filesystem ACLs; this is a UID issue, not a mount layout issue", volumePath)
+			}
 			return fmt.Errorf("preflight: stat volume.path %q: %w", volumePath, err)
 		}
 		if !fi.IsDir() {
@@ -68,9 +72,14 @@ func Validate(ctx context.Context, qb Qbit, volumePath string, stat StatFn) erro
 	}
 
 	// Sample distinct save_paths so a single misconfigured download category
-	// can't dominate the probe budget.
+	// can't dominate the probe budget. Permission errors fail-fast (UID
+	// misconfig is a global issue, not a stale-torrent edge case); ENOENT is
+	// tolerated up to a quorum threshold so one legitimately-stale qBit
+	// entry (category dir manually removed) doesn't block boot.
 	seen := map[string]bool{}
-	var probed int
+	var probed, missing int
+	var firstMissing string
+	var firstMissingTorrent string
 	for _, t := range tors {
 		if probed >= SampleSize {
 			break
@@ -81,12 +90,33 @@ func Validate(ctx context.Context, qb Qbit, volumePath string, stat StatFn) erro
 		seen[t.SavePath] = true
 		probed++
 		if _, err := stat(t.SavePath); err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				return fmt.Errorf("preflight: qBit save_path %q (torrent %q) is unreadable by Triagearr's UID — adjust the container user (typically PUID/PGID of the media owner) or relax filesystem ACLs; this is a UID issue, not a mount layout issue", t.SavePath, t.Name)
+			}
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("preflight: qBit save_path %q (torrent %q) does not exist in Triagearr's namespace — the container mounts are inconsistent across the stack (ADR-0023)", t.SavePath, t.Name)
+				missing++
+				if firstMissing == "" {
+					firstMissing = t.SavePath
+					firstMissingTorrent = t.Name
+				}
+				continue
 			}
 			return fmt.Errorf("preflight: stat qBit save_path %q: %w", t.SavePath, err)
 		}
 	}
-	slog.Info("preflight ok", "volume", volumePath, "qbit_paths_probed", probed)
+	// Quorum: refuse boot only when EVERY probed path is missing — one
+	// surviving path is enough signal that the mount layout itself is OK.
+	if probed > 0 && missing == probed {
+		return fmt.Errorf("preflight: every probed qBit save_path is missing in Triagearr's namespace (first: %q, torrent %q) — the container mounts are inconsistent across the stack (ADR-0023)", firstMissing, firstMissingTorrent)
+	}
+	if missing > 0 {
+		slog.Warn("preflight: some qBit save_paths are missing — likely stale qBit entries, not a mount issue",
+			"probed", probed,
+			"missing", missing,
+			"first_missing_path", firstMissing,
+			"first_missing_torrent", firstMissingTorrent,
+		)
+	}
+	slog.Info("preflight ok", "volume", volumePath, "qbit_paths_probed", probed, "qbit_paths_missing", missing)
 	return nil
 }

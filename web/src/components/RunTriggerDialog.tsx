@@ -7,25 +7,28 @@ import { useTriggerRun } from "@/api/hooks";
 type Props = {
   open: boolean;
   onClose: () => void;
+  onSuccess?: (runId: number) => void;
   mode: "dry-run" | "live";
 };
 
 const liveConfirmPhrase = "delete";
 
-export function RunTriggerDialog({ open, onClose, mode }: Props) {
+export function RunTriggerDialog({ open, onClose, onSuccess, mode }: Props) {
   const [typed, setTyped] = useState("");
   const trigger = useTriggerRun();
   const isLive = mode === "live";
   const armed = !isLive || typed === liveConfirmPhrase;
 
+  const close = () => {
+    setTyped("");
+    trigger.reset();
+    onClose();
+  };
+
   return (
     <Modal
       open={open}
-      onClose={() => {
-        setTyped("");
-        trigger.reset();
-        onClose();
-      }}
+      onClose={close}
       title={isLive ? "Execute live run?" : "Plan dry-run?"}
       description={
         isLive
@@ -49,32 +52,24 @@ export function RunTriggerDialog({ open, onClose, mode }: Props) {
         </div>
       )}
 
-      {trigger.data && (
-        <div className="mb-3 rounded-md border border-border bg-muted/40 p-3 text-sm">
-          <div className="font-medium">Run #{trigger.data.run_id}</div>
-          <div className="text-xs text-muted-foreground">
-            mode: <span className="font-mono">{trigger.data.mode}</span> · stop:{" "}
-            <span className="font-mono">{trigger.data.stop_reason}</span> · candidates:{" "}
-            {trigger.data.candidates?.length ?? 0}
-          </div>
-        </div>
-      )}
-
       <div className="flex justify-end gap-2">
-        <Button
-          variant="outline"
-          onClick={() => {
-            setTyped("");
-            trigger.reset();
-            onClose();
-          }}
-        >
+        <Button variant="outline" onClick={close}>
           Cancel
         </Button>
         <Button
           variant={isLive ? "destructive" : "default"}
           disabled={!armed || trigger.isPending}
-          onClick={() => trigger.mutate({ mode })}
+          onClick={() =>
+            trigger.mutate(
+              { mode },
+              {
+                onSuccess: (data) => {
+                  close();
+                  onSuccess?.(data.run_id);
+                },
+              },
+            )
+          }
         >
           {trigger.isPending ? "Running…" : isLive ? "Execute live" : "Plan dry-run"}
         </Button>

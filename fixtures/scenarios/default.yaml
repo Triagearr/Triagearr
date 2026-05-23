@@ -28,7 +28,7 @@ qbit:
     - hash: "1111111111111111111111111111111111111111"
       name: "Cosmic.Drift.S01.COMPLETE.1080p.WEB.H264-FAKE"
       category: "tv-sonarr"
-      save_path: "/data/torrents/tv"
+      save_path: "/tmp/triagearr-dev/torrents/tv"
       size: 12000000000
       added_on: 1746000000      # ~2025-04-30
       completion_on: 1746100000
@@ -51,7 +51,7 @@ qbit:
     - hash: "2222222222222222222222222222222222222222"
       name: "Lonely.Show.S03E07.1080p.HDTV-FAKE"
       category: "tv-sonarr"
-      save_path: "/data/torrents/tv"
+      save_path: "/tmp/triagearr-dev/torrents/tv"
       size: 2500000000
       added_on: 1740000000      # ~2025-02-19
       completion_on: 1740050000
@@ -71,7 +71,7 @@ qbit:
     - hash: "3333333333333333333333333333333333333333"
       name: "Cosmic.Voyage.2024.1080p.WEB.H264-FAKE"
       category: "movies-radarr"
-      save_path: "/data/torrents/movies"
+      save_path: "/tmp/triagearr-dev/torrents/movies"
       size: 8000000000
       added_on: 1743000000
       completion_on: 1743050000
@@ -91,7 +91,7 @@ qbit:
     - hash: "4444444444444444444444444444444444444444"
       name: "Old.Forgotten.Movie.1080p.BluRay-FAKE"
       category: "movies-radarr"
-      save_path: "/data/torrents/movies"
+      save_path: "/tmp/triagearr-dev/torrents/movies"
       size: 6000000000
       added_on: 1715000000      # ~2024-05-06
       completion_on: 1715050000
@@ -111,7 +111,7 @@ qbit:
     - hash: "5555555555555555555555555555555555555555"
       name: "Public.Linux.Distro.iso"
       category: ""
-      save_path: "/data/torrents"
+      save_path: "/tmp/triagearr-dev/torrents"
       size: 4000000000
       added_on: 1747000000
       completion_on: 1747050000
@@ -132,7 +132,7 @@ qbit:
     - hash: "6666666666666666666666666666666666666666"
       name: "Fresh.Grab.S01E01.1080p.WEB-FAKE"
       category: "tv-sonarr"
-      save_path: "/data/torrents/tv"
+      save_path: "/tmp/triagearr-dev/torrents/tv"
       size: 2000000000
       added_on: 1747200000      # within the last ~10 days
       completion_on: 1747250000
@@ -152,7 +152,7 @@ qbit:
     - hash: "7777777777777777777777777777777777777777"
       name: "Orphan.Movie.NotInRadarr-FAKE"
       category: ""
-      save_path: "/data/torrents/orphans"
+      save_path: "/tmp/triagearr-dev/torrents/orphans"
       size: 5000000000
       added_on: 1730000000
       completion_on: 1730050000

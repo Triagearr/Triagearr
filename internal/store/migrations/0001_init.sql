@@ -186,7 +186,9 @@ CREATE TABLE actions (
     started_at   TIMESTAMP NOT NULL,
     finished_at  TIMESTAMP,
     status       TEXT NOT NULL,
-        -- pending | running | succeeded | aborted_arr_fail | failed_qbit
+        -- pending | running | succeeded | aborted_arr_fail
+        --   | aborted_nlink_check | failed_qbit | skipped_cross_seed
+        -- Source of truth: internal/triagearr/types.go ActionStatus.
     freed_bytes  INTEGER NOT NULL DEFAULT 0,
     UNIQUE(run_id, rank)
 );

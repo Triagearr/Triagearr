@@ -73,3 +73,40 @@ func TestValidate_NilQbit_OnlyVolumeProbe(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, preflight.Validate(context.Background(), nil, root, os.Stat))
 }
+
+// TestValidate_SomeStaleTorrentsTolerated: 1 missing path out of 3 reflects a
+// stale qBit entry (operator-removed category dir), not a mount inconsistency.
+// Boot must succeed; the WARN is for the operator's eyes only.
+func TestValidate_SomeStaleTorrentsTolerated(t *testing.T) {
+	root := t.TempDir()
+	live := filepath.Join(root, "torrents", "tv")
+	require.NoError(t, os.MkdirAll(live, 0o755))
+	qb := &fakeQbit{tors: []triagearr.Torrent{
+		{Name: "Live1", SavePath: live},
+		{Name: "Live2", SavePath: live + "-2"}, // not created → ENOENT
+		{Name: "Live3", SavePath: live},        // dedup'd against Live1
+	}}
+	// Live2's missing path should warn but not fail; Live1 surviving proves
+	// the mount is intact.
+	err := preflight.Validate(context.Background(), qb, root, os.Stat)
+	require.NoError(t, err)
+}
+
+// TestValidate_PermissionErrorIsUIDDiagnostic: when stat fails with EACCES the
+// operator should be pointed at UID/PUID, not at the mount layout.
+func TestValidate_PermissionErrorIsUIDDiagnostic(t *testing.T) {
+	root := t.TempDir()
+	qb := &fakeQbit{tors: []triagearr.Torrent{
+		{Name: "Foo", SavePath: filepath.Join(root, "torrents", "tv")},
+	}}
+	deny := func(p string) (os.FileInfo, error) {
+		if p == root {
+			return os.Stat(p)
+		}
+		return nil, &os.PathError{Op: "stat", Path: p, Err: os.ErrPermission}
+	}
+	err := preflight.Validate(context.Background(), qb, root, deny)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "UID")
+	require.NotContains(t, err.Error(), "ADR-0023") // must point at UID, not the mount-convention ADR
+}

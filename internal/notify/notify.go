@@ -166,8 +166,12 @@ func itemMark(s triagearr.ActionStatus) string {
 		return "ok"
 	case triagearr.ActionAbortedArrFail:
 		return "failed: arr"
+	case triagearr.ActionAbortedNlinkCheck:
+		return "aborted: nlink check"
 	case triagearr.ActionFailedQbit:
 		return "failed: qbit"
+	case triagearr.ActionSkippedCrossSeed:
+		return "skipped: cross-seed"
 	default:
 		return string(s)
 	}

@@ -2,8 +2,10 @@ package pollers_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -97,4 +99,52 @@ func TestFilesPoller_PersistsRealNlink(t *testing.T) {
 	maxN, err := s.MaxNlinkByHashes(context.Background(), []triagearr.Hash{"h1"})
 	require.NoError(t, err)
 	require.Equal(t, int64(3), maxN["h1"], "MaxNlinkByHashes should reflect the cross-seed shape")
+}
+
+// TestFilesPoller_TransientStatErrorPreservesNlink ensures that a non-ENOENT
+// stat failure (EIO, EACCES, NFS hiccup) does NOT overwrite the previously-
+// recorded nlink with NULL — otherwise a single flaky tick would silently
+// disable the Decider's cross-seed pre-filter for that file until the next
+// successful tick.
+func TestFilesPoller_TransientStatErrorPreservesNlink(t *testing.T) {
+	dir := t.TempDir()
+
+	s, err := store.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	require.NoError(t, s.Migrate())
+
+	require.NoError(t, s.UpsertTorrent(context.Background(), triagearr.Torrent{
+		Hash: "h1", Name: "Show", SavePath: dir, Size: 4, AddedOn: time.Now().UTC(),
+	}))
+
+	fake := &fakeFilesQbit{files: map[triagearr.Hash][]triagearr.TorrentFile{
+		"h1": {{Name: "ep01.mkv", Size: 4}},
+	}}
+
+	// Two-phase Stat: first call returns nlink=3 (cross-seed shape captured),
+	// every subsequent call simulates a transient I/O error.
+	var calls atomic.Int32
+	stat := func(_ string) (int64, int64, error) {
+		if calls.Add(1) == 1 {
+			return 4, 3, nil
+		}
+		return 0, 0, errors.New("input/output error")
+	}
+
+	p := &pollers.FilesPoller{Store: s, Qbit: fake, Interval: 50 * time.Millisecond, Stat: stat}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- p.Run(ctx) }()
+
+	// Wait until at least two ticks have run (first OK, then ≥1 erroring).
+	require.Eventually(t, func() bool { return calls.Load() >= 2 }, 2*time.Second, 10*time.Millisecond)
+	cancel()
+	<-done
+
+	rows, err := s.TorrentFilesByHash(context.Background(), "h1")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.NotNil(t, rows[0].Nlink, "transient stat error must NOT clear a previously-good nlink")
+	require.Equal(t, int64(3), *rows[0].Nlink)
 }

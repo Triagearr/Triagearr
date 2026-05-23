@@ -149,6 +149,12 @@ func TestIsEditableKey(t *testing.T) {
 		"qbit.password",
 		"http.bind",
 		"storage.sqlite_path",
+		// volume.{path,name,source} are boot-critical (preflight reads them):
+		// they must stay YAML-only so a hot-reload can't rebind the watched
+		// mount to an out-of-scope path.
+		"volume.path",
+		"volume.name",
+		"volume.source",
 	}
 	for _, k := range editable {
 		require.True(t, config.IsEditableKey(k), "expected editable: %s", k)
