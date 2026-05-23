@@ -19,17 +19,17 @@ const (
 // Config is the typed top-level configuration. Fields not relevant to M1 are
 // intentionally omitted — they will be added when their owning milestone needs them.
 type Config struct {
-	Mode    Mode           `koanf:"mode"`
-	HTTP    HTTPConfig     `koanf:"http"`
-	Storage StorageConfig  `koanf:"storage"`
-	Arrs    ArrsConfig     `koanf:"arrs"`
-	Qbit    QbitConfig     `koanf:"qbit"`
+	Mode    Mode          `koanf:"mode"`
+	HTTP    HTTPConfig    `koanf:"http"`
+	Storage StorageConfig `koanf:"storage"`
+	Arrs    ArrsConfig    `koanf:"arrs"`
+	Qbit    QbitConfig    `koanf:"qbit"`
 	// Volume is the single watched filesystem mount. Triagearr watches exactly
 	// one volume — the TRaSH shared data root (ADR-0024).
 	Volume  VolumeConfig  `koanf:"volume"`
 	Polling PollingConfig `koanf:"polling"`
-	Scoring ScoringConfig  `koanf:"scoring"`
-	Action  ActionConfig   `koanf:"action"`
+	Scoring ScoringConfig `koanf:"scoring"`
+	Action  ActionConfig  `koanf:"action"`
 	// Notifications configures post-action operator notifications. Only
 	// disk-pressure runs that reach the Actor are notified (ADR-0021).
 	Notifications NotificationsConfig `koanf:"notifications"`
