@@ -28,6 +28,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/notify"
 	"github.com/Triagearr/Triagearr/internal/notify/telegram"
 	"github.com/Triagearr/Triagearr/internal/pollers"
+	"github.com/Triagearr/Triagearr/internal/preflight"
 	"github.com/Triagearr/Triagearr/internal/scorer"
 	"github.com/Triagearr/Triagearr/internal/server"
 	"github.com/Triagearr/Triagearr/internal/store"
@@ -294,6 +295,23 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 
 	if vol, ok := enabledVolume(cfg); ok {
 		ps = append(ps, &pollers.DiskPoller{Volume: vol, Store: s, Interval: cfg.Polling.DiskInterval})
+	}
+
+	if qb != nil {
+		ps = append(ps, &pollers.FilesPoller{Store: s, Qbit: qb, Interval: cfg.Polling.QbitInterval})
+	}
+
+	// ADR-0023 boot validation: refuse to start if the TRaSH single-shared-mount
+	// convention is violated (qBit save_paths don't resolve in our namespace).
+	// Skipped only when there's nothing to validate (qBit + volume both off).
+	if cfg.Volume.Path != "" || qb != nil {
+		var pqb preflight.Qbit
+		if qb != nil {
+			pqb = qb
+		}
+		if err := preflight.Validate(ctx, pqb, cfg.Volume.Path, nil); err != nil {
+			return err
+		}
 	}
 
 	ps = append(ps, &pollers.Maintenance{

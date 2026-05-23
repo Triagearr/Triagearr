@@ -3,6 +3,8 @@ package actor_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +14,8 @@ import (
 	"github.com/Triagearr/Triagearr/internal/actor"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
+
+var _ = noConflictStat // keep helper referenced; tests use it indirectly via custom stats
 
 // fakeSource is an in-memory Source. It mirrors enough of the store contract
 // for the actor tests without needing SQLite.
@@ -94,12 +98,22 @@ func (f *fakeSource) LinksByHash(_ context.Context, hash triagearr.Hash) ([]tria
 	return f.links[hash], nil
 }
 
+func (f *fakeSource) TorrentSavePath(_ context.Context, _ triagearr.Hash) (string, error) {
+	return "/fake", nil
+}
+
 // fakeQbit records every Delete call and can be programmed to fail N times.
+// Per-hash file lists drive the T3.5 stat sweep.
 type fakeQbit struct {
 	mu      sync.Mutex
 	calls   []triagearr.Hash
+	files   map[triagearr.Hash][]triagearr.TorrentFile
 	failN   int   // first N calls fail with the given error
 	failErr error // if nil, errors.New("boom") wrapped with ErrTransient when transient=true
+}
+
+func (q *fakeQbit) TorrentFiles(_ context.Context, h triagearr.Hash) ([]triagearr.TorrentFile, error) {
+	return q.files[h], nil
 }
 
 func (q *fakeQbit) Delete(_ context.Context, h triagearr.Hash, _ triagearr.DeleteOpts) error {
@@ -112,6 +126,11 @@ func (q *fakeQbit) Delete(_ context.Context, h triagearr.Hash, _ triagearr.Delet
 	}
 	return nil
 }
+
+// noConflictStat is the test default: every stat reports nlink=1, i.e. the
+// inode is owned by qBit alone (the *arr delete already happened in fanoutArr).
+// T3.5 walks through cleanly. Tests for cross-seed scenarios swap this out.
+func noConflictStat(_ string) (int64, int64, error) { return 0, 1, nil }
 
 // fakeDeleter is a per-arr FileDeleter that records the file_ids it sees and
 // can be programmed to fail on specific calls.
@@ -184,11 +203,13 @@ func TestActor_HappyPath_singleFile(t *testing.T) {
 	require.Equal(t, int64(1000), act.FreedBytes)
 
 	rows := src.audit[1]
-	require.Len(t, rows, 2)
+	require.Len(t, rows, 3)
 	require.Equal(t, triagearr.AuditStepArrDelete, rows[0].Step)
 	require.Equal(t, triagearr.AuditOutcomeOK, rows[0].Outcome)
-	require.Equal(t, triagearr.AuditStepQbitDelete, rows[1].Step)
+	require.Equal(t, triagearr.AuditStepNlinkCheck, rows[1].Step)
 	require.Equal(t, triagearr.AuditOutcomeOK, rows[1].Outcome)
+	require.Equal(t, triagearr.AuditStepQbitDelete, rows[2].Step)
+	require.Equal(t, triagearr.AuditOutcomeOK, rows[2].Outcome)
 }
 
 func TestActor_SeasonPack_8files_allOK(t *testing.T) {
@@ -207,7 +228,7 @@ func TestActor_SeasonPack_8files_allOK(t *testing.T) {
 	require.Len(t, d.calls, 8)
 	require.Equal(t, []triagearr.Hash{"pack"}, q.calls)
 	require.Equal(t, triagearr.ActionSucceeded, src.actions[1].Status)
-	require.Len(t, src.audit[1], 9) // 8 arr + 1 qbit
+	require.Len(t, src.audit[1], 10) // 8 arr + 1 nlink check + 1 qbit
 }
 
 func TestActor_ArrFailMidway_NotAttemptedRecorded(t *testing.T) {
@@ -342,6 +363,62 @@ func TestActor_CronTriggered_Refused(t *testing.T) {
 	err := a.Execute(context.Background(), 1)
 	require.Error(t, err)
 	require.Empty(t, q.calls)
+}
+
+// TestActor_T35_SkipsCrossSeed exercises the atomic nlink re-check: a file
+// reporting nlink>1 after the *arr fan-out indicates a cross-seed peer (or
+// some other inode-sharing holder) appeared between scoring and action. The
+// qBit delete must be aborted so the peer keeps seeding.
+func TestActor_T35_SkipsCrossSeed(t *testing.T) {
+	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h", SizeBytes: 1000}}
+	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
+		"h": {{ArrName: "s", FileID: 1}},
+	})
+	q := &fakeQbit{files: map[triagearr.Hash][]triagearr.TorrentFile{
+		"h": {{Name: "ep01.mkv"}, {Name: "ep02.mkv"}},
+	}}
+	d := newFakeDeleter("s")
+	// Second file reports nlink=2 → cross-seed conflict, abort qBit step.
+	stat := func(path string) (int64, int64, error) {
+		if filepath.Base(path) == "ep02.mkv" {
+			return 0, 2, nil
+		}
+		return 0, 1, nil
+	}
+	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d), Stat: stat})
+
+	require.NoError(t, a.Execute(context.Background(), 1))
+	require.Empty(t, q.calls, "qBit delete must not run when T3.5 sees nlink>1")
+	require.Equal(t, []int64{1}, d.calls, "*arr deletes already happened (not rolled back)")
+	require.Equal(t, triagearr.ActionSkippedCrossSeed, src.actions[1].Status)
+	require.Equal(t, int64(0), src.actions[1].FreedBytes)
+
+	rows := src.audit[1]
+	require.Len(t, rows, 2) // 1 arr_delete OK + 1 nlink_check Skipped
+	require.Equal(t, triagearr.AuditStepArrDelete, rows[0].Step)
+	require.Equal(t, triagearr.AuditStepNlinkCheck, rows[1].Step)
+	require.Equal(t, triagearr.AuditOutcomeSkipped, rows[1].Outcome)
+	require.Contains(t, rows[1].Detail, "nlink=2")
+}
+
+// TestActor_T35_EnoentProceeds: a stale qBit file list pointing at an inode
+// already removed (cleanup script, manual rm, prior crash) is not a conflict
+// — nothing to protect on the *arr side. Proceed with qBit delete.
+func TestActor_T35_EnoentProceeds(t *testing.T) {
+	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h", SizeBytes: 1000}}
+	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
+		"h": {{ArrName: "s", FileID: 1}},
+	})
+	q := &fakeQbit{files: map[triagearr.Hash][]triagearr.TorrentFile{
+		"h": {{Name: "ep01.mkv"}},
+	}}
+	d := newFakeDeleter("s")
+	stat := func(_ string) (int64, int64, error) { return 0, 0, os.ErrNotExist }
+	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d), Stat: stat})
+
+	require.NoError(t, a.Execute(context.Background(), 1))
+	require.Equal(t, []triagearr.Hash{"h"}, q.calls)
+	require.Equal(t, triagearr.ActionSucceeded, src.actions[1].Status)
 }
 
 func TestActor_ActFalse_Skips(t *testing.T) {

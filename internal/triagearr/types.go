@@ -285,6 +285,11 @@ const (
 	ActionSucceeded      ActionStatus = "succeeded"
 	ActionAbortedArrFail ActionStatus = "aborted_arr_fail"
 	ActionFailedQbit     ActionStatus = "failed_qbit"
+	// ActionSkippedCrossSeed: T3.5 saw nlink>1 on at least one file after the
+	// *arr fan-out, so deleting the qBit torrent would harm a cross-seed peer
+	// without freeing disk. *arr deletes are NOT rolled back (see
+	// HARDLINK_TOPOLOGY.md case 4): nlink stays ≥1 thanks to the surviving peer.
+	ActionSkippedCrossSeed ActionStatus = "skipped_cross_seed"
 )
 
 // Action is the persisted record of one destructive operation attempted by
@@ -306,6 +311,7 @@ type AuditStep string
 // Supported AuditStep values.
 const (
 	AuditStepArrDelete  AuditStep = "arr_delete"
+	AuditStepNlinkCheck AuditStep = "nlink_check"
 	AuditStepQbitDelete AuditStep = "qbit_delete"
 )
 

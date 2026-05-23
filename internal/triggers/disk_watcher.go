@@ -218,6 +218,7 @@ func (w *DiskWatcher) notifyRun(ctx context.Context, snap triagearr.DiskUsage, r
 		FreeBytesBefore: snap.FreeBytes,
 		TargetFreePct:   w.Rule.TargetFreePercent,
 	}
+	var haveAfter bool
 	if w.Sampler != nil {
 		after, err := w.Sampler(w.Rule.Path)
 		if err != nil {
@@ -225,6 +226,7 @@ func (w *DiskWatcher) notifyRun(ctx context.Context, snap triagearr.DiskUsage, r
 		} else {
 			report.FreePctAfter = after.FreePercent
 			report.FreeBytesAfter = after.FreeBytes
+			haveAfter = true
 		}
 	}
 	for _, a := range actions {
@@ -236,6 +238,22 @@ func (w *DiskWatcher) notifyRun(ctx context.Context, snap triagearr.DiskUsage, r
 		})
 		if a.Status == triagearr.ActionSucceeded {
 			report.TotalFreedBytes += a.FreedBytes
+		}
+	}
+	if haveAfter {
+		// Signed disk delta. Concurrent writes can render this negative — that
+		// is itself useful signal (the operator's stack consumed more than we
+		// freed during the action window).
+		//nolint:gosec // disk free bytes are bounded well below int64 max
+		report.RealFreedBytes = int64(report.FreeBytesAfter) - int64(report.FreeBytesBefore)
+		const tolerancePct = 80 // see ADR-0024 / SCORING cross-seed pre-filter rationale
+		if report.TotalFreedBytes > 0 && report.RealFreedBytes*100 < report.TotalFreedBytes*tolerancePct {
+			slog.Warn("freed-space mismatch — actual disk delta below claimed",
+				"run_id", runID,
+				"claimed_bytes", report.TotalFreedBytes,
+				"real_bytes", report.RealFreedBytes,
+				"tolerance_pct", tolerancePct,
+			)
 		}
 	}
 	w.Notifier.Dispatch(ctx, report)

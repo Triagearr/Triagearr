@@ -49,6 +49,11 @@ type Report struct {
 	// TotalFreedBytes is the sum of freed_bytes across succeeded actions —
 	// the "a priori" freed total, distinct from the before/after disk delta.
 	TotalFreedBytes int64
+	// RealFreedBytes is the observed disk delta (FreeBytesAfter -
+	// FreeBytesBefore) measured by the post-action statfs re-sample. Signed:
+	// concurrent writes from other processes during the action window can
+	// produce a negative value. Zero when no after-sample was taken.
+	RealFreedBytes int64
 	// Test marks a report produced by the dashboard "send test" action; it
 	// carries no run data and renders as a short connectivity-check message.
 	Test bool
@@ -140,6 +145,10 @@ func FormatText(r Report) string {
 
 	fmt.Fprintf(&b, "Deleted %d/%d items, %s freed:\n",
 		r.SucceededCount(), len(r.Items), HumanBytes(r.TotalFreedBytes))
+	if r.RealFreedBytes != 0 && r.TotalFreedBytes > 0 {
+		fmt.Fprintf(&b, "Disk delta: %s (claimed %s)\n",
+			HumanBytes(r.RealFreedBytes), HumanBytes(r.TotalFreedBytes))
+	}
 	for _, it := range r.Items {
 		name := it.Name
 		if name == "" {

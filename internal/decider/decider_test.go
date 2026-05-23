@@ -16,6 +16,7 @@ type fakeSrc struct {
 	scores   []store.ScoreRow
 	torrents []store.TorrentBasic
 	disk     *triagearr.DiskUsage
+	maxN     map[triagearr.Hash]int64
 }
 
 func (f *fakeSrc) ListScores(_ context.Context, _ store.ListScoresOpts) ([]store.ScoreRow, error) {
@@ -26,6 +27,18 @@ func (f *fakeSrc) ListTorrentsBasic(_ context.Context) ([]store.TorrentBasic, er
 }
 func (f *fakeSrc) LatestDiskUsage(_ context.Context) (*triagearr.DiskUsage, error) {
 	return f.disk, nil
+}
+func (f *fakeSrc) MaxNlinkByHashes(_ context.Context, hashes []triagearr.Hash) (map[triagearr.Hash]int64, error) {
+	if f.maxN == nil {
+		return map[triagearr.Hash]int64{}, nil
+	}
+	out := map[triagearr.Hash]int64{}
+	for _, h := range hashes {
+		if n, ok := f.maxN[h]; ok {
+			out[h] = n
+		}
+	}
+	return out, nil
 }
 
 func TestPlan_TargetReached(t *testing.T) {
@@ -147,6 +160,33 @@ func TestPlan_NoSnapshot(t *testing.T) {
 	d := decider.New(src)
 	_, err := d.Plan(context.Background(), decider.Volume{Name: "data", Path: "/data"})
 	require.Error(t, err)
+}
+
+func TestPlan_FiltersCrossSeed(t *testing.T) {
+	const oneGiB = int64(1024 * 1024 * 1024)
+	src := &fakeSrc{
+		scores: []store.ScoreRow{
+			{Hash: "a", Score: 100}, // cross-seed (nlink=3) → filtered
+			{Hash: "b", Score: 90},  // healthy (nlink=2) → kept
+			{Hash: "c", Score: 80},  // unsampled (no row) → kept, T3.5 will catch
+		},
+		torrents: []store.TorrentBasic{
+			{Hash: "a", SavePath: "/data", Size: 5 * oneGiB},
+			{Hash: "b", SavePath: "/data", Size: 5 * oneGiB},
+			{Hash: "c", SavePath: "/data", Size: 5 * oneGiB},
+		},
+		disk: &triagearr.DiskUsage{TotalBytes: 100 * uint64(oneGiB), FreePercent: 0},
+		maxN: map[triagearr.Hash]int64{"a": 3, "b": 2},
+	}
+	d := decider.New(src)
+	plan, err := d.Plan(context.Background(), decider.Volume{
+		Name: "data", Path: "/data", TargetFreePercent: 100, MaxRunSizeGB: 100,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, plan.FilteredCrossSeed, "exactly one candidate filtered")
+	require.Len(t, plan.Items, 2)
+	require.Equal(t, triagearr.Hash("b"), plan.Items[0].TorrentHash)
+	require.Equal(t, triagearr.Hash("c"), plan.Items[1].TorrentHash)
 }
 
 // keep time import used in build matrix where stdlib gets flagged unused.

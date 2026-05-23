@@ -4,11 +4,12 @@
 // docs/HARDLINK_TOPOLOGY.md and ADR-0003.
 //
 // One Execute call processes the run's items in order: for each candidate
-// it fans out per-file *arr DELETEs, then issues the whole-torrent qBit
-// DELETE. Failures are logged per-file in audit_log so a post-mortem can
-// reconstruct partial states (8 OK + 1 failed + 1 not-attempted on a season
-// pack). Cross-seed safety is deferred to M8 (no FS access — full API per
-// ADR-0012).
+// it fans out per-file *arr DELETEs, runs the T3.5 atomic nlink re-check
+// (HARDLINK_TOPOLOGY.md), then issues the whole-torrent qBit DELETE. Failures
+// are logged per-file in audit_log so a post-mortem can reconstruct partial
+// states (8 OK + 1 failed + 1 not-attempted on a season pack). Cross-seed
+// safety is enforced at action time by the T3.5 stat; ADR-0023 makes the
+// stat namespace-safe.
 package actor
 
 import (
@@ -17,8 +18,11 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/Triagearr/Triagearr/internal/pollers"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
@@ -31,11 +35,16 @@ type Source interface {
 	FinishAction(ctx context.Context, id int64, status triagearr.ActionStatus, finishedAt time.Time, freedBytes int64) error
 	AppendAudit(ctx context.Context, e triagearr.AuditEntry) error
 	LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagearr.Link, error)
+	// TorrentSavePath fetches the volume-relative root for the torrent so the
+	// T3.5 step can resolve absolute file paths in Triagearr's namespace
+	// (ADR-0023).
+	TorrentSavePath(ctx context.Context, hash triagearr.Hash) (string, error)
 }
 
-// QbitDeleter is the destructive subset of the qBit client. Matches the
-// concrete *qbit.Client.Delete signature.
-type QbitDeleter interface {
+// QbitClient is the qBit subset the Actor uses: enumerating the torrent's
+// files (for the T3.5 stat sweep) and the destructive whole-torrent delete.
+type QbitClient interface {
+	TorrentFiles(ctx context.Context, h triagearr.Hash) ([]triagearr.TorrentFile, error)
 	Delete(ctx context.Context, h triagearr.Hash, opts triagearr.DeleteOpts) error
 }
 
@@ -47,13 +56,17 @@ type DeleterResolver func(arrName string) (triagearr.FileDeleter, bool)
 // Options configures an Actor.
 type Options struct {
 	Source             Source
-	Qbit               QbitDeleter
+	Qbit               QbitClient
 	Deleter            DeleterResolver
 	MaxDeletionsPerRun int           // 0 → unlimited (not recommended outside tests)
 	InterActionDelay   time.Duration // sleep between two whole-torrent qBit deletes
 	// AddImportExclusion forwards to *arr — when true, deleted releases are
 	// added to the import exclusion list so *arr won't re-grab them.
 	AddImportExclusion bool
+	// Stat is the T3.5 hardlink-count probe. nil falls back to
+	// pollers.DefaultStatNlink (Linux syscall.Stat_t). Tests inject a fake to
+	// drive nlink scenarios without touching the filesystem.
+	Stat pollers.StatNlink
 
 	now   func() time.Time      // injected in tests
 	sleep func(d time.Duration) // injected in tests
@@ -81,6 +94,9 @@ func New(opts Options) *Actor {
 	}
 	if opts.sleep == nil {
 		opts.sleep = time.Sleep
+	}
+	if opts.Stat == nil {
+		opts.Stat = pollers.DefaultStatNlink
 	}
 	return &Actor{opts: opts}
 }
@@ -171,6 +187,19 @@ func (a *Actor) processCandidate(ctx context.Context, runID int64, item triagear
 		return a.finish(ctx, actionID, triagearr.ActionAbortedArrFail, 0, err)
 	}
 
+	// T3.5 — atomic per-file hardlink re-check (HARDLINK_TOPOLOGY.md). The
+	// Decider already filtered cross-seed candidates at election time, but a
+	// new cross-seed peer can appear in the TOCTOU window between scoring
+	// and action. If ANY file still has nlink > 1 after the *arr deletes, the
+	// qBit delete would either free no disk (cross-seed) or break a peer.
+	// We abort the qBit step; *arr deletes are NOT rolled back — *arr will
+	// re-monitor and re-grab, and the surviving nlink protects the disk.
+	if skip, err := a.checkNlink(ctx, actionID, item.TorrentHash); err != nil {
+		return a.finish(ctx, actionID, triagearr.ActionAbortedArrFail, 0, err)
+	} else if skip {
+		return a.finish(ctx, actionID, triagearr.ActionSkippedCrossSeed, 0, nil)
+	}
+
 	delOpts := triagearr.DeleteOpts{DeleteFiles: true, AddImportExclusion: a.opts.AddImportExclusion}
 	if err := withRetry(ctx, a.opts.sleep, func() error {
 		return a.opts.Qbit.Delete(ctx, item.TorrentHash, delOpts)
@@ -181,6 +210,49 @@ func (a *Actor) processCandidate(ctx context.Context, runID int64, item triagear
 	a.audit(ctx, actionID, triagearr.AuditStepQbitDelete, triagearr.AuditOutcomeOK, "", 0, "")
 
 	return a.finish(ctx, actionID, triagearr.ActionSucceeded, item.SizeBytes, nil)
+}
+
+// checkNlink runs the T3.5 stat sweep. It fetches the torrent's current file
+// list from qBit (authoritative — the in-store torrent_files snapshot can lag
+// up to one files-poller interval) and stats each in Triagearr's namespace
+// (safe per ADR-0023). Returns (skip=true) on the first file with nlink > 1.
+// ENOENT is not a conflict: someone (cleanup script, the user, a prior failed
+// run) already removed the inode — proceed with the qBit delete to keep state
+// consistent. A genuine FS error returns an err so the caller aborts the run.
+func (a *Actor) checkNlink(ctx context.Context, actionID int64, hash triagearr.Hash) (bool, error) {
+	savePath, err := a.opts.Source.TorrentSavePath(ctx, hash)
+	if err != nil {
+		a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeFailed, "", 0, fmt.Sprintf("save_path: %v", err))
+		return false, fmt.Errorf("save_path %s: %w", hash, err)
+	}
+	files, err := a.opts.Qbit.TorrentFiles(ctx, hash)
+	if err != nil {
+		a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeFailed, "", 0, fmt.Sprintf("qbit files: %v", err))
+		return false, fmt.Errorf("qbit files %s: %w", hash, err)
+	}
+	var checked, gone int
+	for _, f := range files {
+		abs := filepath.Join(savePath, f.Name)
+		_, nlink, statErr := a.opts.Stat(abs)
+		if errors.Is(statErr, os.ErrNotExist) {
+			gone++
+			continue
+		}
+		if statErr != nil {
+			a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeFailed, "", 0,
+				truncate(fmt.Sprintf("stat %s: %v", abs, statErr)))
+			return false, fmt.Errorf("stat %s: %w", abs, statErr)
+		}
+		checked++
+		if nlink > 1 {
+			a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeSkipped, "", 0,
+				truncate(fmt.Sprintf("nlink=%d %s", nlink, abs)))
+			return true, nil
+		}
+	}
+	a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeOK, "", 0,
+		fmt.Sprintf("checked=%d gone=%d", checked, gone))
+	return false, nil
 }
 
 // fanoutArr issues per-file DELETEs against the *arr instances that own each

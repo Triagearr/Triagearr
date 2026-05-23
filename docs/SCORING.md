@@ -229,11 +229,32 @@ Triagearr doesn't use absolute thresholds (e.g. "delete if score > 50"). Instead
 
 1. Computes scores for all candidates
 2. Filters out anything with a *negative* score (veto territory)
-3. Sorts the remaining candidates by score descending
-4. Selects top-K until either:
+3. Filters out anything with `max(nlink) > 2` across its files (the **cross-seed pre-filter**, see below)
+4. Sorts the remaining candidates by score descending
+5. Selects top-K until either:
    - `target_free_percent` is reached on the pressured volume, OR
    - `max_deletions_per_run` is hit, OR
    - candidates exhausted
+
+### Cross-seed pre-filter (`nlink > 2`)
+
+The hardlink topology (`docs/HARDLINK_TOPOLOGY.md`) implies a healthy file has
+`nlink == 2`: one reference from `/data/torrents/...` (qBit) and one from
+`/data/media/...` (*arr import). `nlink == 1` means no *arr import (orphan or
+not-yet-imported); `nlink > 2` means another reference exists — almost always a
+cross-seeded second qBit torrent sharing the same inode.
+
+If we elect a cross-seeded torrent, deleting it frees **zero bytes** (the inode
+still has references), and the `Estimated freed bytes` advertised to the user
+is fiction. The Decider drops these candidates at election time using the
+periodically sampled `torrent_files.nlink` column (ADR-0023 makes the
+filesystem stat safe). The Actor's T3.5 step (`HARDLINK_TOPOLOGY.md`) remains
+the atomic safety net for the TOCTOU window between sampling and action.
+
+This is a **filter**, not a scoring factor — it does not enter the per-torrent
+score, it removes the candidate from the eligible set. Torrents with unsampled
+`nlink` (NULL, never visited by the files-poller) are conservatively kept in
+the eligible set; T3.5 still catches them at action time.
 
 So the score is **comparative, not absolute**. Two libraries with very different patterns will naturally calibrate themselves: in a library full of saturated public-tracker stuff, all scores will be high and the cutoff is meaningless; in a library of mostly private-tracker recent grabs, scores will cluster low and the cutoff naturally protects everything.
 
