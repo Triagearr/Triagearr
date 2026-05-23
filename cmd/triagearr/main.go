@@ -292,8 +292,8 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 		})
 	}
 
-	if vols := enabledVolumes(cfg); len(vols) > 0 {
-		ps = append(ps, &pollers.DiskPoller{Volumes: vols, Store: s, Interval: cfg.Polling.DiskInterval})
+	if vol, ok := enabledVolume(cfg); ok {
+		ps = append(ps, &pollers.DiskPoller{Volume: vol, Store: s, Interval: cfg.Polling.DiskInterval})
 	}
 
 	ps = append(ps, &pollers.Maintenance{
@@ -310,7 +310,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 	})
 
 	if len(ps) == 0 {
-		return errors.New("no pollers enabled — check your config (qbit.enabled, arrs.*.enabled, volumes[].disk_pressure.enabled)")
+		return errors.New("no pollers enabled — check your config (qbit.enabled, arrs.*.enabled, volume.disk_pressure.enabled)")
 	}
 
 	sc := scorer.New(scorer.Options{
@@ -342,9 +342,9 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 	// and the HTTP server (the "send test" endpoint).
 	notifier := buildNotifier(cfg.Notifications)
 
-	if rules := pressureRules(cfg); len(rules) > 0 {
+	if rule, ok := pressureRule(cfg); ok {
 		ps = append(ps, &triggers.DiskWatcher{
-			Rules:      rules,
+			Rule:       rule,
 			Decider:    dec,
 			Store:      s,
 			Interval:   cfg.Polling.DiskInterval,
@@ -380,8 +380,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 			Version:       server.VersionInfo{Version: version, Commit: commit, Date: date},
 			UIHandler:     web.Handler(),
 			Decider:       dec,
-			Volume:        volumeLookup(cfg),
-			Volumes:       func() []decider.Volume { return allVolumes(cfg) },
+			Volume:        func() decider.Volume { return theVolume(cfg) },
 			DaemonLive:    daemonLive,
 			Actor:         act,
 			Notifier:      notifier,
@@ -482,48 +481,30 @@ func buildActor(cfg *config.Config, s *store.Store) (*actor.Actor, *qbit.Client,
 	return act, qb, nil
 }
 
-func pressureRules(cfg *config.Config) []triggers.VolumeRule {
-	var out []triggers.VolumeRule
-	for _, v := range cfg.Volumes {
-		if !v.DiskPressure.Enabled {
-			continue
-		}
-		if v.DiskPressure.ThresholdFreePercent <= 0 {
-			continue
-		}
-		out = append(out, triggers.VolumeRule{
-			Name:                 v.Name,
-			Path:                 v.Path,
-			ThresholdFreePercent: v.DiskPressure.ThresholdFreePercent,
-			TargetFreePercent:    v.DiskPressure.TargetFreePercent,
-			MaxRunSizeGB:         v.DiskPressure.MaxRunSizeGB,
-		})
+// pressureRule builds the disk-pressure rule for the watched volume. The
+// second return is false when disk pressure is disabled or has no threshold.
+func pressureRule(cfg *config.Config) (triggers.VolumeRule, bool) {
+	v := cfg.Volume
+	if !v.DiskPressure.Enabled || v.DiskPressure.ThresholdFreePercent <= 0 {
+		return triggers.VolumeRule{}, false
 	}
-	return out
+	return triggers.VolumeRule{
+		Name:                 v.Name,
+		Path:                 v.Path,
+		ThresholdFreePercent: v.DiskPressure.ThresholdFreePercent,
+		TargetFreePercent:    v.DiskPressure.TargetFreePercent,
+		MaxRunSizeGB:         v.DiskPressure.MaxRunSizeGB,
+	}, true
 }
 
-func allVolumes(cfg *config.Config) []decider.Volume {
-	out := make([]decider.Volume, 0, len(cfg.Volumes))
-	for _, v := range cfg.Volumes {
-		out = append(out, decider.Volume{
-			Name:              v.Name,
-			Path:              v.Path,
-			TargetFreePercent: v.DiskPressure.TargetFreePercent,
-			MaxRunSizeGB:      v.DiskPressure.MaxRunSizeGB,
-		})
-	}
-	return out
-}
-
-func volumeLookup(cfg *config.Config) func(string) (decider.Volume, bool) {
-	all := allVolumes(cfg)
-	return func(name string) (decider.Volume, bool) {
-		for _, v := range all {
-			if v.Name == name {
-				return v, true
-			}
-		}
-		return decider.Volume{}, false
+// theVolume is the single watched volume in the shape the Decider plans against.
+func theVolume(cfg *config.Config) decider.Volume {
+	v := cfg.Volume
+	return decider.Volume{
+		Name:              v.Name,
+		Path:              v.Path,
+		TargetFreePercent: v.DiskPressure.TargetFreePercent,
+		MaxRunSizeGB:      v.DiskPressure.MaxRunSizeGB,
 	}
 }
 
@@ -566,19 +547,18 @@ func loadWithOverrides(ctx context.Context, path string, s *store.Store) (*confi
 	return cfg, nil
 }
 
-func enabledVolumes(cfg *config.Config) []pollers.Volume {
-	var out []pollers.Volume
-	for _, v := range cfg.Volumes {
-		if !v.DiskPressure.Enabled {
-			continue
-		}
-		vol := pollers.Volume{Name: v.Name, Path: v.Path}
-		if v.Source != "" {
-			vol.Sample = httpDiskSampler(v.Source)
-		}
-		out = append(out, vol)
+// enabledVolume builds the disk poller's view of the watched volume. The
+// second return is false when disk pressure is disabled.
+func enabledVolume(cfg *config.Config) (pollers.Volume, bool) {
+	v := cfg.Volume
+	if !v.DiskPressure.Enabled {
+		return pollers.Volume{}, false
 	}
-	return out
+	vol := pollers.Volume{Path: v.Path}
+	if v.Source != "" {
+		vol.Sample = httpDiskSampler(v.Source)
+	}
+	return vol, true
 }
 
 // httpDiskSampler returns a Sampler that fetches DiskUsage from a URL serving

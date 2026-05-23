@@ -145,7 +145,7 @@ export const VolumeView = z.object({
   measured_at: ts.nullable().optional(),
 });
 export type VolumeViewT = z.infer<typeof VolumeView>;
-export const VolumeList = z.object({ volumes: z.array(VolumeView) });
+export const VolumeResponse = z.object({ volume: VolumeView });
 
 export const VolumeHistoryPoint = z.object({
   ts: ts,
@@ -175,7 +175,6 @@ export const RunResponse = z.object({
   triggered_by: z.string(),
   triggered_at: ts,
   mode: RunMode,
-  volume: z.string().optional(),
   free_pct_at_fire: z.number().optional(),
   target_free_pct: z.number().optional(),
   estimated_freed_bytes: z.number(),
@@ -245,7 +244,7 @@ export const ScoreListItem = ScoreView.extend({ hash: z.string(), name: z.string
 export const ScoreList = z.object({ scores: z.array(ScoreListItem) });
 
 export const Summary = z.object({
-  volumes: z.array(VolumeView).nullable(),
+  volume: VolumeView,
   arrs: z.array(ArrView).nullable(),
   counts: z.object({
     torrents: z.number(),
@@ -305,7 +304,7 @@ export const SettingsView = z.object({
   values: z.object({
     scoring: ScoringSettings,
     polling: PollingSettings,
-    volumes: z.array(VolumeSettings).nullable(),
+    volume: VolumeSettings,
     notifications: NotificationSettings,
   }),
   overridden_keys: z.array(z.string()).nullable(),

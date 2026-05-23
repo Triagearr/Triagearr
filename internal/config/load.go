@@ -158,6 +158,9 @@ func applyDefaults(c *Config) {
 	if c.Qbit.Timeout == 0 {
 		c.Qbit.Timeout = defaultQbitTimeout
 	}
+	if c.Volume.Name == "" {
+		c.Volume.Name = defaultVolumeName
+	}
 	applyScoringDefaults(&c.Scoring)
 	applyActionDefaults(&c.Action)
 	applyArrDefaults(c.Arrs.Sonarr)
@@ -253,13 +256,8 @@ func Validate(c *Config) error {
 		}
 	}
 
-	for i, v := range c.Volumes {
-		if v.Name == "" {
-			return fmt.Errorf("volumes[%d].name: required", i)
-		}
-		if v.Path == "" {
-			return fmt.Errorf("volumes[%s].path: required", v.Name)
-		}
+	if c.Volume.Path == "" {
+		return fmt.Errorf("volume.path: required")
 	}
 
 	if c.Qbit.Enabled {
@@ -277,19 +275,15 @@ func Validate(c *Config) error {
 		}
 	}
 
-	for i, v := range c.Volumes {
-		dp := v.DiskPressure
-		if !dp.Enabled {
-			continue
-		}
+	if dp := c.Volume.DiskPressure; dp.Enabled {
 		if dp.ThresholdFreePercent < 0 || dp.ThresholdFreePercent > 100 {
-			return fmt.Errorf("volumes[%d=%s].disk_pressure.threshold_free_percent: must be in [0,100], got %v", i, v.Name, dp.ThresholdFreePercent)
+			return fmt.Errorf("volume.disk_pressure.threshold_free_percent: must be in [0,100], got %v", dp.ThresholdFreePercent)
 		}
 		if dp.TargetFreePercent < 0 || dp.TargetFreePercent > 100 {
-			return fmt.Errorf("volumes[%d=%s].disk_pressure.target_free_percent: must be in [0,100], got %v", i, v.Name, dp.TargetFreePercent)
+			return fmt.Errorf("volume.disk_pressure.target_free_percent: must be in [0,100], got %v", dp.TargetFreePercent)
 		}
 		if dp.ThresholdFreePercent > 0 && dp.TargetFreePercent <= dp.ThresholdFreePercent {
-			return fmt.Errorf("volumes[%d=%s].disk_pressure: target_free_percent (%v) must be greater than threshold_free_percent (%v)", i, v.Name, dp.TargetFreePercent, dp.ThresholdFreePercent)
+			return fmt.Errorf("volume.disk_pressure: target_free_percent (%v) must be greater than threshold_free_percent (%v)", dp.TargetFreePercent, dp.ThresholdFreePercent)
 		}
 	}
 

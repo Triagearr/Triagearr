@@ -22,7 +22,6 @@ func TestInsertAndGetRun(t *testing.T) {
 		TriggeredBy:         triagearr.RunTriggerDiskPressure,
 		TriggeredAt:         now,
 		Mode:                "dry-run",
-		VolumeName:          "data",
 		FreePctAtFire:       8.5,
 		TargetFreePct:       20.0,
 		EstimatedFreedBytes: 5 * 1024 * 1024 * 1024,
@@ -42,7 +41,6 @@ func TestInsertAndGetRun(t *testing.T) {
 	got, gotItems, err := s.GetRun(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, r.TriggeredBy, got.TriggeredBy)
-	require.Equal(t, "data", got.VolumeName)
 	require.InDelta(t, 20.0, got.TargetFreePct, 1e-9)
 	require.Equal(t, triagearr.StopTargetReached, got.StopReason)
 	require.Len(t, gotItems, 2)

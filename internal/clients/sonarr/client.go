@@ -169,7 +169,7 @@ func (c *Client) fetchTags(ctx context.Context) (map[int]string, error) {
 }
 
 // episodeFile mirrors Sonarr's /api/v3/episodefile entry. Only the fields used
-// by the mapper (M2) and the actor (M5) are captured.
+// by the linker and the actor (M5) are captured.
 type episodeFile struct {
 	ID       int64  `json:"id"`
 	SeriesID int64  `json:"seriesId"`

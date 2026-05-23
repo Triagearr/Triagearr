@@ -166,6 +166,7 @@ export type FieldProps = {
   type: "number" | "text" | "password" | "checkbox";
   value: string;
   placeholder?: string;
+  description?: string;
   onChange: (v: string) => void;
   overridden: boolean;
   dirty: boolean;
@@ -175,9 +176,14 @@ export type FieldProps = {
 export function Field(p: FieldProps) {
   return (
     <div className="grid grid-cols-[12rem_1fr_auto] items-center gap-2 text-sm">
-      <label className="text-muted-foreground font-mono text-xs" title={p.keyName}>
-        {p.label}
-      </label>
+      <div className="flex flex-col gap-0.5">
+        <label className="text-muted-foreground font-mono text-xs" title={p.keyName}>
+          {p.label}
+        </label>
+        {p.description && (
+          <span className="text-[10px] leading-tight text-muted-foreground/60">{p.description}</span>
+        )}
+      </div>
       {p.type === "checkbox" ? (
         <input
           type="checkbox"

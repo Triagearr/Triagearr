@@ -110,7 +110,7 @@ func IsEditableKey(key string) bool {
 var editablePrefixes = map[string]struct{}{
 	"scoring":       {},
 	"polling":       {},
-	"volumes":       {}, // only disk_pressure.* subkeys in practice; the HTTP layer narrows further
+	"volume":        {}, // only disk_pressure.* subkeys in practice; the HTTP layer narrows further
 	"notifications": {}, // includes provider credentials — operator opted into UI-managed secrets
 }
 

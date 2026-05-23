@@ -185,17 +185,17 @@ func TestInsertDiskUsageAndLatest(t *testing.T) {
 	t1 := t0.Add(30 * time.Minute)
 
 	require.NoError(t, s.InsertDiskUsage(ctx, triagearr.DiskUsage{
-		VolumeName: "media", Path: "/share", Timestamp: t0,
+		Path: "/data", Timestamp: t0,
 		TotalBytes: 1000, UsedBytes: 600, FreeBytes: 400, FreePercent: 40,
 	}))
 	require.NoError(t, s.InsertDiskUsage(ctx, triagearr.DiskUsage{
-		VolumeName: "media", Path: "/share", Timestamp: t1,
+		Path: "/data", Timestamp: t1,
 		TotalBytes: 1000, UsedBytes: 700, FreeBytes: 300, FreePercent: 30,
 	}))
 
-	rows, err := s.LatestDiskUsage(ctx)
+	row, err := s.LatestDiskUsage(ctx)
 	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.InDelta(t, 30.0, rows[0].FreePercent, 1e-9)
-	require.True(t, rows[0].Timestamp.Equal(t1))
+	require.NotNil(t, row)
+	require.InDelta(t, 30.0, row.FreePercent, 1e-9)
+	require.True(t, row.Timestamp.Equal(t1))
 }

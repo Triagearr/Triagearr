@@ -28,7 +28,9 @@ http:
 # Storage
 # -----------------------------------------------------------------------------
 storage:
-  sqlite_path: /data/triagearr.db
+  # Keep the DB on Triagearr's own /config volume — the TRaSH shared mount
+  # owns /data (ADR-0023).
+  sqlite_path: /config/triagearr.db
   retention:
     snapshots_raw: 168h      # 7d — high-resolution snapshots kept this long
     snapshots_daily: 8760h   # 365d — downsampled daily aggregates kept this long
@@ -99,16 +101,21 @@ maintainerr:
   api_key: ""
 
 # -----------------------------------------------------------------------------
-# Volumes to watch for disk pressure
+# Volume to watch for disk pressure
 # -----------------------------------------------------------------------------
-volumes:
-  - name: media
-    path: /share/files
-    disk_pressure:
-      enabled: true
-      threshold_free_percent: 15   # fire if free < 15%
-      target_free_percent: 25      # aim to restore to 25% free
-      max_run_size_gb: 50          # cap deletions per run
+# Triagearr watches exactly one volume (ADR-0024): the TRaSH shared data root.
+# Multi-disk setups unify their disks below the OS (mergerfs/unionfs/pool) and
+# point Triagearr at that single mount.
+volume:
+  name: media                    # display label only
+  path: /data                    # the shared data root — SAME container path
+                                 # as qBit/*arr (ADR-0023); statfs'd for disk
+                                 # usage and the prefix of every qBit save_path
+  disk_pressure:
+    enabled: true
+    threshold_free_percent: 15   # fire if free < 15%
+    target_free_percent: 25      # aim to restore to 25% free
+    max_run_size_gb: 50          # cap deletions per run
 
 # -----------------------------------------------------------------------------
 # Polling cadences
@@ -123,8 +130,9 @@ polling:
   downsample_cron: "0 3 * * *"     # daily 3 AM UTC
 
 # Per ADR-0012, mapping of qBit hashes to *arr files is derived from *arr's
-# import history — no filesystem access required. The arr poller fetches
-# /api/v3/history?eventType=3 deltas alongside media + per-file polls.
+# import history (the arr poller fetches /api/v3/history?eventType=3 deltas
+# alongside media + per-file polls). Triagearr and the *arr/qBit stack must
+# share one mount at one path (ADR-0023).
 
 # -----------------------------------------------------------------------------
 # Scoring (see docs/SCORING.md for the algorithm)
@@ -170,8 +178,9 @@ action:
   # list so they aren't re-grabbed. Per-operator choice — leave false to keep
   # behaviour observable while the workflow stabilises.
   add_import_exclusion: false
-  # Cross-seed safety net (nlink check) is intentionally out of scope in v0.6.0
-  # — deferred to a future milestone. Triagearr executes pure-API per ADR-0012.
+  # Cross-seed safety net (per-file nlink check) is deferred to a later
+  # milestone — see docs/HARDLINK_TOPOLOGY.md. ADR-0023's shared-mount
+  # contract makes the stat() it needs viable.
 
 # -----------------------------------------------------------------------------
 # Notifications

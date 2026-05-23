@@ -39,9 +39,9 @@ type MediaItem struct {
 }
 
 // MediaFile is one on-disk file owned by an *arr media item. Sonarr maps these
-// to `episodeFile.id`, Radarr to `movieFile.id`. The mapper (M2) uses the path
-// for remap inference; the actor (M5) uses the file_id to issue granular DELETEs
-// without touching siblings of the same series/movie.
+// to `episodeFile.id`, Radarr to `movieFile.id`. The actor (M5) uses the
+// file_id to issue granular DELETEs without touching siblings of the same
+// series/movie.
 type MediaFile struct {
 	ArrName string
 	ArrType ArrType
@@ -152,7 +152,7 @@ type TrackerInfo struct {
 	Msg    string
 }
 
-// TorrentFile is one file within a torrent. Used by the mapper (M2) to resolve inodes.
+// TorrentFile is one file within a torrent.
 type TorrentFile struct {
 	Name     string
 	Size     int64
@@ -171,9 +171,8 @@ type Snapshot struct {
 	LastActivity time.Time
 }
 
-// DiskUsage is a point-in-time observation of a watched volume.
+// DiskUsage is a point-in-time observation of the watched volume.
 type DiskUsage struct {
-	VolumeName  string
 	Path        string
 	Timestamp   time.Time
 	TotalBytes  uint64
@@ -243,7 +242,6 @@ type Run struct {
 	TriggeredBy         RunTrigger
 	TriggeredAt         time.Time
 	Mode                string
-	VolumeName          string
 	FreePctAtFire       float64
 	TargetFreePct       float64
 	EstimatedFreedBytes int64

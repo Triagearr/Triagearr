@@ -2,7 +2,15 @@
 
 ## Status
 
-Accepted — 2026-05-20
+Superseded by [ADR-0024](0024-single-watched-volume.md) — 2026-05-22.
+
+Originally Accepted — 2026-05-20; amended by
+[ADR-0023](0023-trash-shared-mount-convention.md). ADR-0024 removes the
+multi-volume model entirely — Triagearr watches exactly one volume, so the
+per-torrent volume *attribution* that is this ADR's whole subject no longer
+exists. The `save_path` prefix match described below survives only as a cheap
+sanity filter (correct by contract under ADR-0023). Kept for historical
+context.
 
 ## Context
 

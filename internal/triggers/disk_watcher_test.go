@@ -35,10 +35,9 @@ func openTestStore(t *testing.T) *store.Store {
 	return s
 }
 
-func seedDisk(t *testing.T, s *store.Store, vol string, freePct float64) {
+func seedDisk(t *testing.T, s *store.Store, freePct float64) {
 	t.Helper()
 	err := s.InsertDiskUsage(context.Background(), triagearr.DiskUsage{
-		VolumeName:  vol,
 		Path:        "/data",
 		Timestamp:   time.Now().UTC(),
 		TotalBytes:  100 * 1024 * 1024 * 1024,
@@ -65,20 +64,17 @@ func seedScoredTorrent(t *testing.T, s *store.Store, hash string, savePath strin
 }
 
 func newWatcher(s *store.Store, freshClock *time.Time) *DiskWatcher {
-	w := &DiskWatcher{
-		Rules: []VolumeRule{{
+	return &DiskWatcher{
+		Rule: VolumeRule{
 			Name: "data", Path: "/data",
 			ThresholdFreePercent: 10, TargetFreePercent: 20, MaxRunSizeGB: 100,
-		}},
+		},
 		Decider:     decider.New(s),
 		Store:       s,
 		Interval:    time.Hour, // unused; we call tick() directly
 		ReFireGrace: time.Hour,
 		now:         func() time.Time { return *freshClock },
-		lastFire:    map[string]time.Time{},
-		firingNow:   map[string]bool{},
 	}
-	return w
 }
 
 func TestDiskWatcher_FireOnTransition(t *testing.T) {
@@ -88,13 +84,13 @@ func TestDiskWatcher_FireOnTransition(t *testing.T) {
 	w := newWatcher(s, &clock)
 
 	seedScoredTorrent(t, s, "a", "/data/dl", 5, 100)
-	seedDisk(t, s, "data", 5) // below threshold (10)
+	seedDisk(t, s, 5) // below threshold (10)
 
 	require.NoError(t, w.tick(ctx, time.Hour))
 	runs, err := s.ListRuns(ctx, store.ListRunsOpts{})
 	require.NoError(t, err)
 	require.Len(t, runs, 1)
-	require.Equal(t, "data", runs[0].VolumeName)
+	require.Equal(t, triagearr.RunTriggerDiskPressure, runs[0].TriggeredBy)
 }
 
 func TestDiskWatcher_NoReFireWithinGrace(t *testing.T) {
@@ -104,7 +100,7 @@ func TestDiskWatcher_NoReFireWithinGrace(t *testing.T) {
 	w := newWatcher(s, &clock)
 
 	seedScoredTorrent(t, s, "a", "/data/dl", 5, 100)
-	seedDisk(t, s, "data", 5)
+	seedDisk(t, s, 5)
 
 	require.NoError(t, w.tick(ctx, time.Hour))
 	require.NoError(t, w.tick(ctx, time.Hour))
@@ -122,7 +118,7 @@ func TestDiskWatcher_ReFireAfterGrace(t *testing.T) {
 	w := newWatcher(s, &clock)
 
 	seedScoredTorrent(t, s, "a", "/data/dl", 5, 100)
-	seedDisk(t, s, "data", 5)
+	seedDisk(t, s, 5)
 
 	require.NoError(t, w.tick(ctx, time.Hour))
 	clock = clock.Add(2 * time.Hour)
@@ -150,7 +146,7 @@ func TestDiskWatcher_NotifyRun(t *testing.T) {
 
 	runID, err := s.InsertRun(ctx, triagearr.Run{
 		TriggeredBy: triagearr.RunTriggerDiskPressure, TriggeredAt: clock,
-		Mode: "live", VolumeName: "data", StopReason: triagearr.StopNoMoreCandidates,
+		Mode: "live", StopReason: triagearr.StopNoMoreCandidates,
 		Status: "completed",
 	})
 	require.NoError(t, err)
@@ -172,10 +168,10 @@ func TestDiskWatcher_NotifyRun(t *testing.T) {
 	require.NoError(t, s.FinishAction(ctx, a2, triagearr.ActionFailedQbit, clock, 0))
 
 	snap := triagearr.DiskUsage{
-		VolumeName: "data", Path: "/data",
+		Path:        "/data",
 		FreePercent: 5, FreeBytes: 5 * 1024 * 1024 * 1024,
 	}
-	w.notifyRun(ctx, w.Rules[0], snap, runID, triagearr.RunModeLive, items)
+	w.notifyRun(ctx, snap, runID, triagearr.RunModeLive, items)
 
 	require.Len(t, fn.got, 1)
 	rep := fn.got[0]
@@ -203,12 +199,12 @@ func TestDiskWatcher_NotifyRun_NoActionsIsSilent(t *testing.T) {
 
 	runID, err := s.InsertRun(ctx, triagearr.Run{
 		TriggeredBy: triagearr.RunTriggerDiskPressure, TriggeredAt: clock,
-		Mode: "live", VolumeName: "data", StopReason: triagearr.StopNoMoreCandidates,
+		Mode: "live", StopReason: triagearr.StopNoMoreCandidates,
 		Status: "completed",
 	})
 	require.NoError(t, err)
 
-	w.notifyRun(ctx, w.Rules[0], triagearr.DiskUsage{}, runID, triagearr.RunModeLive, nil)
+	w.notifyRun(ctx, triagearr.DiskUsage{}, runID, triagearr.RunModeLive, nil)
 	require.Empty(t, fn.got, "a run that executed nothing must not notify")
 }
 
@@ -219,7 +215,7 @@ func TestDiskWatcher_NoFireWhenAboveThreshold(t *testing.T) {
 	w := newWatcher(s, &clock)
 
 	seedScoredTorrent(t, s, "a", "/data/dl", 5, 100)
-	seedDisk(t, s, "data", 50) // well above
+	seedDisk(t, s, 50) // well above
 
 	require.NoError(t, w.tick(ctx, time.Hour))
 	runs, err := s.ListRuns(ctx, store.ListRunsOpts{})

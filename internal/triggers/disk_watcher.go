@@ -1,8 +1,7 @@
 // Package triggers fires Decider runs in response to observable signals.
-// In M4 the only signal is disk pressure: when a volume drops under its
-// threshold_free_percent, the watcher asks the Decider for a plan and
-// persists the resulting Run + RunItems (dry-run; M5 will hand it to the
-// Actor).
+// The signal is disk pressure: when the watched volume (ADR-0024) drops under
+// its threshold_free_percent, the watcher asks the Decider for a plan and
+// persists the resulting Run + RunItems, handing live runs to the Actor.
 package triggers
 
 import (
@@ -18,27 +17,22 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-// NewDiskWatcher constructs a DiskWatcher with its internal maps initialised.
-// Prefer this over a struct literal so a future caller that invokes tick()
-// directly (e.g. in tests) doesn't NPE on the lazy maps.
-func NewDiskWatcher(rules []VolumeRule, d *decider.Decider, store RunStore, interval time.Duration) *DiskWatcher {
+// NewDiskWatcher constructs a DiskWatcher for the single watched volume.
+func NewDiskWatcher(rule VolumeRule, d *decider.Decider, store RunStore, interval time.Duration) *DiskWatcher {
 	return &DiskWatcher{
-		Rules:     rules,
-		Decider:   d,
-		Store:     store,
-		Interval:  interval,
-		now:       func() time.Time { return time.Now().UTC() },
-		lastFire:  map[string]time.Time{},
-		firingNow: map[string]bool{},
+		Rule:     rule,
+		Decider:  d,
+		Store:    store,
+		Interval: interval,
+		now:      func() time.Time { return time.Now().UTC() },
 	}
 }
 
-// DefaultReFireGrace is the minimum delay between two consecutive fires on
-// the same volume. Prevents spamming runs when free% oscillates around the
-// threshold.
+// DefaultReFireGrace is the minimum delay between two consecutive fires.
+// Prevents spamming runs when free% oscillates around the threshold.
 const DefaultReFireGrace = time.Hour
 
-// VolumeRule pairs a watched volume with its M4 pressure thresholds.
+// VolumeRule pairs the watched volume with its disk-pressure thresholds.
 type VolumeRule struct {
 	Name                 string
 	Path                 string
@@ -52,15 +46,15 @@ type VolumeRule struct {
 type RunStore interface {
 	InsertRun(ctx context.Context, r triagearr.Run) (int64, error)
 	InsertRunItems(ctx context.Context, runID int64, items []triagearr.RunItem) error
-	LatestDiskUsage(ctx context.Context) ([]triagearr.DiskUsage, error)
+	LatestDiskUsage(ctx context.Context) (*triagearr.DiskUsage, error)
 	ListActionsByRun(ctx context.Context, runID int64) ([]triagearr.Action, error)
 	TorrentNamesByHashes(ctx context.Context, hashes []triagearr.Hash) (map[triagearr.Hash]string, error)
 }
 
-// DiskWatcher fires Decider runs when a volume drops below its threshold.
+// DiskWatcher fires Decider runs when the volume drops below its threshold.
 // Implements pollers.Poller.
 type DiskWatcher struct {
-	Rules    []VolumeRule
+	Rule     VolumeRule
 	Decider  *decider.Decider
 	Store    RunStore
 	Interval time.Duration
@@ -76,16 +70,18 @@ type DiskWatcher struct {
 	// Notifier delivers a post-action report after a live pressure run that
 	// reached the Actor. Nil (or empty) disables notifications (ADR-0021).
 	Notifier *notify.Dispatcher
-	// Sampler re-measures a volume's free space right after the Actor finishes,
-	// so the notification reports a real before/after delta rather than an
-	// inferred one. Nil skips the "after" figure. Wired to pollers.Statfs.
+	// Sampler re-measures the volume's free space right after the Actor
+	// finishes, so the notification reports a real before/after delta rather
+	// than an inferred one. Nil skips the "after" figure. Wired to
+	// pollers.Statfs.
 	Sampler func(path string) (triagearr.DiskUsage, error)
 
-	now      func() time.Time
-	lastFire map[string]time.Time
-	// firingNow tracks volumes whose latest sample is under the threshold,
-	// so transitions (above→below) are distinguished from sustained-below ticks.
-	firingNow map[string]bool
+	now func() time.Time
+	// lastFire is the time of the most recent fire. firingNow tracks whether
+	// the latest sample was under the threshold, so transitions (above→below)
+	// are distinguished from sustained-below ticks.
+	lastFire  time.Time
+	firingNow bool
 }
 
 // Name implements pollers.Poller.
@@ -95,12 +91,6 @@ func (w *DiskWatcher) Name() string { return "disk_watcher" }
 func (w *DiskWatcher) Run(ctx context.Context) error {
 	if w.now == nil {
 		w.now = func() time.Time { return time.Now().UTC() }
-	}
-	if w.lastFire == nil {
-		w.lastFire = map[string]time.Time{}
-	}
-	if w.firingNow == nil {
-		w.firingNow = map[string]bool{}
 	}
 	grace := w.ReFireGrace
 	if grace <= 0 {
@@ -112,40 +102,34 @@ func (w *DiskWatcher) Run(ctx context.Context) error {
 }
 
 func (w *DiskWatcher) tick(ctx context.Context, grace time.Duration) error {
-	disks, err := w.Store.LatestDiskUsage(ctx)
+	snap, err := w.Store.LatestDiskUsage(ctx)
 	if err != nil {
 		return fmt.Errorf("reading disk_usage: %w", err)
 	}
-	byName := make(map[string]triagearr.DiskUsage, len(disks))
-	for _, d := range disks {
-		byName[d.VolumeName] = d
+	if snap == nil {
+		return nil // no sample recorded yet
 	}
-	for _, r := range w.Rules {
-		snap, ok := byName[r.Name]
-		if !ok {
-			continue
-		}
-		under := snap.FreePercent < r.ThresholdFreePercent
-		wasUnder := w.firingNow[r.Name]
-		w.firingNow[r.Name] = under
-		if !under {
-			continue
-		}
-		// Below threshold: fire only on transition OR after grace from the last fire.
-		now := w.now()
-		if wasUnder && now.Sub(w.lastFire[r.Name]) < grace {
-			continue
-		}
-		if err := w.fire(ctx, r, snap); err != nil {
-			slog.Warn("disk_watcher fire failed", "volume", r.Name, "err", err)
-			continue
-		}
-		w.lastFire[r.Name] = now
+	under := snap.FreePercent < w.Rule.ThresholdFreePercent
+	wasUnder := w.firingNow
+	w.firingNow = under
+	if !under {
+		return nil
 	}
+	// Below threshold: fire only on transition OR after grace from the last fire.
+	now := w.now()
+	if wasUnder && now.Sub(w.lastFire) < grace {
+		return nil
+	}
+	if err := w.fire(ctx, *snap); err != nil {
+		slog.Warn("disk_watcher fire failed", "err", err)
+		return nil
+	}
+	w.lastFire = now
 	return nil
 }
 
-func (w *DiskWatcher) fire(ctx context.Context, r VolumeRule, snap triagearr.DiskUsage) error {
+func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error {
+	r := w.Rule
 	v := decider.Volume{
 		Name:              r.Name,
 		Path:              r.Path,
@@ -161,7 +145,6 @@ func (w *DiskWatcher) fire(ctx context.Context, r VolumeRule, snap triagearr.Dis
 		TriggeredBy:         triagearr.RunTriggerDiskPressure,
 		TriggeredAt:         w.now(),
 		Mode:                string(mode),
-		VolumeName:          r.Name,
 		FreePctAtFire:       snap.FreePercent,
 		TargetFreePct:       r.TargetFreePercent,
 		EstimatedFreedBytes: plan.EstimatedFreedBytes,
@@ -177,7 +160,6 @@ func (w *DiskWatcher) fire(ctx context.Context, r VolumeRule, snap triagearr.Dis
 	}
 	slog.Warn("disk pressure run planned",
 		"run_id", id,
-		"volume", r.Name,
 		"free_pct", snap.FreePercent,
 		"target_pct", r.TargetFreePercent,
 		"candidates", len(plan.Items),
@@ -189,7 +171,7 @@ func (w *DiskWatcher) fire(ctx context.Context, r VolumeRule, snap triagearr.Dis
 		if err := w.Actor.Execute(ctx, id); err != nil {
 			return fmt.Errorf("actor execute: %w", err)
 		}
-		w.notifyRun(ctx, r, snap, id, mode, plan.Items)
+		w.notifyRun(ctx, snap, id, mode, plan.Items)
 	}
 	return nil
 }
@@ -198,7 +180,7 @@ func (w *DiskWatcher) fire(ctx context.Context, r VolumeRule, snap triagearr.Dis
 // disk-pressure run. Best-effort throughout: any failure here is logged and
 // swallowed so it can never taint the run outcome. No notification is sent
 // when the run executed nothing (empty plan).
-func (w *DiskWatcher) notifyRun(ctx context.Context, r VolumeRule, snap triagearr.DiskUsage, runID int64, mode triagearr.RunMode, items []triagearr.RunItem) {
+func (w *DiskWatcher) notifyRun(ctx context.Context, snap triagearr.DiskUsage, runID int64, mode triagearr.RunMode, items []triagearr.RunItem) {
 	if w.Notifier == nil || w.Notifier.Empty() {
 		return
 	}
@@ -229,17 +211,17 @@ func (w *DiskWatcher) notifyRun(ctx context.Context, r VolumeRule, snap triagear
 	}
 
 	report := notify.Report{
-		VolumeName:      r.Name,
+		VolumeName:      w.Rule.Name,
 		Mode:            string(mode),
 		RunID:           runID,
 		FreePctBefore:   snap.FreePercent,
 		FreeBytesBefore: snap.FreeBytes,
-		TargetFreePct:   r.TargetFreePercent,
+		TargetFreePct:   w.Rule.TargetFreePercent,
 	}
 	if w.Sampler != nil {
-		after, err := w.Sampler(r.Path)
+		after, err := w.Sampler(w.Rule.Path)
 		if err != nil {
-			slog.Warn("notify: post-action disk re-sample failed", "volume", r.Name, "err", err)
+			slog.Warn("notify: post-action disk re-sample failed", "err", err)
 		} else {
 			report.FreePctAfter = after.FreePercent
 			report.FreeBytesAfter = after.FreeBytes

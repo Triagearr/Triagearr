@@ -111,7 +111,7 @@ This document captures every dependency Triagearr commits to, the version pin, a
 
 - Triagearr follows **SemVer 2.0**.
 - `v0.x.y` while in alpha (M0 → M5). Breaking changes allowed without major bump but documented in CHANGELOG.
-- `v1.0.0` requires: full M8 completion, ≥70% test coverage on `scorer`/`mapper`/`decider`/`actor`, two real-world users in production for ≥4 weeks.
+- `v1.0.0` requires: full M8 completion, ≥70% test coverage on `scorer`/`linker`/`decider`/`actor`, two real-world users in production for ≥4 weeks.
 
 ## Dependency hygiene
 

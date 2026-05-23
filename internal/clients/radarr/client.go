@@ -165,7 +165,7 @@ func (c *Client) fetchTags(ctx context.Context) (map[int]string, error) {
 }
 
 // movieFile mirrors Radarr's /api/v3/moviefile entry. Only the fields used
-// by the mapper (M2) and the actor (M5) are captured.
+// by the linker and the actor (M5) are captured.
 type movieFile struct {
 	ID      int64  `json:"id"`
 	MovieID int64  `json:"movieId"`

@@ -54,21 +54,15 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 
 **Estimated**: 10-12 h · **Tag**: `v0.3.0`
 
-### Mapping (hardlink-aware)
+### Linking (API-only — ADR-0012, supersedes ADR-0010)
 
-- [ ] `internal/mapper` package
-- [ ] Inode resolution via `syscall.Stat_t` (Linux)
-- [ ] Path remap auto-inference at boot per ADR-0010 (sample qBit + *arr paths against local volume index, derive prefix substitution, ≥80 % confidence on ≥5 samples to accept)
-- [ ] Mapper gate: hold queries until first qBit + *arr poll completes and inference settles
-- [ ] Manual override via `volumes[*].path_remap` skips inference; each `to:` stat-ed at startup, missing dir = refuse to start
-- [ ] Refuse-to-start with candidate distribution logged when inference produces no dominant rule
-- [ ] Cache of `torrent_hash ↔ inode ↔ arr_file_id`, invalidated on *arr poll diffs
-- [ ] Mapper exposes per-torrent resolution: `QbitFiles(hash) → []FileRef` AND `ArrTargets(hash) → [{instance, file_id, inode}]` (multi-file torrents per `docs/HARDLINK_TOPOLOGY.md`)
-- [ ] CLI: `triagearr inspect mapping <hash>` shows EVERY file (qbit path, translated local path, inode, nlink, matched arr_file_id or "orphan") AND remap-rule origin
-- [ ] CLI: `triagearr inspect remap` prints active rules per volume + their origin (inferred N/M vs config)
-- [ ] Detect cross-seed conflicts in mapping (multiple torrents → same inode)
-- [ ] Tests on real filesystem with `os.TempDir` + hardlinks
-- [ ] Tests on inference: identity, simple prefix mismatch, ambiguous (refuse), per-category split
+- [x] `internal/linker` package
+- [x] `arr_imports` table: `(arr_name, arr_type, torrent_hash, file_id, imported_path, dropped_path)` per *arr `history` event
+- [x] Sonarr/Radarr clients implement `History(ctx, downloadId)` against `/api/v3/history?eventType=downloadFolderImported`
+- [x] Each *arr poll refreshes `arr_imports`; cascade-delete on torrent prune
+- [x] Linker exposes `ArrImports(hash) → [{instance, type, file_id, imported_path}]` for the Actor
+- [x] CLI: `triagearr inspect mapping <hash>` shows EVERY file (qbit path, *arr import path, matched arr_file_id or "orphan")
+- [x] Tests with httptest fakes (no filesystem dependency)
 
 ### Tracker capture (ADR-0009)
 
@@ -79,14 +73,13 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 - [ ] Persist parsed `tracker_host` alongside raw `tracker_url`
 - [ ] CLI: `triagearr inspect trackers <hash>` prints current tracker statuses
 
-### *arr per-file capture (prerequisite for mapper + M5 Actor)
+### *arr per-file capture (prerequisite for linker + M5 Actor)
 
 - [ ] Sonarr client: `ListEpisodeFiles(ctx, seriesID)` against `/api/v3/episodefile?seriesId={id}`
 - [ ] Radarr client: `ListMovieFiles(ctx, movieID)` against `/api/v3/moviefile?movieId={id}`
 - [ ] Extend `arr` poller to fan out file calls per media item (rate-limited; default 5 req/s burst)
 - [ ] Persist `{file_id, path, size}` per file into `media_files` — `file_id` is reused by M5 Actor for granular `DELETE`
 - [ ] CLI: `triagearr inspect media <id>` includes the file list with sizes and ages
-- [ ] Inference (ADR-0010) prefers `media_files.path` over `media.path` for sampling — deeper suffixes, sharper matches
 
 ### Storage maintenance (prerequisite for M3 scorer)
 
@@ -132,7 +125,7 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 - [x] `POST /api/v1/runs` accepts a `mode` field; without it the run stays dry-run even on a live daemon
 - [x] `triagearr run --live` unlocked (errors out clearly when daemon mode is dry-run)
 - [x] `arr-then-qbit` deletion pipeline per `docs/HARDLINK_TOPOLOGY.md` (T3 per `arr_file_id`, T4 whole-torrent)
-- [ ] ~~Cross-seed conflict handling (T3.5 nlink stat + skip/warn_only/force_delete)~~ — **deferred to M8** (requires FS access; out of scope for full-API per ADR-0012)
+- [ ] ~~Cross-seed conflict handling (T3.5 nlink stat + skip/warn_only/force_delete)~~ — **deferred to M8**; ADR-0023's TRaSH mount + UID contract removes the FS-access blocker ADR-0012 cited
 - [x] Partial *arr failure handling: hard fail aborts candidate, no rollback, audit_log narrates
 - [x] `actions` + `audit_log` tables — per-file granularity (case "8 OK + 1 failed + 1 not-attempted" reconstructible from `SELECT … WHERE action_id = ?`)
 - [x] Rate limiting (`max_deletions_per_run`, `inter_action_delay`)
@@ -154,7 +147,7 @@ Run for 2 weeks in `live` mode on my own homelab. Zero accidental deletions. Aud
 - [x] shadcn/ui primitives, Tailwind v4 wired (Vite-native plugin)
 - [x] TanStack Query + TanStack Router for `/api/v1` consumption
 - [x] Pages:
-  - [x] Dashboard (volumes + pressure gauges + recent runs + top candidates)
+  - [x] Dashboard (disk gauge + recent runs + top candidates)
   - [x] Torrents (sortable table, filter, detail page with score breakdown + history charts)
   - [x] Actions (timeline + per-action audit drawer)
   - [x] Settings (effective config redacted + manual run trigger + version)
@@ -198,7 +191,8 @@ executed — manual HTTP/CLI runs stay silent. One event, not four.
 
 **Estimated**: 1 weekend · **Tag**: `v1.0.0`
 
-- [ ] Test coverage ≥70% on `scorer`, `mapper`, `decider`, `actor`
+- [ ] Mount-convention boot validation (ADR-0023): sample qBit `save_path` + *arr import paths, `stat()` them in Triagearr's namespace, refuse to start with a diagnostic when the layout violates the TRaSH single-shared-mount convention
+- [ ] Test coverage ≥70% on `scorer`, `linker`, `decider`, `actor`
 - [ ] `govulncheck` clean (and added to CI `test` workflow, not just release)
 - [ ] Goreleaser produces signed artifacts (cosign)
 - [ ] SBOM generation via `syft` in the goreleaser pipeline (CycloneDX + SPDX)

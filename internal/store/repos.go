@@ -145,8 +145,8 @@ func (s *Store) ResolveTorrentHash(ctx context.Context, prefix string) (triagear
 }
 
 // ListTorrentHashes returns every torrent hash currently tracked. Used by the
-// tracker poller and the mapper to enumerate known torrents without loading
-// the full row payload.
+// tracker poller to enumerate known torrents without loading the full row
+// payload.
 func (s *Store) ListTorrentHashes(ctx context.Context) ([]triagearr.Hash, error) {
 	var raw []string
 	if err := s.reader.SelectContext(ctx, &raw, `SELECT hash FROM torrents ORDER BY hash`); err != nil {
@@ -309,19 +309,19 @@ func (s *Store) CountMedia(ctx context.Context, arrName string, arrType triagear
 // InsertDiskUsage appends a disk-pressure observation.
 func (s *Store) InsertDiskUsage(ctx context.Context, d triagearr.DiskUsage) error {
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT OR REPLACE INTO disk_pressure(volume_name, ts, path, total_bytes, used_bytes, free_bytes, free_percent)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, d.VolumeName, ts(d.Timestamp), d.Path, d.TotalBytes, d.UsedBytes, d.FreeBytes, d.FreePercent)
+		INSERT OR REPLACE INTO disk_pressure(ts, path, total_bytes, used_bytes, free_bytes, free_percent)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, ts(d.Timestamp), d.Path, d.TotalBytes, d.UsedBytes, d.FreeBytes, d.FreePercent)
 	if err != nil {
-		return fmt.Errorf("inserting disk_pressure %s@%s: %w", d.VolumeName, d.Timestamp, err)
+		return fmt.Errorf("inserting disk_pressure @%s: %w", d.Timestamp, err)
 	}
 	return nil
 }
 
-// LatestDiskUsage returns the latest reading per volume.
-func (s *Store) LatestDiskUsage(ctx context.Context) ([]triagearr.DiskUsage, error) {
+// LatestDiskUsage returns the most recent disk-pressure reading, or nil when
+// no snapshot has been recorded yet.
+func (s *Store) LatestDiskUsage(ctx context.Context) (*triagearr.DiskUsage, error) {
 	type row struct {
-		VolumeName  string    `db:"volume_name"`
 		Path        string    `db:"path"`
 		Ts          time.Time `db:"ts"`
 		TotalBytes  int64     `db:"total_bytes"`
@@ -331,30 +331,27 @@ func (s *Store) LatestDiskUsage(ctx context.Context) ([]triagearr.DiskUsage, err
 	}
 	var rows []row
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT d.volume_name, d.path, d.ts, d.total_bytes, d.used_bytes, d.free_bytes, d.free_percent
-		FROM disk_pressure d
-		JOIN (
-		    SELECT volume_name, MAX(ts) AS ts FROM disk_pressure GROUP BY volume_name
-		) m ON m.volume_name = d.volume_name AND m.ts = d.ts
-		ORDER BY d.volume_name
+		SELECT path, ts, total_bytes, used_bytes, free_bytes, free_percent
+		FROM disk_pressure
+		ORDER BY ts DESC
+		LIMIT 1
 	`); err != nil {
-		return nil, fmt.Errorf("listing latest disk_pressure: %w", err)
+		return nil, fmt.Errorf("reading latest disk_pressure: %w", err)
 	}
-	out := make([]triagearr.DiskUsage, len(rows))
-	for i, r := range rows {
-		out[i] = triagearr.DiskUsage{
-			VolumeName: r.VolumeName,
-			Path:       r.Path,
-			Timestamp:  r.Ts,
-			// The bytes columns were written from uint64s (Statfs results) and
-			// stored as INTEGER. The int64→uint64 round-trip is safe by construction.
-			TotalBytes:  uint64(r.TotalBytes), //nolint:gosec // value originated from uint64
-			UsedBytes:   uint64(r.UsedBytes),  //nolint:gosec // value originated from uint64
-			FreeBytes:   uint64(r.FreeBytes),  //nolint:gosec // value originated from uint64
-			FreePercent: r.FreePercent,
-		}
+	if len(rows) == 0 {
+		return nil, nil
 	}
-	return out, nil
+	r := rows[0]
+	return &triagearr.DiskUsage{
+		Path:      r.Path,
+		Timestamp: r.Ts,
+		// The bytes columns were written from uint64s (Statfs results) and
+		// stored as INTEGER. The int64→uint64 round-trip is safe by construction.
+		TotalBytes:  uint64(r.TotalBytes), //nolint:gosec // value originated from uint64
+		UsedBytes:   uint64(r.UsedBytes),  //nolint:gosec // value originated from uint64
+		FreeBytes:   uint64(r.FreeBytes),  //nolint:gosec // value originated from uint64
+		FreePercent: r.FreePercent,
+	}, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -481,7 +478,7 @@ func (s *Store) UpsertMediaFile(ctx context.Context, f triagearr.MediaFile) erro
 	return nil
 }
 
-// MediaFileRow is the persisted view used by `inspect media` and the mapper.
+// MediaFileRow is the persisted view used by `inspect media` and the linker.
 type MediaFileRow struct {
 	ArrName  string    `db:"arr_name"`
 	ArrType  string    `db:"arr_type"`
@@ -504,22 +501,6 @@ func (s *Store) ListMediaFilesByMedia(ctx context.Context, arrName string, arrTy
 		return nil, fmt.Errorf("listing media_files: %w", err)
 	}
 	return rows, nil
-}
-
-// SampleMediaFilePaths returns up to `limit` recently-seen media file paths
-// across all *arr instances. Used by the mapper inference (ADR-0010) to sample
-// source paths against the local volume index.
-func (s *Store) SampleMediaFilePaths(ctx context.Context, limit int) ([]string, error) {
-	var paths []string
-	if err := s.reader.SelectContext(ctx, &paths, `
-		SELECT path FROM media_files
-		WHERE path != ''
-		ORDER BY last_seen DESC
-		LIMIT ?
-	`, limit); err != nil {
-		return nil, fmt.Errorf("sampling media_files paths: %w", err)
-	}
-	return paths, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -584,7 +565,7 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 //
 // arr_imports is intentionally NOT pruned: it records *arr-side history (which
 // download_id brought in which file_id) and remains valid even when the qBit
-// torrent is gone — the mapper joins it through media_files, not torrents.
+// torrent is gone — the linker joins it through media_files, not torrents.
 //
 // last_seen is refreshed on every qbit tick (UpsertTorrent), so a torrent
 // absent from qBit keeps its frozen last_seen and ages out after the grace.

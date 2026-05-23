@@ -12,22 +12,13 @@ import (
 
 // InsertRun persists a Run header and returns its assigned ID.
 func (s *Store) InsertRun(ctx context.Context, r triagearr.Run) (int64, error) {
-	var volume sql.NullString
-	if r.VolumeName != "" {
-		volume = sql.NullString{String: r.VolumeName, Valid: true}
-	}
-	var freePct, targetPct sql.NullFloat64
-	if r.VolumeName != "" {
-		freePct = sql.NullFloat64{Float64: r.FreePctAtFire, Valid: true}
-		targetPct = sql.NullFloat64{Float64: r.TargetFreePct, Valid: true}
-	}
 	res, err := s.writer.ExecContext(ctx, `
-		INSERT INTO runs(triggered_by, triggered_at, mode, volume_name,
+		INSERT INTO runs(triggered_by, triggered_at, mode,
 		                 free_pct_at_fire, target_free_pct,
 		                 estimated_freed_bytes, stop_reason, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, string(r.TriggeredBy), ts(r.TriggeredAt), r.Mode, volume,
-		freePct, targetPct,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, string(r.TriggeredBy), ts(r.TriggeredAt), r.Mode,
+		r.FreePctAtFire, r.TargetFreePct,
 		r.EstimatedFreedBytes, string(r.StopReason), r.Status)
 	if err != nil {
 		return 0, fmt.Errorf("inserting run: %w", err)
@@ -90,7 +81,6 @@ type runRow struct {
 	TriggeredBy         string          `db:"triggered_by"`
 	TriggeredAt         time.Time       `db:"triggered_at"`
 	Mode                string          `db:"mode"`
-	VolumeName          sql.NullString  `db:"volume_name"`
 	FreePctAtFire       sql.NullFloat64 `db:"free_pct_at_fire"`
 	TargetFreePct       sql.NullFloat64 `db:"target_free_pct"`
 	EstimatedFreedBytes int64           `db:"estimated_freed_bytes"`
@@ -104,7 +94,6 @@ func (r runRow) toRun() triagearr.Run {
 		TriggeredBy:         triagearr.RunTrigger(r.TriggeredBy),
 		TriggeredAt:         r.TriggeredAt,
 		Mode:                r.Mode,
-		VolumeName:          r.VolumeName.String,
 		FreePctAtFire:       r.FreePctAtFire.Float64,
 		TargetFreePct:       r.TargetFreePct.Float64,
 		EstimatedFreedBytes: r.EstimatedFreedBytes,
@@ -117,7 +106,7 @@ func (r runRow) toRun() triagearr.Run {
 func (s *Store) GetRun(ctx context.Context, id int64) (triagearr.Run, []triagearr.RunItem, error) {
 	var row runRow
 	if err := s.reader.GetContext(ctx, &row, `
-		SELECT id, triggered_by, triggered_at, mode, volume_name,
+		SELECT id, triggered_by, triggered_at, mode,
 		       free_pct_at_fire, target_free_pct,
 		       estimated_freed_bytes, stop_reason, status
 		FROM runs WHERE id = ?
@@ -156,7 +145,7 @@ func (s *Store) GetRun(ctx context.Context, id int64) (triagearr.Run, []triagear
 }
 
 // TorrentBasic is the slim torrent view the Decider needs: hash + save_path
-// (for volume attribution) + size (for budget accumulation).
+// (sanity filter against the volume path) + size (for budget accumulation).
 type TorrentBasic struct {
 	Hash     string `db:"hash"`
 	SavePath string `db:"save_path"`
@@ -183,7 +172,7 @@ type ListRunsOpts struct {
 // ListRuns returns runs ordered by triggered_at descending (most recent first).
 func (s *Store) ListRuns(ctx context.Context, opts ListRunsOpts) ([]triagearr.Run, error) {
 	q := `
-		SELECT id, triggered_by, triggered_at, mode, volume_name,
+		SELECT id, triggered_by, triggered_at, mode,
 		       free_pct_at_fire, target_free_pct,
 		       estimated_freed_bytes, stop_reason, status
 		FROM runs

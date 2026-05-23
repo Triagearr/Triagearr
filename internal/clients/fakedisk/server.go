@@ -23,8 +23,8 @@ import (
 	"sync"
 )
 
-// DiskInfo mirrors triagearr.DiskUsage on the wire (without VolumeName, Path,
-// Timestamp — those are filled in by the daemon-side poller).
+// DiskInfo mirrors triagearr.DiskUsage on the wire (without Path, Timestamp —
+// those are filled in by the daemon-side poller).
 type DiskInfo struct {
 	TotalBytes  uint64  `json:"total_bytes"`
 	UsedBytes   uint64  `json:"used_bytes"`

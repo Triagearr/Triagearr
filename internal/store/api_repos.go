@@ -236,7 +236,7 @@ func (s *Store) ListSnapshotsRaw(ctx context.Context, hash triagearr.Hash, since
 // Disk pressure history — time series for volume gauges.
 // -----------------------------------------------------------------------------
 
-// DiskUsagePoint is one row of a volume's pressure history.
+// DiskUsagePoint is one row of the volume's pressure history.
 type DiskUsagePoint struct {
 	Timestamp   time.Time `db:"ts"`
 	TotalBytes  int64     `db:"total_bytes"`
@@ -245,8 +245,8 @@ type DiskUsagePoint struct {
 	FreePercent float64   `db:"free_percent"`
 }
 
-// ListDiskUsageHistory returns disk_pressure points for one volume since `since`.
-func (s *Store) ListDiskUsageHistory(ctx context.Context, volumeName string, since time.Time, limit int) ([]DiskUsagePoint, error) {
+// ListDiskUsageHistory returns disk_pressure points since `since`.
+func (s *Store) ListDiskUsageHistory(ctx context.Context, since time.Time, limit int) ([]DiskUsagePoint, error) {
 	if limit <= 0 {
 		limit = 2000
 	}
@@ -254,11 +254,11 @@ func (s *Store) ListDiskUsageHistory(ctx context.Context, volumeName string, sin
 	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT ts, total_bytes, used_bytes, free_bytes, free_percent
 		FROM disk_pressure
-		WHERE volume_name = ? AND ts >= ?
+		WHERE ts >= ?
 		ORDER BY ts ASC
 		LIMIT ?
-	`, volumeName, ts(since.UTC()), limit); err != nil {
-		return nil, fmt.Errorf("listing disk_pressure for %s: %w", volumeName, err)
+	`, ts(since.UTC()), limit); err != nil {
+		return nil, fmt.Errorf("listing disk_pressure history: %w", err)
 	}
 	return rows, nil
 }

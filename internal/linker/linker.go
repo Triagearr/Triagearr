@@ -1,8 +1,7 @@
 // Package linker maps a qBit torrent hash to the *arr files that *arr created
-// when it hard-linked the torrent into its library (ADR-0012). It is the API-
-// only successor to the inode-based mapper: no filesystem access, no path
-// remap, no Linux-only syscalls — pure database join over what the *arr
-// import history has told us.
+// when it hard-linked the torrent into its library (ADR-0012). The resolution
+// is API-only: no filesystem access, no path translation, no Linux-only
+// syscalls — pure database join over what the *arr import history has told us.
 package linker
 
 import (

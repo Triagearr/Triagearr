@@ -22,6 +22,8 @@ func TestLoad_MinimalDefaults(t *testing.T) {
 	path := writeConfig(t, `
 storage:
   sqlite_path: /tmp/test.db
+volume:
+  path: /data
 `)
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
@@ -36,6 +38,8 @@ func TestLoad_EnvSubstitution(t *testing.T) {
 	t.Setenv("MY_KEY", "secret-value")
 	path := writeConfig(t, `
 mode: dry-run
+volume:
+  path: /data
 arrs:
   sonarr:
     - name: main
@@ -113,5 +117,5 @@ func TestLoad_FullExample(t *testing.T) {
 	cfg, err := config.Load(abs)
 	require.NoError(t, err)
 	require.True(t, cfg.AnyArrEnabledForPolling())
-	require.Equal(t, "/data/triagearr.db", cfg.Storage.SQLitePath)
+	require.Equal(t, "/config/triagearr.db", cfg.Storage.SQLitePath)
 }

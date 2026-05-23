@@ -23,15 +23,15 @@ import {
   TorrentList,
   Version,
   VolumeHistory,
-  VolumeList,
+  VolumeResponse,
 } from "./schemas";
 
 export const queryKeys = {
   session: ["session"] as const,
   version: ["version"] as const,
   summary: ["summary"] as const,
-  volumes: ["volumes"] as const,
-  volumeHistory: (name: string, since: string) => ["volumes", name, "history", since] as const,
+  volume: ["volume"] as const,
+  volumeHistory: (since: string) => ["volume", "history", since] as const,
   torrents: (params: Record<string, string | number | boolean>) => ["torrents", params] as const,
   torrent: (hash: string) => ["torrent", hash] as const,
   snapshots: (hash: string, since: string) => ["torrent", hash, "snapshots", since] as const,
@@ -135,19 +135,18 @@ export function useSummary() {
   });
 }
 
-export function useVolumes() {
+export function useVolume() {
   return useQuery({
-    queryKey: queryKeys.volumes,
-    queryFn: () => apiFetch("/api/v1/volumes", VolumeList),
+    queryKey: queryKeys.volume,
+    queryFn: () => apiFetch("/api/v1/volume", VolumeResponse),
     refetchInterval: 15_000,
   });
 }
 
-export function useVolumeHistory(name: string, since = "24h") {
+export function useVolumeHistory(since = "24h") {
   return useQuery({
-    queryKey: queryKeys.volumeHistory(name, since),
-    queryFn: () => apiFetch(`/api/v1/volumes/${encodeURIComponent(name)}/history?since=${since}`, VolumeHistory),
-    enabled: Boolean(name),
+    queryKey: queryKeys.volumeHistory(since),
+    queryFn: () => apiFetch(`/api/v1/volume/history?since=${since}`, VolumeHistory),
   });
 }
 
@@ -384,10 +383,10 @@ export function useTestArrConnection() {
 export function useTriggerRun() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ volume, mode }: { volume?: string; mode?: "live" | "dry-run" }) =>
+    mutationFn: ({ mode }: { mode?: "live" | "dry-run" }) =>
       apiFetch("/api/v1/runs", RunResponse, {
         method: "POST",
-        body: JSON.stringify({ volume, mode }),
+        body: JSON.stringify({ mode }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.runs });

@@ -27,7 +27,7 @@ type Volume struct {
 type Source interface {
 	ListScores(ctx context.Context, opts store.ListScoresOpts) ([]store.ScoreRow, error)
 	ListTorrentsBasic(ctx context.Context) ([]store.TorrentBasic, error)
-	LatestDiskUsage(ctx context.Context) ([]triagearr.DiskUsage, error)
+	LatestDiskUsage(ctx context.Context) (*triagearr.DiskUsage, error)
 }
 
 // RunPlan is the Decider's output: an ordered candidate list plus the volume
@@ -50,24 +50,17 @@ func New(src Source) *Decider {
 	return &Decider{src: src}
 }
 
-// Plan computes a run plan for v. It reads the latest disk_usage for v to
-// determine need_bytes (the gap to target_free_percent), then walks scores
-// in DESC order, keeping only torrents whose save_path is under v.Path, until
-// the budget is met or the size cap is reached.
+// Plan computes a run plan for v. It reads the latest disk_usage to determine
+// need_bytes (the gap to target_free_percent), then walks scores in DESC
+// order, keeping only torrents whose save_path is under v.Path, until the
+// budget is met or the size cap is reached.
 func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
-	disks, err := d.src.LatestDiskUsage(ctx)
+	snap, err := d.src.LatestDiskUsage(ctx)
 	if err != nil {
 		return RunPlan{}, fmt.Errorf("decider: reading disk usage: %w", err)
 	}
-	var snap *triagearr.DiskUsage
-	for i := range disks {
-		if disks[i].VolumeName == v.Name {
-			snap = &disks[i]
-			break
-		}
-	}
 	if snap == nil {
-		return RunPlan{}, fmt.Errorf("decider: no disk_usage snapshot for volume %q", v.Name)
+		return RunPlan{}, fmt.Errorf("decider: no disk_usage snapshot recorded yet")
 	}
 
 	needBytes := neededBytes(snap.TotalBytes, snap.FreePercent, v.TargetFreePercent)

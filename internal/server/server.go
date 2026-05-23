@@ -25,10 +25,6 @@ import (
 	"github.com/Triagearr/Triagearr/internal/store"
 )
 
-// VolumeLookup resolves a volume name to the rule the Decider plan needs.
-// The daemon supplies a closure over the parsed config.
-type VolumeLookup func(name string) (decider.Volume, bool)
-
 // VersionInfo is the build metadata surfaced through GET /api/v1/version.
 type VersionInfo struct {
 	Version string `json:"version"`
@@ -47,8 +43,9 @@ type Options struct {
 	UIHandler http.Handler
 
 	Decider *decider.Decider
-	Volume  VolumeLookup
-	Volumes func() []decider.Volume
+	// Volume returns the single watched volume the Decider plans against
+	// (ADR-0024). The daemon supplies a closure over the parsed config.
+	Volume func() decider.Volume
 	// DaemonLive mirrors config.Mode == "live". Without it, per-request live
 	// opt-ins are forced back to dry-run (ADR-0015).
 	DaemonLive bool
@@ -118,8 +115,8 @@ func New(opts Options) *Server {
 	mux.HandleFunc("GET /api/v1/torrents/{hash}", s.security(s.auth(s.handleGetTorrent)))
 	mux.HandleFunc("GET /api/v1/torrents/{hash}/snapshots", s.security(s.auth(s.handleTorrentSnapshots)))
 	mux.HandleFunc("GET /api/v1/scores", s.security(s.auth(s.handleListScores)))
-	mux.HandleFunc("GET /api/v1/volumes", s.security(s.auth(s.handleListVolumes)))
-	mux.HandleFunc("GET /api/v1/volumes/{name}/history", s.security(s.auth(s.handleVolumeHistory)))
+	mux.HandleFunc("GET /api/v1/volume", s.security(s.auth(s.handleVolume)))
+	mux.HandleFunc("GET /api/v1/volume/history", s.security(s.auth(s.handleVolumeHistory)))
 	mux.HandleFunc("GET /api/v1/arrs", s.security(s.auth(s.handleListArrs)))
 	mux.HandleFunc("GET /api/v1/summary", s.security(s.auth(s.handleSummary)))
 	mux.HandleFunc("GET /api/v1/config", s.security(s.auth(s.handleConfig)))

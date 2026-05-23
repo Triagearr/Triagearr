@@ -17,7 +17,7 @@ arrs:
   whisparr_v3: [ … ]
 qbit: { … }
 maintainerr: { … }          # optional, V2
-volumes: [ … ]
+volume: { … }
 polling: { … }
 scoring: { … }
 triggers: { … }
@@ -47,7 +47,7 @@ http:
 
 ```yaml
 storage:
-  sqlite_path: /data/triagearr.db
+  sqlite_path: /config/triagearr.db
   retention:
     snapshots_raw: 30d      # high-resolution snapshots
     snapshots_daily: 365d   # downsampled daily aggregates
@@ -132,40 +132,25 @@ maintainerr:
   api_key: ""                # optional; on internal Docker networks not required
 ```
 
-## `volumes`
+## `volume`
 
-The volumes Triagearr watches for disk pressure. Each volume can have its own thresholds.
-
-```yaml
-volumes:
-  - name: media
-    path: /share/files               # path as Triagearr sees it (used by disk poller AND
-                                     # as the root for path-remap inference)
-    disk_pressure:
-      enabled: true
-      threshold_free_percent: 15    # fire if free < 15%
-      target_free_percent: 25        # delete until free >= 25%
-      max_run_size_gb: 50            # cap per run, even if target not reached
-```
-
-Multiple volumes can be declared (e.g. SSD cache + spinning array).
-
-### Path remap (auto-inferred by default)
-
-Triagearr needs to translate paths reported by qBit/*arr (e.g. `/files/torrents/...` as seen from within their container) into paths it can `stat()` locally (e.g. `/share/files/torrents/...` as bound into the Triagearr container). **This is inferred at startup** by sampling source paths against the local `volumes[].path` index — no config needed for the common cases. See `docs/adr/0010-path-remapping-for-mapper.md`.
-
-If inference fails or is ambiguous (the daemon will refuse to start and log a diagnostic), or you simply want to pin the rules explicitly, add a `path_remap` block:
+The single volume Triagearr watches for disk pressure. Under the TRaSH-guides
+convention (ADR-0023) there is one shared data root; multi-disk setups present
+a unified mount via mergerfs/unionfs (see ADR-0024).
 
 ```yaml
-volumes:
-  - name: media
-    path: /share/files
-    path_remap:                      # optional override — skips inference when set
-      - from: /files/
-        to:   /share/files/
+volume:
+  name: media                       # optional label
+  path: /data                        # the TRaSH shared mount, as Triagearr sees it
+  disk_pressure:
+    enabled: true
+    threshold_free_percent: 15      # fire if free < 15%
+    target_free_percent: 25         # delete until free >= 25%
+    max_run_size_gb: 50             # cap per run, even if target not reached
 ```
 
-Rules are evaluated in order, first match wins. Each `to:` is stat-ed at startup; a missing directory is a hard error. To inspect what's active at runtime: `triagearr inspect remap`.
+Triagearr, qBit and the *arrs all mount the same data root under the same
+container path (ADR-0023). No path translation layer exists.
 
 ## `polling`
 
@@ -213,7 +198,7 @@ scoring:
 ```yaml
 triggers:
   schedule: "0 4 * * *"      # daily run at 4 AM; can be empty to disable cron
-  disk_pressure: true        # also fire when any volume crosses threshold
+  disk_pressure: true        # also fire when the volume crosses threshold
   manual_api: true           # allow POST /api/v1/runs
 ```
 
@@ -293,7 +278,7 @@ http:
   api_key: ${TRIAGEARR_API_KEY}
 
 storage:
-  sqlite_path: /data/triagearr.db
+  sqlite_path: /config/triagearr.db
 
 arrs:
   sonarr:
@@ -315,13 +300,13 @@ qbit:
   enabled: true
   url: http://gluetun:8090
 
-volumes:
-  - name: media
-    path: /share/files
-    disk_pressure:
-      enabled: true
-      threshold_free_percent: 15
-      target_free_percent: 25
+volume:
+  name: media
+  path: /data
+  disk_pressure:
+    enabled: true
+    threshold_free_percent: 15
+    target_free_percent: 25
 
 scoring:
   rare_content_threshold: 3

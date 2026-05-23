@@ -18,17 +18,16 @@ type DiskStore interface {
 // pressure trigger can be exercised against fake volumes.
 type Sampler func(ctx context.Context) (triagearr.DiskUsage, error)
 
-// Volume is a watched filesystem mount. When Sample is nil, the poller falls
+// Volume is the watched filesystem mount. When Sample is nil, the poller falls
 // back to statfs(Path) — the production code path.
 type Volume struct {
-	Name   string
 	Path   string
 	Sample Sampler
 }
 
-// DiskPoller polls disk usage on every configured volume.
+// DiskPoller polls disk usage on the watched volume (ADR-0024).
 type DiskPoller struct {
-	Volumes  []Volume
+	Volume   Volume
 	Store    DiskStore
 	Interval time.Duration
 }
@@ -42,28 +41,25 @@ func (p *DiskPoller) Run(ctx context.Context) error {
 }
 
 func (p *DiskPoller) tick(ctx context.Context) error {
-	now := time.Now().UTC()
-	for _, v := range p.Volumes {
-		var (
-			usage triagearr.DiskUsage
-			err   error
-		)
-		if v.Sample != nil {
-			usage, err = v.Sample(ctx)
-		} else {
-			usage, err = Statfs(v.Path)
-		}
-		if err != nil {
-			slog.Warn("disk sample failed", "volume", v.Name, "path", v.Path, "err", err)
-			continue
-		}
-		usage.VolumeName = v.Name
-		usage.Path = v.Path
-		usage.Timestamp = now
-		if err := p.Store.InsertDiskUsage(ctx, usage); err != nil {
-			slog.Warn("insert disk_pressure failed", "volume", v.Name, "err", err)
-		}
+	var (
+		usage triagearr.DiskUsage
+		err   error
+	)
+	if p.Volume.Sample != nil {
+		usage, err = p.Volume.Sample(ctx)
+	} else {
+		usage, err = Statfs(p.Volume.Path)
 	}
-	slog.Info("disk tick complete", "volumes", len(p.Volumes))
+	if err != nil {
+		slog.Warn("disk sample failed", "path", p.Volume.Path, "err", err)
+		return nil
+	}
+	usage.Path = p.Volume.Path
+	usage.Timestamp = time.Now().UTC()
+	if err := p.Store.InsertDiskUsage(ctx, usage); err != nil {
+		slog.Warn("insert disk_pressure failed", "err", err)
+		return nil
+	}
+	slog.Info("disk tick complete", "path", p.Volume.Path)
 	return nil
 }

@@ -29,7 +29,7 @@ That's the niche.
 You run a Plex (or Jellyfin/Emby) homelab with:
 - One or more *arrs (Sonarr/Radarr/Lidarr/Readarr/Whisparr)
 - qBittorrent as your download client
-- **Hardlinks** between `/torrents/` and `/media/` (the standard TRaSH-guides layout)
+- **Hardlinks** between your `data/torrents/` and `data/media/` trees, on one shared mount (the standard [TRaSH-guides layout](https://trash-guides.info/File-and-Folder-Structure/) — Triagearr requires it)
 
 You care about:
 - Always having free disk space without manual janitoring
@@ -49,20 +49,23 @@ If that's you, read on.
 docker run -d \
   --name triagearr \
   --restart unless-stopped \
+  --user 1000:1000 \
   -p 9494:9494 \
-  -v /path/to/config:/config \
-  -v /path/to/media:/share/files:ro \
+  -v /opt/triagearr/config:/config \
+  -v /mnt/user/data:/data:ro \
   -e TZ=Europe/Paris \
   ghcr.io/triagearr/triagearr:latest
 ```
 
-See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for a full Docker Compose example and integration with an existing *arr stack.
+> ⚠️ **Mount it like the rest of your stack.** Triagearr requires the [TRaSH-guides shared-mount layout](https://trash-guides.info/File-and-Folder-Structure/How-to-set-up/Docker/): the shared data root mounted at the **same container path** — and the container run as the **same PUID** — as qBittorrent and your *arrs. `/data` and `1000:1000` above are placeholders for *your* stack's values. A mismatched layout is detected and **refused at boot** ([ADR-0023](docs/adr/0023-trash-shared-mount-convention.md)).
+
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the mount & UID contract, a full Docker Compose example, and integration with an existing *arr stack.
 
 ## Dashboard
 
 A React + Tailwind dashboard ships embedded in the binary at `http://127.0.0.1:9494/`:
 
-- Real-time disk pressure gauges per volume.
+- Real-time disk pressure gauge for the watched volume.
 - Sortable, filterable torrent list with per-torrent score breakdown, tracker status, *arr links, and history charts.
 - Action timeline with per-action audit drawer.
 - One-click dry-run; live runs gated behind a typed-name confirmation modal.

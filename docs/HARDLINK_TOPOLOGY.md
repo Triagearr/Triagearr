@@ -7,8 +7,8 @@ Why Triagearr deletes via the *arr API first, and qBittorrent second.
 In the TRaSH-guides reference setup (and most Plex/Jellyfin homelabs), the filesystem looks like this:
 
 ```
-/share/files/torrents/<category>/Foo.mkv      ← qBit downloaded it here
-/share/files/media/Foo (2024)/Foo.mkv         ← *arr imported it here via hardlink
+/data/torrents/<category>/Foo.mkv      ← qBit downloaded it here
+/data/media/Foo (2024)/Foo.mkv         ← *arr imported it here via hardlink
 ```
 
 Two paths, **one inode**. The kernel keeps a reference count (`nlink`). The disk block is freed only when `nlink == 0`.
@@ -29,11 +29,11 @@ Imagine Triagearr deletes via the qBit API first:
 
 ```
 1. POST qbit /api/v2/torrents/delete?hashes=X&deleteFiles=true
-   → /share/files/torrents/Foo.mkv unlinked
+   → /data/torrents/Foo.mkv unlinked
    → nlink drops 2 → 1
    → ❌ no disk space freed (media copy still references the block)
 2. POST sonarr /api/v3/episode/123?deleteFiles=true
-   → /share/files/media/.../Foo.mkv unlinked
+   → /data/media/.../Foo.mkv unlinked
    → nlink drops 1 → 0
    → ✅ disk space freed
 ```
@@ -47,17 +47,17 @@ This works but has problems:
 
 ```
 1. POST sonarr /api/v3/episode/123?deleteFiles=true
-   → /share/files/media/.../Foo.mkv unlinked
+   → /data/media/.../Foo.mkv unlinked
    → nlink drops 2 → 1
    → ❌ no disk space freed yet
    → ✅ but the torrent is still seeding, ratio still climbs
 
-2. Triagearr stats /share/files/torrents/Foo.mkv
+2. Triagearr stats /data/torrents/Foo.mkv
    → nlink == 1 → only the torrent reference remains
    → conclusion: this file is now "ours alone"
 
 3. POST qbit /api/v2/torrents/delete?hashes=X&deleteFiles=true
-   → /share/files/torrents/Foo.mkv unlinked
+   → /data/torrents/Foo.mkv unlinked
    → nlink drops 1 → 0
    → ✅ disk space freed
 ```
@@ -74,9 +74,9 @@ Why this order is better:
 Cross-seeding means the same file is downloaded once but seeded on multiple trackers via multiple qBit torrents pointing to the same inode (via hardlinks managed by [cross-seed](https://www.cross-seed.org/)).
 
 ```
-/share/files/torrents/main/Foo.mkv         ← torrent A (tracker 1)
-/share/files/torrents/cross/Foo.mkv        ← torrent B (tracker 2, same inode as A)
-/share/files/media/Foo (2024)/Foo.mkv      ← *arr import (same inode again)
+/data/torrents/main/Foo.mkv         ← torrent A (tracker 1)
+/data/torrents/cross/Foo.mkv        ← torrent B (tracker 2, same inode as A)
+/data/media/Foo (2024)/Foo.mkv      ← *arr import (same inode again)
 nlink = 3
 ```
 
@@ -99,13 +99,9 @@ If Triagearr decides to delete the media:
 
 V1 default: `skip` (safest). The dashboard surfaces cross-seed conflicts so the user can decide.
 
-### Stale mapping
+### Stale linking
 
-A media file moved by *arr (e.g. rename after metadata refresh) breaks the cached inode mapping. The mapper handles this:
-
-- At each *arr poll, the mapper re-stats files for media items whose `path` field changed since last poll
-- If an expected inode is no longer found at the recorded path, the mapper triggers a full re-scan of that *arr's library
-- During the re-scan window, that media is excluded from scoring (we don't act on stale data)
+A media file moved by *arr (e.g. rename after metadata refresh) cannot rely on cached paths. Under ADR-0012 the linker is API-only: each *arr poll refreshes `arr_imports` from history, and consumers always read the current row. The `nlink` check is taken at action time, never cached — see T3.5 below.
 
 ### Multiple files per torrent (TV season packs, music albums, packs)
 
@@ -116,19 +112,19 @@ This is the **norm**, not the edge case: season packs, multi-CD albums, antholog
 | Layer | Unit |
 |---|---|
 | Scoring / decision | 1 **torrent** (qBit `hash`) |
-| Mapper | 1 torrent → **N files** → **0..N** `arr_file_id` |
+| Linker | 1 torrent → **0..N** `arr_file_id` (via *arr history) |
 | Actor — *arr step (T3) | 1 *arr **file** at a time (`episodeFile.id` / `movieFile.id`) |
 | Actor — qBit step (T4) | 1 **torrent** as a whole (`deleteFiles=true`) |
 
-The score is taken at the torrent level — qBit does not let you seed half a torrent. The mapper and Actor must handle the N→1 fan-in/fan-out without dropping safety.
+The score is taken at the torrent level — qBit does not let you seed half a torrent. The linker and Actor must handle the N→1 fan-in/fan-out without dropping safety.
 
 #### Concrete loop
 
 ```
 candidate = torrent H
-qbit_files     = mapper.QbitFiles(H)         # [f1, f2, ..., fN]
-arr_targets    = mapper.ArrTargets(H)        # [{instance, file_id} ...] — often < N
-                                              # (some f may NOT be *arr-imported)
+qbit_files     = qbit.Files(H)               # [f1, f2, ..., fN]
+arr_targets    = linker.ArrImports(H)        # [{instance, file_id, imported_path} ...]
+                                              # — often < N (some files may NOT be *arr-imported)
 
 # T3 — fan out *arr deletes
 for (instance, file_id) in arr_targets:
@@ -139,8 +135,9 @@ for (instance, file_id) in arr_targets:
       re-monitor and re-grab those episodes.)
 
 # T3.5 — per-file nlink check (not a single torrent-level stat)
+# Paths coincide between containers per ADR-0023, no translation needed.
 for f in qbit_files:
-  nlink = stat(translate(f.path)).nlink
+  nlink = stat(f.path).nlink
   if nlink > 1:
     apply on_conflict   # cross-seed, upgrade, or external hardlink we don't own
                         # skip → ABORT the qbit-delete, keep the torrent alive
@@ -154,7 +151,7 @@ The per-file stat is the safety net. A torrent-level "is nlink right?" question 
 #### Real-world cases
 
 1. **Partial import.** 10-episode pack, *arr imported 8 (2 skipped for quality). `arr_targets` has 8 entries; the other 2 files were already `nlink=1`. T3 deletes 8 *arr-side → all 10 reach `nlink=1`. T4 frees everything. ✅
-2. **Upgrade.** Sonarr replaced S01E03 with a higher-quality grab from a different release. The original file in the pack is no longer linked to anything in `/media/`. `arr_targets` simply has no entry for that file (the mapper finds no `media_files` row). Its nlink was already 1. Same path as case 1. ✅
+2. **Upgrade.** Sonarr replaced S01E03 with a higher-quality grab from a different release. The original file in the pack is no longer linked to anything in `/media/`. `arr_targets` simply has no entry for that file (the linker finds no `arr_imports` row). Its nlink was already 1. Same path as case 1. ✅
 3. **Cross-seed.** Pack S01 exists on tracker A (torrent H1) AND tracker B (torrent H2), same inodes. Files start at `nlink=3` (qbit×2 + arr×1). T3 *arr deletes → `nlink=2`. The T3.5 re-stat sees `nlink=2`, `on_conflict: skip` (default) → ABORT, H1 stays alive. Marked `skipped_cross_seed` in `audit_log`. H2 will be scored independently on a later run. ✅
 4. **Partial *arr failure.** 8/10 deletes OK, the 9th returns 500. Retry ×3, hard fail. ABORT. Resulting state: 8 *arr files removed (`nlink=1`), 2 still linked (`nlink=2`), qBit torrent intact and seeding. Disk: **zero bytes freed** (every nlink ≥ 1). `audit_log` notes `partial_arr_delete, aborted`. *arr re-monitors the 8 missing episodes and re-grabs them — not pretty, but no data loss and no broken seed obligation.
 5. **Multi-instance.** Same file imported by Sonarr AND a second "Sonarr 4K" instance. `arr_targets` has 2 entries pointing at one qbit file. T3 deletes both. If only one succeeds, you fall through to case 4.
@@ -189,10 +186,10 @@ Triagearr does not depend on `qbit_manage`. If the user removes it, Triagearr ke
 
 ## Implementation notes
 
-The `mapper` and `actor` packages encode this logic. Key implementation choices:
+The `linker` and `actor` packages encode this logic. Key implementation choices:
 
-- **Inode read**: `os.Stat(path).Sys().(*syscall.Stat_t).Ino`. Linux-only; not portable to Windows, but Triagearr targets Linux containers.
-- **Atomic nlink check**: between *arr delete and qbit delete, we re-stat to handle TOCTOU race where another process modified the file. If the inode disappears mid-process, we treat that as "fine, someone else cleaned up."
-- **Read-only mount of `/share/files`**: the container mounts media as read-only (`:ro`) — all destructive ops go through APIs, never raw filesystem writes. Safety belt against bugs.
+- **Linker is API-only** (ADR-0012): torrent↔arr-file is resolved via the *arr `history` endpoint, not filesystem inode comparison. The historical inode-mapper design (ADR-0010) is superseded.
+- **Atomic nlink check**: at action time (T3.5), between *arr delete and qbit delete, we `stat(path).Sys().(*syscall.Stat_t).Nlink`. Paths coincide across containers per ADR-0023, so no translation is needed. If the inode disappears mid-process, we treat that as "fine, someone else cleaned up."
+- **Read-only mount of `/data`**: the container mounts media as read-only (`:ro`) — all destructive ops go through APIs, never raw filesystem writes. Safety belt against bugs.
 
 This logic is documented in [ADR-0003](adr/0003-arr-side-deletion.md) and [ADR-0005](adr/0005-self-contained-pipeline.md).

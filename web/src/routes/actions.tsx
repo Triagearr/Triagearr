@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useAction, useActions, useRuns, useVolumes } from "@/api/hooks";
+import { useAction, useActions, useRuns } from "@/api/hooks";
 import { Badge } from "@/components/ui/Badge";
 import {
   Card,
@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Select";
 import { Drawer } from "@/components/ui/Modal";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { RunTriggerDialog } from "@/components/RunTriggerDialog";
@@ -18,12 +17,7 @@ import { humanBytes, relativeTime, shortHash } from "@/lib/format";
 import type { ActionStatusT, AuditOutcomeT } from "@/api/schemas";
 
 function RunsSection() {
-  const volumes = useVolumes();
-  const [volume, setVolume] = useState("");
   const [open, setOpen] = useState<"dry-run" | "live" | null>(null);
-
-  const list = volumes.data?.volumes ?? [];
-  const selectedVolume = volume || list[0]?.name || "";
 
   return (
     <Card>
@@ -37,28 +31,12 @@ function RunsSection() {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-sm text-muted-foreground">Volume</label>
-          <Select value={selectedVolume} onChange={(e) => setVolume(e.target.value)}>
-            {list.map((v) => (
-              <option key={v.name} value={v.name}>
-                {v.name} ({v.path})
-              </option>
-            ))}
-          </Select>
-          <Button onClick={() => setOpen("dry-run")} disabled={!selectedVolume}>
-            Plan dry-run
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => setOpen("live")}
-            disabled={!selectedVolume}
-          >
+          <Button onClick={() => setOpen("dry-run")}>Plan dry-run</Button>
+          <Button variant="destructive" onClick={() => setOpen("live")}>
             Execute live…
           </Button>
         </div>
-        {selectedVolume && open && (
-          <RunTriggerDialog open onClose={() => setOpen(null)} volume={selectedVolume} mode={open} />
-        )}
+        {open && <RunTriggerDialog open onClose={() => setOpen(null)} mode={open} />}
       </CardContent>
     </Card>
   );
@@ -112,8 +90,7 @@ function ActionsPage() {
                   <Badge variant={run.mode === "live" ? "destructive" : "muted"}>{run.mode}</Badge>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {run.volume ?? "—"} · {humanBytes(run.estimated_freed_bytes)} ·{" "}
-                  {relativeTime(run.triggered_at)}
+                  {humanBytes(run.estimated_freed_bytes)} · {relativeTime(run.triggered_at)}
                 </div>
                 <div className="text-xs text-muted-foreground">stop: {run.stop_reason}</div>
               </div>

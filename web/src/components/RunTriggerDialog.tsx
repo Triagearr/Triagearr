@@ -7,15 +7,16 @@ import { useTriggerRun } from "@/api/hooks";
 type Props = {
   open: boolean;
   onClose: () => void;
-  volume: string;
   mode: "dry-run" | "live";
 };
 
-export function RunTriggerDialog({ open, onClose, volume, mode }: Props) {
+const liveConfirmPhrase = "delete";
+
+export function RunTriggerDialog({ open, onClose, mode }: Props) {
   const [typed, setTyped] = useState("");
   const trigger = useTriggerRun();
   const isLive = mode === "live";
-  const armed = !isLive || typed === volume;
+  const armed = !isLive || typed === liveConfirmPhrase;
 
   return (
     <Modal
@@ -25,17 +26,17 @@ export function RunTriggerDialog({ open, onClose, volume, mode }: Props) {
         trigger.reset();
         onClose();
       }}
-      title={isLive ? `Execute live run on ${volume}?` : `Plan dry-run for ${volume}?`}
+      title={isLive ? "Execute live run?" : "Plan dry-run?"}
       description={
         isLive
-          ? "Live mode deletes media via *arr and removes torrents from qBit. Type the volume name to confirm."
+          ? `Live mode deletes media via *arr and removes torrents from qBit. Type "${liveConfirmPhrase}" to confirm.`
           : "Dry-run computes candidates and persists the plan without deleting anything."
       }
     >
       {isLive && (
         <Input
           autoFocus
-          placeholder={`Type "${volume}" to confirm`}
+          placeholder={`Type "${liveConfirmPhrase}" to confirm`}
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           className="mb-3"
@@ -73,7 +74,7 @@ export function RunTriggerDialog({ open, onClose, volume, mode }: Props) {
         <Button
           variant={isLive ? "destructive" : "default"}
           disabled={!armed || trigger.isPending}
-          onClick={() => trigger.mutate({ volume, mode })}
+          onClick={() => trigger.mutate({ mode })}
         >
           {trigger.isPending ? "Running…" : isLive ? "Execute live" : "Plan dry-run"}
         </Button>

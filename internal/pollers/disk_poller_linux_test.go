@@ -22,7 +22,7 @@ func TestDiskPoller_PersistsRealStatfs(t *testing.T) {
 
 	dir := t.TempDir()
 	p := &pollers.DiskPoller{
-		Volumes:  []pollers.Volume{{Name: "test", Path: dir}},
+		Volume:   pollers.Volume{Path: dir},
 		Store:    s,
 		Interval: time.Hour,
 	}
@@ -32,8 +32,8 @@ func TestDiskPoller_PersistsRealStatfs(t *testing.T) {
 	go func() { done <- p.Run(ctx) }()
 
 	require.Eventually(t, func() bool {
-		rows, err := s.LatestDiskUsage(context.Background())
-		return err == nil && len(rows) == 1
+		row, err := s.LatestDiskUsage(context.Background())
+		return err == nil && row != nil
 	}, 2*time.Second, 10*time.Millisecond)
 
 	cancel()
@@ -44,11 +44,9 @@ func TestDiskPoller_PersistsRealStatfs(t *testing.T) {
 		t.Fatal("poller did not stop within 2s of cancellation")
 	}
 
-	rows, err := s.LatestDiskUsage(context.Background())
+	r, err := s.LatestDiskUsage(context.Background())
 	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	r := rows[0]
-	require.Equal(t, "test", r.VolumeName)
+	require.NotNil(t, r)
 	require.Equal(t, dir, r.Path)
 	require.Greater(t, r.TotalBytes, uint64(0))
 	require.Equal(t, r.TotalBytes, r.UsedBytes+r.FreeBytes)
@@ -63,27 +61,27 @@ func TestDiskPoller_BadPathIsLoggedNotFatal(t *testing.T) {
 	require.NoError(t, s.Migrate())
 
 	p := &pollers.DiskPoller{
-		Volumes: []pollers.Volume{
-			{Name: "bogus", Path: "/this/path/does/not/exist/at/all"},
-			{Name: "ok", Path: t.TempDir()},
-		},
+		Volume:   pollers.Volume{Path: "/this/path/does/not/exist/at/all"},
 		Store:    s,
-		Interval: time.Hour,
+		Interval: 10 * time.Millisecond,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- p.Run(ctx) }()
 
-	require.Eventually(t, func() bool {
-		rows, err := s.LatestDiskUsage(context.Background())
-		return err == nil && len(rows) == 1
-	}, 2*time.Second, 10*time.Millisecond)
-
+	// Give the poller a few ticks; a bad path must not crash it.
+	time.Sleep(50 * time.Millisecond)
 	cancel()
-	<-done
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("poller did not stop within 2s of cancellation")
+	}
 
-	rows, _ := s.LatestDiskUsage(context.Background())
-	require.Len(t, rows, 1)
-	require.Equal(t, "ok", rows[0].VolumeName)
+	// A failed sample inserts nothing.
+	row, err := s.LatestDiskUsage(context.Background())
+	require.NoError(t, err)
+	require.Nil(t, row)
 }

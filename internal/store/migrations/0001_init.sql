@@ -67,15 +67,15 @@ CREATE TABLE media (
 );
 CREATE INDEX idx_media_last_seen ON media(last_seen);
 
+-- Triagearr watches exactly one volume (ADR-0024), so a snapshot is keyed by
+-- timestamp alone.
 CREATE TABLE disk_pressure (
-    volume_name  TEXT NOT NULL,
-    ts           TIMESTAMP NOT NULL,
+    ts           TIMESTAMP NOT NULL PRIMARY KEY,
     path         TEXT NOT NULL,
     total_bytes  INTEGER NOT NULL,
     used_bytes   INTEGER NOT NULL,
     free_bytes   INTEGER NOT NULL,
-    free_percent REAL NOT NULL,
-    PRIMARY KEY (volume_name, ts)
+    free_percent REAL NOT NULL
 ) WITHOUT ROWID;
 
 -- first_seen_dead records when a tracker first reported status=4, so Factor 7
@@ -157,7 +157,6 @@ CREATE TABLE runs (
     triggered_by          TEXT NOT NULL,
     triggered_at          TIMESTAMP NOT NULL,
     mode                  TEXT NOT NULL,
-    volume_name           TEXT,
     free_pct_at_fire      REAL,
     target_free_pct       REAL,
     estimated_freed_bytes INTEGER NOT NULL DEFAULT 0,

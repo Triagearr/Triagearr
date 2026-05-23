@@ -26,7 +26,6 @@ func runCommand(configFlag cli.Flag) *cli.Command {
 			&cli.BoolFlag{Name: "now", Usage: "trigger immediately (currently required)"},
 			&cli.BoolFlag{Name: "dry-run", Usage: "produce a plan without acting (required in M4)"},
 			&cli.BoolFlag{Name: "live", Usage: "destructive mode (arrives in M5)"},
-			&cli.StringFlag{Name: "volume", Usage: "target volume name; defaults to the most pressed volume"},
 			&cli.BoolFlag{Name: "json", Usage: "emit JSON instead of a table"},
 		},
 		Action: runAction,
@@ -62,10 +61,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 		return errors.New("--live requires the daemon's mode: live (current config is dry-run)")
 	}
 
-	v, err := pickVolume(ctx, cfg, s, cmd.String("volume"))
-	if err != nil {
-		return err
-	}
+	v := theVolume(cfg)
 
 	dec := decider.New(s)
 	plan, err := dec.Plan(ctx, v)
@@ -77,7 +73,6 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 		TriggeredBy:         triagearr.RunTriggerCLI,
 		TriggeredAt:         time.Now().UTC(),
 		Mode:                string(mode),
-		VolumeName:          v.Name,
 		FreePctAtFire:       plan.FreePctAtFire,
 		TargetFreePct:       v.TargetFreePercent,
 		EstimatedFreedBytes: plan.EstimatedFreedBytes,
@@ -115,48 +110,12 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	return emitRunTable(run, plan.Items)
 }
 
-func pickVolume(ctx context.Context, cfg *config.Config, s *store.Store, name string) (decider.Volume, error) {
-	all := allVolumes(cfg)
-	if len(all) == 0 {
-		return decider.Volume{}, errors.New("no volumes configured")
-	}
-	if name != "" {
-		for _, v := range all {
-			if v.Name == name {
-				return v, nil
-			}
-		}
-		return decider.Volume{}, fmt.Errorf("unknown volume %q", name)
-	}
-	// No volume given: pick the lowest-free% volume from latest disk_usage.
-	disks, err := s.LatestDiskUsage(ctx)
-	if err != nil {
-		return decider.Volume{}, err
-	}
-	if len(disks) == 0 {
-		return all[0], nil
-	}
-	worst := disks[0]
-	for _, d := range disks[1:] {
-		if d.FreePercent < worst.FreePercent {
-			worst = d
-		}
-	}
-	for _, v := range all {
-		if v.Name == worst.VolumeName {
-			return v, nil
-		}
-	}
-	return all[0], nil
-}
-
 func emitRunJSON(r triagearr.Run, items []triagearr.RunItem) error {
 	out := map[string]any{
 		"run_id":                r.ID,
 		"triggered_by":          string(r.TriggeredBy),
 		"triggered_at":          r.TriggeredAt,
 		"mode":                  r.Mode,
-		"volume":                r.VolumeName,
 		"free_pct_at_fire":      r.FreePctAtFire,
 		"target_free_pct":       r.TargetFreePct,
 		"estimated_freed_bytes": r.EstimatedFreedBytes,
@@ -170,8 +129,8 @@ func emitRunJSON(r triagearr.Run, items []triagearr.RunItem) error {
 }
 
 func emitRunTable(r triagearr.Run, items []triagearr.RunItem) error {
-	fmt.Printf("run #%d  volume=%s  free=%.2f%%→%.2f%%  est.freed=%s  stop=%s  candidates=%d\n",
-		r.ID, r.VolumeName, r.FreePctAtFire, r.TargetFreePct,
+	fmt.Printf("run #%d  free=%.2f%%→%.2f%%  est.freed=%s  stop=%s  candidates=%d\n",
+		r.ID, r.FreePctAtFire, r.TargetFreePct,
 		humanBytes(r.EstimatedFreedBytes), r.StopReason, len(items))
 	if len(items) == 0 {
 		return nil

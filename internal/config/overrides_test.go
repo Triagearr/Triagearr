@@ -29,14 +29,14 @@ qbit:
   url: http://qbit:8090
   username: ""
   password: ""
-volumes:
-  - name: media
-    path: /tmp
-    disk_pressure:
-      enabled: true
-      threshold_free_percent: 15
-      target_free_percent: 25
-      max_run_size_gb: 50
+volume:
+  name: media
+  path: /tmp
+  disk_pressure:
+    enabled: true
+    threshold_free_percent: 15
+    target_free_percent: 25
+    max_run_size_gb: 50
 scoring:
   weights:
     ratio_obligation_met: 50
@@ -114,9 +114,25 @@ func TestLoadWithOverrides_InvalidValueFailsValidation(t *testing.T) {
 	p := writeBaseYAML(t)
 	// threshold > target is rejected by Validate
 	_, err := config.LoadWithOverrides(p, []config.Override{
-		{Key: "volumes.0.disk_pressure.threshold_free_percent", ValueJSON: `90`},
+		{Key: "volume.disk_pressure.threshold_free_percent", ValueJSON: `90`},
 	})
 	require.Error(t, err)
+	require.ErrorContains(t, err, "threshold_free_percent")
+}
+
+func TestLoadWithOverrides_VolumeDiskPressure(t *testing.T) {
+	p := writeBaseYAML(t)
+	cfg, err := config.LoadWithOverrides(p, []config.Override{
+		{Key: "volume.disk_pressure.threshold_free_percent", ValueJSON: `10`},
+		{Key: "volume.disk_pressure.target_free_percent", ValueJSON: `20`},
+	})
+	require.NoError(t, err)
+	// Overriding a nested leaf must leave the volume's other fields intact.
+	require.Equal(t, "media", cfg.Volume.Name)
+	require.Equal(t, "/tmp", cfg.Volume.Path)
+	require.InDelta(t, 10.0, cfg.Volume.DiskPressure.ThresholdFreePercent, 0.001)
+	require.InDelta(t, 20.0, cfg.Volume.DiskPressure.TargetFreePercent, 0.001)
+	require.Equal(t, 50, cfg.Volume.DiskPressure.MaxRunSizeGB)
 }
 
 func TestIsEditableKey(t *testing.T) {
@@ -124,7 +140,7 @@ func TestIsEditableKey(t *testing.T) {
 		"scoring.hnr_window_days",
 		"scoring.weights.ratio_obligation_met",
 		"polling.qbit_interval",
-		"volumes.0.disk_pressure.threshold_free_percent",
+		"volume.disk_pressure.threshold_free_percent",
 	}
 	forbidden := []string{
 		"mode",

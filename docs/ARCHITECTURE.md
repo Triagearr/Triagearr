@@ -28,9 +28,9 @@ Triagearr is a single-binary Go daemon that orchestrates media deletion across a
 │   └─────────────────────────┬────────────────────────────────┘  │
 │                             │                                    │
 │                ┌────────────▼─────────────┐                      │
-│                │         Mapper           │                      │
-│                │   torrent ↔ media        │   inode-based join  │
-│                │   (fs.Stat + arr index)  │                      │
+│                │         Linker           │                      │
+│                │   torrent ↔ arr file     │   via *arr history  │
+│                │   (ADR-0012, API-only)   │                      │
 │                └────────────┬─────────────┘                      │
 │                             │                                    │
 │                ┌────────────▼─────────────┐  ┌───────────────┐  │
@@ -77,7 +77,7 @@ Every poller runs on its own configurable interval. Each tick produces structure
 
 - **qBit poller** → `snapshots_raw` (one row per active torrent: ratio, uploaded, seeders, leechers, state, last_activity)
 - **\*arr pollers** → `media` upsert (id, title, file paths, size, tags)
-- **Disk poller** → `disk_pressure` (one row per watched volume: total, used, free, percent)
+- **Disk poller** → `disk_pressure` (the watched volume: total, used, free, percent)
 - **Maintainerr poller (V2, optional)** → `maintainerr_collections` snapshot (read-only mirror of what Maintainerr plans to delete)
 
 The pollers never block each other and never trigger actions. They are purely observational.
@@ -92,23 +92,13 @@ A background job once per day:
 
 This keeps the DB lean indefinitely (~50 MB steady state for a 500-torrent library).
 
-### 3. Mapping (continuous, cached)
+### 3. Linking (API-only, ADR-0012)
 
-The mapper resolves three identifiers for each candidate:
+The linker resolves the relationship between a qBittorrent torrent (by hash) and the *arr file(s) it produced — strictly via the *arr `history` endpoint, no filesystem stat. For each *arr instance the linker queries `GET /api/v3/history?eventType=downloadFolderImported` filtered by `downloadId == torrentHash`, then persists `(arr_name, arr_type, torrent_hash, file_id, imported_path, dropped_path)` rows in `arr_imports`.
 
-```
-qbit_torrent_hash ─┐
-                   ├── inode (via os.Stat on a file path)
-arr_media_id ──────┘
-```
+Under the TRaSH-guides convention (ADR-0023) qBit and the *arrs see the same paths Triagearr sees — `imported_path` is directly usable.
 
-The link is the **inode**. On the standard TRaSH-guides hardlink layout:
-- `/share/files/torrents/<category>/Foo.mkv` → inode N
-- `/share/files/media/Foo (2024)/Foo.mkv` → inode N (hardlink)
-
-Triagearr stats both paths and verifies `Sys().(*syscall.Stat_t).Ino` matches.
-
-The mapping is refreshed each *arr poll (file paths can move via *arr renames). Stale entries are detected and recomputed.
+The linker is event-driven: each *arr poll refreshes `arr_imports`; rows are kept until the source torrent is pruned (cascade).
 
 ### 4. Scoring (event-driven, cached)
 
@@ -121,7 +111,7 @@ Scoring is **event-driven** (ADR-0020): a feeding poller (qbit, tracker, *arr) s
 The decider runs when any trigger fires:
 
 - **Cron**: scheduled run (default daily, e.g. `0 4 * * *`)
-- **Disk pressure**: when any monitored volume's `free_percent < threshold`, the decider fires immediately
+- **Disk pressure**: when the watched volume's `free_percent < threshold`, the decider fires immediately
 - **Manual**: `POST /api/v1/runs` from the UI or CLI
 
 The decider:
@@ -139,7 +129,7 @@ For each candidate, the Actor performs an atomic sequence:
 a. lookup arr_media_id → call *arr API: DELETE /api/v3/movie/{id}?deleteFiles=true
    (or equivalent for series/episode/album/...)
 b. wait for *arr to confirm the file is gone
-c. stat /share/files/torrents/<path> → check current nlink
+c. stat the torrent's save path → check current nlink (paths coincide per ADR-0023)
 d. if nlink == 1 (only the torrent copy remains) → qbit delete with deleteFiles=true
    if nlink == 0 (file already gone, *arr removed both refs) → qbit delete metadata only
    if nlink > 1 (cross-seed: another torrent shares the inode) → qbit delete without files,
@@ -214,7 +204,7 @@ See [`docs/STORAGE.md`](STORAGE.md) for the full schema (to be written in M1). S
 | `snapshots_raw` | High-resolution qBit snapshots, 30-day retention | ~720k (after rotation) |
 | `snapshots_daily` | Downsampled daily aggregates, 1y retention | ~180k |
 | `torrents` | Current state of each qBit torrent (last seen) | ~500 |
-| `media` | *arr media items, joined to torrents by inode | ~thousands |
+| `media` | *arr media items, joined to torrents via `arr_imports` (ADR-0012) | ~thousands |
 | `arr_instances` | Observed *arr instances, last health check | ~5-20 |
 | `arr_connections` | Configured *arr connections (source of truth, ADR-0022) | ~5-20 |
 | `disk_pressure` | Disk usage snapshots per volume, 30-day | ~10k |
@@ -252,8 +242,8 @@ GET    /api/v1/summary                     dashboard aggregate
 GET    /api/v1/version                     build metadata
 GET    /api/v1/config                      effective config, secrets redacted to "***"
 
-GET    /api/v1/volumes                     configured volumes + latest disk_pressure
-GET    /api/v1/volumes/{name}/history      ?since=24h    pressure time series
+GET    /api/v1/volume                      configured volume + latest disk_pressure
+GET    /api/v1/volume/history               ?since=24h    pressure time series
 GET    /api/v1/arrs                        instance health
 
 GET    /api/v1/torrents                    ?sort=&q=&category=&private=&limit=&offset=
@@ -261,7 +251,7 @@ GET    /api/v1/torrents/{hash}             detail (trackers, links, score)
 GET    /api/v1/torrents/{hash}/snapshots   ?since=720h   ratio/seeders/leechers history
 GET    /api/v1/scores                      ?limit=50&include_excluded=false
 
-POST   /api/v1/runs                        body: {volume, mode:"live"|undefined}; 1/min/IP
+POST   /api/v1/runs                        body: {mode:"live"|undefined}; 1/min/IP
 GET    /api/v1/runs                        ?limit=50
 GET    /api/v1/runs/{id}                   one run + items
 GET    /api/v1/runs/{id}/actions           actions for one run

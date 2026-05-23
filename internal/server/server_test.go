@@ -50,7 +50,7 @@ func seed(t *testing.T, s *store.Store) {
 		Hash: "h1", Score: 99, AnyTrackerAlive: true, FactorsJSON: "[]", ComputedAt: time.Now().UTC(),
 	}))
 	require.NoError(t, s.InsertDiskUsage(ctx, triagearr.DiskUsage{
-		VolumeName: "data", Path: "/data", Timestamp: time.Now().UTC(),
+		Path: "/data", Timestamp: time.Now().UTC(),
 		TotalBytes: 100 * 1024 * 1024 * 1024, FreePercent: 5,
 	}))
 }
@@ -68,23 +68,15 @@ func buildSrvWithDaemonLive(t *testing.T, apiKey string, daemonLive bool) (*serv
 	t.Helper()
 	s := testStore(t)
 	seed(t, s)
-	vols := []decider.Volume{{
+	vol := decider.Volume{
 		Name: "data", Path: "/data", TargetFreePercent: 20, MaxRunSizeGB: 100,
-	}}
+	}
 	srv := server.New(server.Options{
-		Bind:    "127.0.0.1:0",
-		APIKey:  apiKey,
-		Store:   s,
-		Decider: decider.New(s),
-		Volume: func(name string) (decider.Volume, bool) {
-			for _, v := range vols {
-				if v.Name == name {
-					return v, true
-				}
-			}
-			return decider.Volume{}, false
-		},
-		Volumes:    func() []decider.Volume { return vols },
+		Bind:       "127.0.0.1:0",
+		APIKey:     apiKey,
+		Store:      s,
+		Decider:    decider.New(s),
+		Volume:     func() decider.Volume { return vol },
 		DaemonLive: daemonLive,
 	})
 	return srv, s, srv.Handler()
@@ -93,7 +85,7 @@ func buildSrvWithDaemonLive(t *testing.T, apiKey string, daemonLive bool) (*serv
 func TestPostRun_AuthMissing(t *testing.T) {
 	_, s, h := buildSrv(t, "sekrit")
 	seedAuthUser(t, s)
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
@@ -101,7 +93,7 @@ func TestPostRun_AuthMissing(t *testing.T) {
 
 func TestPostRun_AuthOK_InsertsRun(t *testing.T) {
 	_, s, h := buildSrv(t, "sekrit")
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{}`))
 	req.Header.Set("X-API-Key", "sekrit")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -110,7 +102,6 @@ func TestPostRun_AuthOK_InsertsRun(t *testing.T) {
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Equal(t, "dry-run", body["mode"])
-	require.Equal(t, "data", body["volume"])
 
 	runs, err := s.ListRuns(context.Background(), store.ListRunsOpts{})
 	require.NoError(t, err)
@@ -126,13 +117,6 @@ func authedReq(method, target string, body string) *http.Request {
 	}
 	r.Header.Set("X-API-Key", testAPIKey)
 	return r
-}
-
-func TestPostRun_UnknownVolume(t *testing.T) {
-	_, _, h := buildSrv(t, "")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"volume":"nope"}`))
-	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestGetRun_Found(t *testing.T) {
@@ -183,7 +167,7 @@ func TestPostRun_RejectsUnknownFields(t *testing.T) {
 func TestPostRun_LiveBody_DaemonLive_ResolvesToLive(t *testing.T) {
 	_, _, h := buildSrvWithDaemonLive(t, "", true)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"volume":"data","mode":"live"}`))
+	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"mode":"live"}`))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
@@ -193,7 +177,7 @@ func TestPostRun_LiveBody_DaemonLive_ResolvesToLive(t *testing.T) {
 func TestPostRun_NoModeBody_DaemonLive_StaysDryRun(t *testing.T) {
 	_, _, h := buildSrvWithDaemonLive(t, "", true)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"volume":"data"}`))
+	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{}`))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
@@ -203,7 +187,7 @@ func TestPostRun_NoModeBody_DaemonLive_StaysDryRun(t *testing.T) {
 func TestPostRun_LiveBody_DaemonDryRun_ForcedDryRun(t *testing.T) {
 	_, _, h := buildSrvWithDaemonLive(t, "", false)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"volume":"data","mode":"live"}`))
+	h.ServeHTTP(w, authedReq(http.MethodPost, "/api/v1/runs", `{"mode":"live"}`))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))

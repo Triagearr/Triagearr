@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
@@ -33,8 +32,7 @@ func parseIDPath(w http.ResponseWriter, r *http.Request) (int64, bool) {
 }
 
 type postRunRequest struct {
-	Volume string `json:"volume,omitempty"`
-	Mode   string `json:"mode,omitempty"`
+	Mode string `json:"mode,omitempty"`
 }
 
 type runResponse struct {
@@ -42,7 +40,6 @@ type runResponse struct {
 	TriggeredBy         string            `json:"triggered_by"`
 	TriggeredAt         time.Time         `json:"triggered_at"`
 	Mode                string            `json:"mode"`
-	Volume              string            `json:"volume,omitempty"`
 	FreePctAtFire       float64           `json:"free_pct_at_fire,omitempty"`
 	TargetFreePct       float64           `json:"target_free_pct,omitempty"`
 	EstimatedFreedBytes int64             `json:"estimated_freed_bytes"`
@@ -64,15 +61,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength > 0 && !decodeJSONBody(w, r, &req) {
 		return
 	}
-	vol, ok := s.resolveVolume(req.Volume)
-	if !ok {
-		if req.Volume == "" {
-			writeError(w, http.StatusBadRequest, "no volume configured")
-		} else {
-			writeError(w, http.StatusNotFound, fmt.Sprintf("unknown volume %q", req.Volume))
-		}
-		return
-	}
+	vol := s.opts.Volume()
 	plan, err := s.opts.Decider.Plan(r.Context(), vol)
 	if err != nil {
 		writeInternal(w, err)
@@ -83,7 +72,6 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		TriggeredBy:         triagearr.RunTriggerHTTP,
 		TriggeredAt:         time.Now().UTC(),
 		Mode:                string(mode),
-		VolumeName:          vol.Name,
 		FreePctAtFire:       plan.FreePctAtFire,
 		TargetFreePct:       vol.TargetFreePercent,
 		EstimatedFreedBytes: plan.EstimatedFreedBytes,
@@ -146,26 +134,12 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildResponse(run, items))
 }
 
-// resolveVolume returns the requested volume, or — when none is named —
-// picks the first configured one.
-func (s *Server) resolveVolume(name string) (decider.Volume, bool) {
-	if name != "" {
-		return s.opts.Volume(name)
-	}
-	all := s.opts.Volumes()
-	if len(all) == 0 {
-		return decider.Volume{}, false
-	}
-	return all[0], true
-}
-
 func buildResponse(r triagearr.Run, items []triagearr.RunItem) runResponse {
 	out := runResponse{
 		RunID:               r.ID,
 		TriggeredBy:         string(r.TriggeredBy),
 		TriggeredAt:         r.TriggeredAt,
 		Mode:                r.Mode,
-		Volume:              r.VolumeName,
 		FreePctAtFire:       r.FreePctAtFire,
 		TargetFreePct:       r.TargetFreePct,
 		EstimatedFreedBytes: r.EstimatedFreedBytes,

@@ -15,7 +15,7 @@ import (
 type fakeSrc struct {
 	scores   []store.ScoreRow
 	torrents []store.TorrentBasic
-	disks    []triagearr.DiskUsage
+	disk     *triagearr.DiskUsage
 }
 
 func (f *fakeSrc) ListScores(_ context.Context, _ store.ListScoresOpts) ([]store.ScoreRow, error) {
@@ -24,8 +24,8 @@ func (f *fakeSrc) ListScores(_ context.Context, _ store.ListScoresOpts) ([]store
 func (f *fakeSrc) ListTorrentsBasic(_ context.Context) ([]store.TorrentBasic, error) {
 	return f.torrents, nil
 }
-func (f *fakeSrc) LatestDiskUsage(_ context.Context) ([]triagearr.DiskUsage, error) {
-	return f.disks, nil
+func (f *fakeSrc) LatestDiskUsage(_ context.Context) (*triagearr.DiskUsage, error) {
+	return f.disk, nil
 }
 
 func TestPlan_TargetReached(t *testing.T) {
@@ -41,9 +41,7 @@ func TestPlan_TargetReached(t *testing.T) {
 			{Hash: "b", SavePath: "/data/dl/tv", Size: 2 * oneGiB},
 			{Hash: "c", SavePath: "/data/dl/tv", Size: 10 * oneGiB},
 		},
-		disks: []triagearr.DiskUsage{
-			{VolumeName: "data", TotalBytes: 100 * uint64(oneGiB), FreePercent: 5},
-		},
+		disk: &triagearr.DiskUsage{TotalBytes: 100 * uint64(oneGiB), FreePercent: 5},
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
@@ -68,9 +66,7 @@ func TestPlan_SizeCap(t *testing.T) {
 			{Hash: "a", SavePath: "/data/x", Size: 6 * oneGiB},
 			{Hash: "b", SavePath: "/data/x", Size: 6 * oneGiB},
 		},
-		disks: []triagearr.DiskUsage{
-			{VolumeName: "data", TotalBytes: 1000 * uint64(oneGiB), FreePercent: 0},
-		},
+		disk: &triagearr.DiskUsage{TotalBytes: 1000 * uint64(oneGiB), FreePercent: 0},
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
@@ -89,9 +85,7 @@ func TestPlan_NoMoreCandidates(t *testing.T) {
 		torrents: []store.TorrentBasic{
 			{Hash: "a", SavePath: "/data/x", Size: 1 * oneGiB},
 		},
-		disks: []triagearr.DiskUsage{
-			{VolumeName: "data", TotalBytes: 1000 * uint64(oneGiB), FreePercent: 0},
-		},
+		disk: &triagearr.DiskUsage{TotalBytes: 1000 * uint64(oneGiB), FreePercent: 0},
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
@@ -115,16 +109,15 @@ func TestPlan_VolumeFilterByPrefix(t *testing.T) {
 			{Hash: "b", SavePath: "/data/dl", Size: 4 * oneGiB},
 			{Hash: "c", SavePath: "/data", Size: 1 * oneGiB},
 		},
-		disks: []triagearr.DiskUsage{
-			{VolumeName: "data", TotalBytes: 100 * uint64(oneGiB), FreePercent: 0},
-		},
+		disk: &triagearr.DiskUsage{TotalBytes: 100 * uint64(oneGiB), FreePercent: 0},
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
 		Name: "data", Path: "/data", TargetFreePercent: 1, MaxRunSizeGB: 100,
 	})
 	require.NoError(t, err)
-	// 'a' filtered out (different volume) ; 'b' brings 4 GiB > need (1% of 100GiB = 1GiB)
+	// 'a' filtered out (outside the volume path) ; 'b' brings 4 GiB > need
+	// (1% of 100GiB = 1GiB)
 	require.Equal(t, triagearr.StopTargetReached, plan.StopReason)
 	require.Len(t, plan.Items, 1)
 	require.Equal(t, triagearr.Hash("b"), plan.Items[0].TorrentHash)
@@ -137,9 +130,7 @@ func TestPlan_AlreadyAboveTarget(t *testing.T) {
 		torrents: []store.TorrentBasic{
 			{Hash: "a", SavePath: "/data", Size: 1 * oneGiB},
 		},
-		disks: []triagearr.DiskUsage{
-			{VolumeName: "data", TotalBytes: 100 * uint64(oneGiB), FreePercent: 80},
-		},
+		disk: &triagearr.DiskUsage{TotalBytes: 100 * uint64(oneGiB), FreePercent: 80},
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
@@ -151,8 +142,8 @@ func TestPlan_AlreadyAboveTarget(t *testing.T) {
 	require.Len(t, plan.Items, 1)
 }
 
-func TestPlan_UnknownVolume(t *testing.T) {
-	src := &fakeSrc{disks: []triagearr.DiskUsage{{VolumeName: "other"}}}
+func TestPlan_NoSnapshot(t *testing.T) {
+	src := &fakeSrc{} // disk nil — no disk_usage recorded yet
 	d := decider.New(src)
 	_, err := d.Plan(context.Background(), decider.Volume{Name: "data", Path: "/data"})
 	require.Error(t, err)

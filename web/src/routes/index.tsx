@@ -10,7 +10,7 @@ function Dashboard() {
   const summary = useSummary();
   const data = summary.data;
 
-  const volumes = data?.volumes ?? [];
+  const volume = data?.volume;
   const arrs = data?.arrs ?? [];
   const lastRuns = data?.last_runs ?? [];
   const topScore = data?.top_score ?? [];
@@ -37,13 +37,11 @@ function Dashboard() {
             />
           </div>
 
-          {volumes.length > 0 && (
+          {volume && (
             <section className="space-y-3">
-              <h2 className="text-base font-semibold">Volumes</h2>
+              <h2 className="text-base font-semibold">Disk</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {volumes.map((v) => (
-                  <PressureGauge key={v.name} volume={v} />
-                ))}
+                <PressureGauge volume={volume} />
               </div>
             </section>
           )}
@@ -66,7 +64,6 @@ function Dashboard() {
                     <div className="flex items-baseline gap-2 text-sm">
                       <span className="font-mono">#{run.run_id}</span>
                       <Badge variant={run.mode === "live" ? "destructive" : "muted"}>{run.mode}</Badge>
-                      <span className="text-muted-foreground">{run.volume ?? "—"}</span>
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {humanBytes(run.estimated_freed_bytes)} · {relativeTime(run.triggered_at)}

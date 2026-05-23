@@ -309,56 +309,40 @@ type volumeView struct {
 	MeasuredAt           *time.Time `json:"measured_at,omitempty"`
 }
 
-func (s *Server) handleListVolumes(w http.ResponseWriter, r *http.Request) {
-	out, err := s.buildVolumeViews(r.Context())
+func (s *Server) handleVolume(w http.ResponseWriter, r *http.Request) {
+	vv, err := s.buildVolumeView(r.Context())
 	if err != nil {
 		writeInternal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"volumes": out})
+	writeJSON(w, http.StatusOK, map[string]any{"volume": vv})
 }
 
-func (s *Server) buildVolumeViews(ctx context.Context) ([]volumeView, error) {
+func (s *Server) buildVolumeView(ctx context.Context) (volumeView, error) {
 	latest, err := s.opts.Store.LatestDiskUsage(ctx)
 	if err != nil {
-		return nil, err
+		return volumeView{}, err
 	}
-	byName := make(map[string]triagearr.DiskUsage, len(latest))
-	for _, d := range latest {
-		byName[d.VolumeName] = d
-	}
-
-	var out []volumeView
+	var vv volumeView
 	if s.opts.Config != nil {
-		for _, v := range s.opts.Config.Volumes {
-			vv := volumeView{
-				Name: v.Name, Path: v.Path,
-				TargetFreePercent:    v.DiskPressure.TargetFreePercent,
-				ThresholdFreePercent: v.DiskPressure.ThresholdFreePercent,
-				MaxRunSizeGB:         v.DiskPressure.MaxRunSizeGB,
-			}
-			if d, ok := byName[v.Name]; ok {
-				vv.TotalBytes = d.TotalBytes
-				vv.UsedBytes = d.UsedBytes
-				vv.FreeBytes = d.FreeBytes
-				vv.FreePercent = d.FreePercent
-				ts := d.Timestamp
-				vv.MeasuredAt = &ts
-			}
-			out = append(out, vv)
+		v := s.opts.Config.Volume
+		vv = volumeView{
+			Name: v.Name, Path: v.Path,
+			TargetFreePercent:    v.DiskPressure.TargetFreePercent,
+			ThresholdFreePercent: v.DiskPressure.ThresholdFreePercent,
+			MaxRunSizeGB:         v.DiskPressure.MaxRunSizeGB,
 		}
-		return out, nil
 	}
-	for _, d := range latest {
-		ts := d.Timestamp
-		out = append(out, volumeView{
-			Name: d.VolumeName, Path: d.Path,
-			TotalBytes: d.TotalBytes, UsedBytes: d.UsedBytes,
-			FreeBytes: d.FreeBytes, FreePercent: d.FreePercent,
-			MeasuredAt: &ts,
-		})
+	if latest != nil {
+		vv.Path = latest.Path
+		vv.TotalBytes = latest.TotalBytes
+		vv.UsedBytes = latest.UsedBytes
+		vv.FreeBytes = latest.FreeBytes
+		vv.FreePercent = latest.FreePercent
+		t := latest.Timestamp
+		vv.MeasuredAt = &t
 	}
-	return out, nil
+	return vv, nil
 }
 
 type volumeHistoryPoint struct {
@@ -370,14 +354,9 @@ type volumeHistoryPoint struct {
 }
 
 func (s *Server) handleVolumeHistory(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	if name == "" {
-		writeError(w, http.StatusBadRequest, "volume name required")
-		return
-	}
 	since := sinceParam(r, 24*time.Hour)
 	limit := intParam(r.URL.Query(), "limit", 2000, 1, 10000)
-	pts, err := s.opts.Store.ListDiskUsageHistory(r.Context(), name, since, limit)
+	pts, err := s.opts.Store.ListDiskUsageHistory(r.Context(), since, limit)
 	if err != nil {
 		writeInternal(w, err)
 		return
@@ -550,7 +529,7 @@ func (s *Server) handleGetAction(w http.ResponseWriter, r *http.Request) {
 }
 
 type summaryResponse struct {
-	Volumes  []volumeView    `json:"volumes"`
+	Volume   volumeView      `json:"volume"`
 	Arrs     []arrView       `json:"arrs"`
 	Counts   summaryCounts   `json:"counts"`
 	LastRuns []runResponse   `json:"last_runs"`
@@ -570,7 +549,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	// owns its slot in the response struct, so no mutex is needed.
 	var (
 		wg       sync.WaitGroup
-		volumes  []volumeView
+		volume   volumeView
 		arrs     []arrView
 		counts   summaryCounts
 		lastRuns []runResponse
@@ -585,9 +564,9 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 	}
-	run("volumes", func() error {
-		v, err := s.buildVolumeViews(ctx)
-		volumes = v
+	run("volume", func() error {
+		vv, err := s.buildVolumeView(ctx)
+		volume = vv
 		return err
 	})
 	run("arrs", func() error {
@@ -635,7 +614,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 
 	writeJSON(w, http.StatusOK, summaryResponse{
-		Volumes: volumes, Arrs: arrs, Counts: counts,
+		Volume: volume, Arrs: arrs, Counts: counts,
 		LastRuns: lastRuns, TopScore: top,
 	})
 }

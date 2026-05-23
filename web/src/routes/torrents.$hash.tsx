@@ -16,6 +16,16 @@ function TorrentDetailPage() {
   const torrent = useTorrent(hash);
   const snaps = useSnapshots(hash);
 
+  const snapshots = snaps.data?.snapshots;
+  const series = useMemo(
+    () => (snapshots ?? []).map((p) => ({ ts: p.ts, value: p.ratio })),
+    [snapshots],
+  );
+  const seedSeries = useMemo(
+    () => (snapshots ?? []).map((p) => ({ ts: p.ts, value: p.seeders })),
+    [snapshots],
+  );
+
   if (torrent.isLoading) return <div className="p-4 sm:p-6 text-sm text-muted-foreground">Loading…</div>;
   if (torrent.isError)
     return (
@@ -30,16 +40,6 @@ function TorrentDetailPage() {
     );
   if (!torrent.data) return null;
   const t = torrent.data;
-
-  const snapshots = snaps.data?.snapshots;
-  const series = useMemo(
-    () => (snapshots ?? []).map((p) => ({ ts: p.ts, value: p.ratio })),
-    [snapshots],
-  );
-  const seedSeries = useMemo(
-    () => (snapshots ?? []).map((p) => ({ ts: p.ts, value: p.seeders })),
-    [snapshots],
-  );
 
   return (
     <div className="p-4 sm:p-6 space-y-4 max-w-5xl">

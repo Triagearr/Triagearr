@@ -19,9 +19,9 @@ func buildSrvM6(t *testing.T, cfg *config.Config) http.Handler {
 	t.Helper()
 	s := testStore(t)
 	seed(t, s)
-	vols := []decider.Volume{{
+	vol := decider.Volume{
 		Name: "data", Path: "/data", TargetFreePercent: 20, MaxRunSizeGB: 100,
-	}}
+	}
 	srv := server.New(server.Options{
 		Bind:    "127.0.0.1:0",
 		APIKey:  testAPIKey,
@@ -33,15 +33,7 @@ func buildSrvM6(t *testing.T, cfg *config.Config) http.Handler {
 		// assert the limiter engages, not specific homelab thresholds.
 		RunsPerMinute: 3,
 		AuthPerMinute: 3,
-		Volume: func(name string) (decider.Volume, bool) {
-			for _, v := range vols {
-				if v.Name == name {
-					return v, true
-				}
-			}
-			return decider.Volume{}, false
-		},
-		Volumes: func() []decider.Volume { return vols },
+		Volume:        func() decider.Volume { return vol },
 	})
 	return srv.Handler()
 }
@@ -67,7 +59,7 @@ func TestRateLimit_PostRuns(t *testing.T) {
 	got429 := false
 	for i := 0; i < 10; i++ {
 		w := httptest.NewRecorder()
-		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{"volume":"data"}`))
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/runs", strings.NewReader(`{}`))
 		req.RemoteAddr = "10.0.0.1:1234"
 		h.ServeHTTP(w, req)
 		if w.Code == http.StatusTooManyRequests {
@@ -105,8 +97,9 @@ func TestConfigRedaction_NoSecretLeaks(t *testing.T) {
 func TestSummaryEndpoint_Shape(t *testing.T) {
 	cfg := &config.Config{
 		HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"},
-		Volumes: []config.VolumeConfig{
-			{Name: "data", Path: "/data", DiskPressure: config.DiskPressureConfig{Enabled: true, TargetFreePercent: 20, ThresholdFreePercent: 10}},
+		Volume: config.VolumeConfig{
+			Name: "data", Path: "/data",
+			DiskPressure: config.DiskPressureConfig{Enabled: true, TargetFreePercent: 20, ThresholdFreePercent: 10},
 		},
 	}
 	h := buildSrvM6(t, cfg)
@@ -118,7 +111,7 @@ func TestSummaryEndpoint_Shape(t *testing.T) {
 
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	require.Contains(t, body, "volumes")
+	require.Contains(t, body, "volume")
 	require.Contains(t, body, "counts")
 	require.Contains(t, body, "last_runs")
 	require.Contains(t, body, "top_score")

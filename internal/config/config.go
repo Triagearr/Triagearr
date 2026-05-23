@@ -24,8 +24,10 @@ type Config struct {
 	Storage StorageConfig  `koanf:"storage"`
 	Arrs    ArrsConfig     `koanf:"arrs"`
 	Qbit    QbitConfig     `koanf:"qbit"`
-	Volumes []VolumeConfig `koanf:"volumes"`
-	Polling PollingConfig  `koanf:"polling"`
+	// Volume is the single watched filesystem mount. Triagearr watches exactly
+	// one volume — the TRaSH shared data root (ADR-0024).
+	Volume  VolumeConfig  `koanf:"volume"`
+	Polling PollingConfig `koanf:"polling"`
 	Scoring ScoringConfig  `koanf:"scoring"`
 	Action  ActionConfig   `koanf:"action"`
 	// Notifications configures post-action operator notifications. Only
@@ -159,7 +161,12 @@ type QbitConfig struct {
 	Timeout         time.Duration `koanf:"timeout"`
 }
 
-// VolumeConfig describes a watched filesystem mount.
+// VolumeConfig describes the single watched filesystem mount — the TRaSH
+// shared data root (ADR-0023, ADR-0024).
+//
+// Name is an optional display label (defaults to "media"). Path is the
+// container mount path, statfs'd for disk usage and the prefix every qBit
+// save_path sits under.
 //
 // When Source is non-empty, the disk poller fetches usage from that URL
 // instead of calling statfs(Path). This is a dev/test hook — production
@@ -211,7 +218,7 @@ const (
 	defaultBind               = "127.0.0.1:9494"
 	defaultRunsPerMinute      = 60
 	defaultAuthPerMinute      = 30
-	defaultSQLitePath         = "/data/triagearr.db"
+	defaultSQLitePath         = "/config/triagearr.db"
 	defaultArrTimeout         = 30 * time.Second
 	defaultQbitTimeout        = 30 * time.Second
 	defaultQbitInterval       = 30 * time.Minute
@@ -236,4 +243,6 @@ const (
 
 	defaultMaxDeletionsPerRun = 10
 	defaultInterActionDelay   = 2 * time.Second
+
+	defaultVolumeName = "media"
 )

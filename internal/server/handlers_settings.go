@@ -32,10 +32,10 @@ type settingsView struct {
 }
 
 type settingsValues struct {
-	Scoring       scoringDTO          `json:"scoring"`
-	Polling       pollingDTO          `json:"polling"`
-	Volumes       []volumeSettingsDTO `json:"volumes"`
-	Notifications notificationsDTO    `json:"notifications"`
+	Scoring       scoringDTO        `json:"scoring"`
+	Polling       pollingDTO        `json:"polling"`
+	Volume        volumeSettingsDTO `json:"volume"`
+	Notifications notificationsDTO  `json:"notifications"`
 }
 
 type notificationsDTO struct {
@@ -152,16 +152,11 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		keys = append(keys, o.Key)
 	}
 
-	vols := make([]volumeSettingsDTO, 0, len(s.opts.Config.Volumes))
-	for _, v := range s.opts.Config.Volumes {
-		vols = append(vols, volumeToDTO(v))
-	}
-
 	writeJSON(w, http.StatusOK, settingsView{
 		Values: settingsValues{
 			Scoring:       scoringToDTO(s.opts.Config.Scoring),
 			Polling:       pollingToDTO(s.opts.Config.Polling),
-			Volumes:       vols,
+			Volume:        volumeToDTO(s.opts.Config.Volume),
 			Notifications: notificationsToDTO(s.opts.Config.Notifications),
 		},
 		OverriddenKeys: keys,

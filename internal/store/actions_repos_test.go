@@ -18,7 +18,6 @@ func seedRunForActions(ctx context.Context, t *testing.T, s storeIface) int64 {
 		TriggeredBy: triagearr.RunTriggerDiskPressure,
 		TriggeredAt: time.Now().UTC().Truncate(time.Second),
 		Mode:        "live",
-		VolumeName:  "data",
 		StopReason:  triagearr.StopTargetReached,
 		Status:      "running",
 	})
