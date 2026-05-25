@@ -1,9 +1,7 @@
 package server
 
 import (
-	"database/sql"
-	"errors"
-	"log/slog"
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -43,7 +41,20 @@ type torrentClientConnectionInput struct {
 	TimeoutSeconds  int      `json:"timeout_seconds"`
 }
 
+// torrentClientConnectionTestRequest is the body for POST
+// /torrent-client-connections/test. Tests the posted credentials directly —
+// no row needs to exist yet, so the operator can verify before saving.
+type torrentClientConnectionTestRequest struct {
+	Kind           string `json:"kind"`
+	URL            string `json:"url"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
 const defaultTorrentClientTimeoutSeconds = 30
+
+const torrentClientKnownKindMsg = "kind must be one of qbittorrent, transmission, deluge, rtorrent"
 
 func torrentClientConnectionToDTO(c store.TorrentClientConnection) torrentClientConnectionDTO {
 	return torrentClientConnectionDTO{
@@ -57,8 +68,6 @@ func torrentClientConnectionToDTO(c store.TorrentClientConnection) torrentClient
 	}
 }
 
-// validateTorrentClientConnInput checks an input the same way config.Validate
-// checks a YAML instance, plus a stricter URL host check.
 func validateTorrentClientConnInput(in torrentClientConnectionInput) (string, bool) {
 	if in.Enabled {
 		u, err := url.Parse(in.URL)
@@ -90,122 +99,55 @@ func torrentClientInputToConnection(kind string, in torrentClientConnectionInput
 	}
 }
 
-func (s *Server) handleListTorrentClientConnections(w http.ResponseWriter, r *http.Request) {
-	conns, err := s.opts.Store.ListTorrentClientConnections(r.Context())
-	if err != nil {
-		writeInternal(w, err)
-		return
+func (s *Server) torrentClientConnCRUD() *connectionCRUD[store.TorrentClientConnection, torrentClientConnectionInput, torrentClientConnectionDTO, torrentClientConnectionTestRequest] {
+	return &connectionCRUD[store.TorrentClientConnection, torrentClientConnectionInput, torrentClientConnectionDTO, torrentClientConnectionTestRequest]{
+		label:        "torrent client connection",
+		knownKind:       torrentregistry.KnownKind,
+		knownKindMsg:    torrentClientKnownKindMsg,
+		implementedKind: torrentregistry.ImplementedKind,
+		implementedKindMsg: func(k string) string {
+			return "kind " + k + " is scaffolded but has no backend yet"
+		},
+		list:         s.opts.Store.ListTorrentClientConnections,
+		getByKind:    s.opts.Store.GetTorrentClientConnectionByKind,
+		upsert:       s.opts.Store.UpsertTorrentClientConnection,
+		deleteByKind: s.opts.Store.DeleteTorrentClientConnectionByKind,
+		carryForwardInput: func(in *torrentClientConnectionInput, existing store.TorrentClientConnection) {
+			if in.Password == "" {
+				in.Password = existing.Password
+			}
+		},
+		validateInput:      validateTorrentClientConnInput,
+		inputToConn:        torrentClientInputToConnection,
+		connToDTO:          torrentClientConnectionToDTO,
+		testKind:           func(r *torrentClientConnectionTestRequest) string { return r.Kind },
+		testURL:            func(r *torrentClientConnectionTestRequest) string { return r.URL },
+		testTimeoutSeconds: func(r *torrentClientConnectionTestRequest) int { return r.TimeoutSeconds },
+		carryForwardTest: func(r *torrentClientConnectionTestRequest, existing store.TorrentClientConnection) {
+			if r.Password == "" {
+				r.Password = existing.Password
+			}
+		},
+		runTest: func(ctx context.Context, req torrentClientConnectionTestRequest, timeout time.Duration) error {
+			return torrentregistry.TestConnection(ctx, req.Kind, req.URL, req.Username, req.Password, timeout)
+		},
+		defaultTimeoutSecs: defaultTorrentClientTimeoutSeconds,
+		reload:             s.opts.Reload,
 	}
-	out := make([]torrentClientConnectionDTO, 0, len(conns))
-	for _, c := range conns {
-		out = append(out, torrentClientConnectionToDTO(c))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"connections": out})
 }
 
-// handleUpsertTorrentClientConnection handles PUT
-// /api/v1/torrent-client-connections/{kind}.
+func (s *Server) handleListTorrentClientConnections(w http.ResponseWriter, r *http.Request) {
+	s.torrentClientConnCRUD().handleList(w, r)
+}
+
 func (s *Server) handleUpsertTorrentClientConnection(w http.ResponseWriter, r *http.Request) {
-	kind := r.PathValue("kind")
-	if !torrentregistry.KnownKind(kind) {
-		writeError(w, http.StatusBadRequest, "kind must be one of qbittorrent, transmission, deluge, rtorrent")
-		return
-	}
-	if !torrentregistry.ImplementedKind(kind) {
-		writeError(w, http.StatusBadRequest, "kind "+kind+" is scaffolded but has no backend yet")
-		return
-	}
-	var in torrentClientConnectionInput
-	if !decodeJSONBody(w, r, &in) {
-		return
-	}
-	// Carry-forward: don't force the operator to re-enter the password on
-	// every save. Empty password in the request means "keep the stored one".
-	if in.Password == "" {
-		if existing, err := s.opts.Store.GetTorrentClientConnectionByKind(r.Context(), kind); err == nil {
-			in.Password = existing.Password
-		}
-	}
-	if msg, ok := validateTorrentClientConnInput(in); !ok {
-		writeError(w, http.StatusBadRequest, msg)
-		return
-	}
-	conn := torrentClientInputToConnection(kind, in)
-	saved, err := s.opts.Store.UpsertTorrentClientConnection(r.Context(), conn)
-	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-	s.reloadAfterTorrentClientChange()
-	writeJSON(w, http.StatusOK, torrentClientConnectionToDTO(saved))
+	s.torrentClientConnCRUD().handleUpsert(w, r)
 }
 
 func (s *Server) handleDeleteTorrentClientConnection(w http.ResponseWriter, r *http.Request) {
-	kind := r.PathValue("kind")
-	if !torrentregistry.KnownKind(kind) {
-		writeError(w, http.StatusBadRequest, "kind must be one of qbittorrent, transmission, deluge, rtorrent")
-		return
-	}
-	if err := s.opts.Store.DeleteTorrentClientConnectionByKind(r.Context(), kind); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "no torrent client connection for kind "+kind)
-			return
-		}
-		writeInternal(w, err)
-		return
-	}
-	s.reloadAfterTorrentClientChange()
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// torrentClientConnectionTestRequest is the body for POST
-// /torrent-client-connections/test. Tests the posted credentials directly —
-// no row needs to exist yet, so the operator can verify before saving.
-type torrentClientConnectionTestRequest struct {
-	Kind           string `json:"kind"`
-	URL            string `json:"url"`
-	Username       string `json:"username"`
-	Password       string `json:"password"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
+	s.torrentClientConnCRUD().handleDelete(w, r)
 }
 
 func (s *Server) handleTestTorrentClientConnection(w http.ResponseWriter, r *http.Request) {
-	var body torrentClientConnectionTestRequest
-	if !decodeJSONBody(w, r, &body) {
-		return
-	}
-	if !torrentregistry.KnownKind(body.Kind) {
-		writeError(w, http.StatusBadRequest, "unknown torrent client kind "+body.Kind)
-		return
-	}
-	if body.URL == "" {
-		writeError(w, http.StatusBadRequest, "url is required")
-		return
-	}
-	// Carry-forward stored password when the test request has none — same
-	// rationale as the PUT handler.
-	if body.Password == "" {
-		if existing, err := s.opts.Store.GetTorrentClientConnectionByKind(r.Context(), body.Kind); err == nil {
-			body.Password = existing.Password
-		}
-	}
-	timeout := time.Duration(body.TimeoutSeconds) * time.Second
-	if timeout == 0 {
-		timeout = defaultTorrentClientTimeoutSeconds * time.Second
-	}
-	if err := torrentregistry.TestConnection(r.Context(), body.Kind, body.URL, body.Username, body.Password, timeout); err != nil {
-		writeError(w, http.StatusBadGateway, "connection test failed: "+err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// reloadAfterTorrentClientChange asks the daemon to rebuild itself so the
-// torrent registry picks up the connection change. Mirrors the *arr flow.
-func (s *Server) reloadAfterTorrentClientChange() {
-	if s.opts.Reload != nil {
-		s.opts.Reload()
-		return
-	}
-	slog.Warn("torrent client connection changed but no Reload hook is wired — registry will not refresh until next SIGHUP")
+	s.torrentClientConnCRUD().handleTest(w, r)
 }

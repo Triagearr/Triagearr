@@ -1,9 +1,7 @@
 package server
 
 import (
-	"database/sql"
-	"errors"
-	"log/slog"
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -42,11 +40,23 @@ type arrConnectionInput struct {
 	TimeoutSeconds int      `json:"timeout_seconds"`
 }
 
+// arrConnectionTestRequest is the body for POST /arr-connections/test. It
+// tests the posted credentials directly — no row needs to exist yet, so the
+// operator can verify a connection before saving it.
+type arrConnectionTestRequest struct {
+	Kind           string `json:"kind"`
+	URL            string `json:"url"`
+	APIKey         string `json:"api_key"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
 // defaultArrTimeoutSeconds mirrors config.defaultArrTimeout — applied when the
 // operator leaves the timeout field at zero.
 const defaultArrTimeoutSeconds = 30
 
-func connectionToDTO(c store.ArrConnection) arrConnectionDTO {
+const arrKnownKindMsg = "kind must be one of sonarr, radarr, lidarr, readarr, whisparr_v2, whisparr_v3"
+
+func arrConnectionToDTO(c store.ArrConnection) arrConnectionDTO {
 	return arrConnectionDTO{
 		ID: c.ID, Kind: c.Kind, URL: c.URL, APIKey: c.APIKey,
 		Enabled: c.Enabled, Poll: c.Poll, Act: c.Act,
@@ -55,8 +65,6 @@ func connectionToDTO(c store.ArrConnection) arrConnectionDTO {
 	}
 }
 
-// validateArrConnInput checks an input the same way config.Validate checks a
-// YAML instance, plus a stricter URL host check.
 func validateArrConnInput(in arrConnectionInput) (string, bool) {
 	if in.Enabled {
 		u, err := url.Parse(in.URL)
@@ -73,8 +81,7 @@ func validateArrConnInput(in arrConnectionInput) (string, bool) {
 	return "", true
 }
 
-// inputToConnection converts a validated input into a store row for the given kind.
-func inputToConnection(kind string, in arrConnectionInput) store.ArrConnection {
+func arrInputToConnection(kind string, in arrConnectionInput) store.ArrConnection {
 	secs := in.TimeoutSeconds
 	if secs == 0 {
 		secs = defaultArrTimeoutSeconds
@@ -92,112 +99,46 @@ func inputToConnection(kind string, in arrConnectionInput) store.ArrConnection {
 	}
 }
 
-func (s *Server) handleListArrConnections(w http.ResponseWriter, r *http.Request) {
-	conns, err := s.opts.Store.ListArrConnections(r.Context())
-	if err != nil {
-		writeInternal(w, err)
-		return
+func (s *Server) arrConnCRUD() *connectionCRUD[store.ArrConnection, arrConnectionInput, arrConnectionDTO, arrConnectionTestRequest] {
+	return &connectionCRUD[store.ArrConnection, arrConnectionInput, arrConnectionDTO, arrConnectionTestRequest]{
+		label:        "arr connection",
+		knownKind:    registry.KnownKind,
+		knownKindMsg: arrKnownKindMsg,
+		list:         s.opts.Store.ListArrConnections,
+		getByKind:    s.opts.Store.GetArrConnectionByKind,
+		upsert:       s.opts.Store.UpsertArrConnection,
+		deleteByKind: s.opts.Store.DeleteArrConnectionByKind,
+		carryForwardInput: func(in *arrConnectionInput, existing store.ArrConnection) {
+			if in.APIKey == "" {
+				in.APIKey = existing.APIKey
+			}
+		},
+		validateInput:      validateArrConnInput,
+		inputToConn:        arrInputToConnection,
+		connToDTO:          arrConnectionToDTO,
+		testKind:           func(r *arrConnectionTestRequest) string { return r.Kind },
+		testURL:            func(r *arrConnectionTestRequest) string { return r.URL },
+		testTimeoutSeconds: func(r *arrConnectionTestRequest) int { return r.TimeoutSeconds },
+		runTest: func(ctx context.Context, req arrConnectionTestRequest, timeout time.Duration) error {
+			return registry.TestConnection(ctx, req.Kind, req.URL, req.APIKey, timeout)
+		},
+		defaultTimeoutSecs: defaultArrTimeoutSeconds,
+		reload:             s.opts.Reload,
 	}
-	out := make([]arrConnectionDTO, 0, len(conns))
-	for _, c := range conns {
-		out = append(out, connectionToDTO(c))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"connections": out})
 }
 
-// handleUpsertArrConnection handles PUT /api/v1/arr-connections/{kind}.
-// It creates or replaces the connection for the given kind.
+func (s *Server) handleListArrConnections(w http.ResponseWriter, r *http.Request) {
+	s.arrConnCRUD().handleList(w, r)
+}
+
 func (s *Server) handleUpsertArrConnection(w http.ResponseWriter, r *http.Request) {
-	kind := r.PathValue("kind")
-	if !registry.KnownKind(kind) {
-		writeError(w, http.StatusBadRequest, "kind must be one of sonarr, radarr, lidarr, readarr, whisparr_v2, whisparr_v3")
-		return
-	}
-	var in arrConnectionInput
-	if !decodeJSONBody(w, r, &in) {
-		return
-	}
-	// Carry-forward must happen BEFORE validation: the common edit case is
-	// "save settings while keeping the existing secret"; rejecting empty
-	// api_key when a stored one exists would force the operator to re-enter
-	// the key on every save.
-	if in.APIKey == "" {
-		if existing, err := s.opts.Store.GetArrConnectionByKind(r.Context(), kind); err == nil {
-			in.APIKey = existing.APIKey
-		}
-	}
-	if msg, ok := validateArrConnInput(in); !ok {
-		writeError(w, http.StatusBadRequest, msg)
-		return
-	}
-	conn := inputToConnection(kind, in)
-	saved, err := s.opts.Store.UpsertArrConnection(r.Context(), conn)
-	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-	s.reloadAfterArrChange()
-	writeJSON(w, http.StatusOK, connectionToDTO(saved))
+	s.arrConnCRUD().handleUpsert(w, r)
 }
 
 func (s *Server) handleDeleteArrConnection(w http.ResponseWriter, r *http.Request) {
-	kind := r.PathValue("kind")
-	if !registry.KnownKind(kind) {
-		writeError(w, http.StatusBadRequest, "kind must be one of sonarr, radarr, lidarr, readarr, whisparr_v2, whisparr_v3")
-		return
-	}
-	if err := s.opts.Store.DeleteArrConnectionByKind(r.Context(), kind); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "no arr connection for kind "+kind)
-			return
-		}
-		writeInternal(w, err)
-		return
-	}
-	s.reloadAfterArrChange()
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// arrConnectionTestRequest is the body for POST /arr-connections/test. It
-// tests the posted credentials directly — no row needs to exist yet, so the
-// operator can verify a connection before saving it.
-type arrConnectionTestRequest struct {
-	Kind           string `json:"kind"`
-	URL            string `json:"url"`
-	APIKey         string `json:"api_key"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
+	s.arrConnCRUD().handleDelete(w, r)
 }
 
 func (s *Server) handleTestArrConnection(w http.ResponseWriter, r *http.Request) {
-	var body arrConnectionTestRequest
-	if !decodeJSONBody(w, r, &body) {
-		return
-	}
-	if !registry.KnownKind(body.Kind) {
-		writeError(w, http.StatusBadRequest, "unknown arr kind "+body.Kind)
-		return
-	}
-	if body.URL == "" {
-		writeError(w, http.StatusBadRequest, "url is required")
-		return
-	}
-	timeout := time.Duration(body.TimeoutSeconds) * time.Second
-	if timeout == 0 {
-		timeout = defaultArrTimeoutSeconds * time.Second
-	}
-	if err := registry.TestConnection(r.Context(), body.Kind, body.URL, body.APIKey, timeout); err != nil {
-		writeError(w, http.StatusBadGateway, "connection test failed: "+err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// reloadAfterArrChange asks the daemon to rebuild itself so the client
-// registry picks up the connection change. Mirrors the settings PUT flow.
-func (s *Server) reloadAfterArrChange() {
-	if s.opts.Reload != nil {
-		s.opts.Reload()
-		return
-	}
-	slog.Warn("arr connection changed but no Reload hook is wired — registry will not refresh until next SIGHUP")
+	s.arrConnCRUD().handleTest(w, r)
 }

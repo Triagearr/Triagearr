@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -15,28 +14,16 @@ import (
 // seeds from the YAML `torrent_clients:` block once; thereafter it rebuilds
 // cfg.TorrentClients from the table and re-validates.
 func resolveTorrentClientConnections(ctx context.Context, s *store.Store, cfg *config.Config) error {
-	n, err := s.CountTorrentClientConnections(ctx)
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		seed := flattenTorrentClients(cfg)
-		if len(seed) > 0 {
-			if err := s.SeedTorrentClientConnections(ctx, seed); err != nil {
-				return err
-			}
-			slog.Info("seeded torrent_client_connections from YAML config", "count", len(seed))
-		}
-	}
-	conns, err := s.ListTorrentClientConnections(ctx)
-	if err != nil {
-		return err
-	}
-	cfg.TorrentClients = torrentClientsConfigFromConnections(conns)
-	if err := config.Validate(cfg); err != nil {
-		return fmt.Errorf("validating db-resolved torrent client connections: %w", err)
-	}
-	return nil
+	return resolveConnections(
+		ctx, cfg, "torrent_client",
+		s.CountTorrentClientConnections,
+		s.SeedTorrentClientConnections,
+		s.ListTorrentClientConnections,
+		flattenTorrentClients,
+		func(conns []store.TorrentClientConnection) {
+			cfg.TorrentClients = torrentClientsConfigFromConnections(conns)
+		},
+	)
 }
 
 // flattenTorrentClients maps each TorrentClientsConfig field to a store row.
