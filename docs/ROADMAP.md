@@ -210,8 +210,8 @@ Ordered by likelihood, not commitment:
 
 1. **Maintainerr integration** — read-only mirroring of Maintainerr collections; optional scoring factor that boosts items already marked for deletion in Maintainerr.
 2. **Prometheus metrics** — `/metrics` endpoint with action counters, score distribution histograms, poll durations.
-3. **Multi-qBit support** — for users with multiple download client instances.
-4. **Transmission/Deluge clients** — if any user actually asks. qBit is the dominant client in 2026.
+3. **Multi-qBit support** — for users with multiple download client instances. Triggers a config restructure: collapse the flat `qbit:` key into `torrent_clients:` keyed by instance name, mirroring `arrs:` (ADR-0022 seed-only YAML + DB source of truth). Requires a `TorrentClient` interface and a clients registry parallel to `internal/clients/registry`.
+4. **Transmission/Deluge clients** — if any user actually asks. qBit is the dominant client in 2026. Lands on top of the `torrent_clients:` structure from #3; the interface designed there should be the abstraction boundary.
 5. **Quality preference factor** — bias toward deleting lower-quality copies when duplicates exist.
 6. **"Leaving soon" Plex collection** — surface scheduled deletions in Plex itself (à la Janitorr).
 7. **Notification adapters** — Discord, Pushover, ntfy.sh.
