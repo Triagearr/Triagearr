@@ -298,7 +298,7 @@ func TestActor_QbitTransientRetry(t *testing.T) {
 	d := newFakeDeleter("sonarr")
 	a := actor.New(actor.Options{
 		Source:  src,
-		Client: q,
+		Client:  q,
 		Deleter: resolverFor(d),
 	})
 	require.NoError(t, a.Execute(context.Background(), 1))

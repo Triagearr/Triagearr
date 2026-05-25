@@ -34,11 +34,11 @@ func TestUpsertMediaFile_RoundTrip(t *testing.T) {
 
 	require.NoError(t, s.UpsertMediaFile(ctx, triagearr.MediaFile{
 		ArrType: triagearr.ArrTypeSonarr,
-		FileID: 42, MediaID: 7, Path: "/files/tv/Foo/E01.mkv", Size: 1000,
+		FileID:  42, MediaID: 7, Path: "/files/tv/Foo/E01.mkv", Size: 1000,
 	}))
 	require.NoError(t, s.UpsertMediaFile(ctx, triagearr.MediaFile{
 		ArrType: triagearr.ArrTypeSonarr,
-		FileID: 42, MediaID: 7, Path: "/files/tv/Foo/E01.mkv", Size: 2000,
+		FileID:  42, MediaID: 7, Path: "/files/tv/Foo/E01.mkv", Size: 2000,
 	}))
 
 	rows, err := s.ListMediaFilesByMedia(ctx, triagearr.ArrTypeSonarr, 7)
@@ -312,7 +312,7 @@ func TestArrImports_JoinFiltersOrphanedFileIDs(t *testing.T) {
 	// Only the first fileId still exists in media_files (the second was deleted/upgraded).
 	require.NoError(t, s.UpsertMediaFile(ctx, triagearr.MediaFile{
 		ArrType: triagearr.ArrTypeSonarr,
-		FileID: 10, MediaID: 7, Path: "/files/media/E01.mkv", Size: 1000,
+		FileID:  10, MediaID: 7, Path: "/files/media/E01.mkv", Size: 1000,
 	}))
 
 	got, err := s.LinksByHash(ctx, "abcd1234")

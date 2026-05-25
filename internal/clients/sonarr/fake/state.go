@@ -21,6 +21,7 @@ import (
 type Series struct {
 	ID         int64         `json:"id" yaml:"id"`
 	Title      string        `json:"title" yaml:"title"`
+	TitleSlug  string        `json:"titleSlug" yaml:"titleSlug"`
 	Path       string        `json:"path" yaml:"path"`
 	Tags       []int         `json:"tags" yaml:"tags"`
 	Statistics SeriesStats   `json:"statistics" yaml:"statistics"`

@@ -76,8 +76,9 @@ export const TrackerView = z.object({
 });
 
 export const LinkView = z.object({
-  arr_name: z.string(),
   arr_type: z.string(),
+  arr_url: z.string(),
+  title_slug: z.string(),
   file_id: z.number(),
   size: z.number(),
   live_path: z.string(),
@@ -312,15 +313,18 @@ export const TelegramSettings = z.object({
 export const NotificationSettings = z.object({
   telegram: TelegramSettings,
 });
+const SettingsValues = z.object({
+  scoring: ScoringSettings,
+  polling: PollingSettings,
+  volume: VolumeSettings,
+  notifications: NotificationSettings,
+});
+
 export const SettingsView = z.object({
-  values: z.object({
-    scoring: ScoringSettings,
-    polling: PollingSettings,
-    volume: VolumeSettings,
-    notifications: NotificationSettings,
-  }),
+  values: SettingsValues,
   overridden_keys: z.array(z.string()).nullable(),
   editable_prefixes: z.array(z.string()).nullable(),
+  baseline_values: SettingsValues.optional(),
 });
 export type SettingsViewT = z.infer<typeof SettingsView>;
 
@@ -330,7 +334,6 @@ export type SettingsViewT = z.infer<typeof SettingsView>;
 export const ArrConnection = z.object({
   id: z.number(),
   kind: z.string(),
-  name: z.string(),
   url: z.string(),
   api_key: z.string(),
   enabled: z.boolean(),

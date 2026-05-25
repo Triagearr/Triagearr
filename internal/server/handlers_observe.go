@@ -144,6 +144,8 @@ type trackerView struct {
 
 type linkView struct {
 	ArrType      string `json:"arr_type"`
+	ArrURL       string `json:"arr_url"`
+	TitleSlug    string `json:"title_slug"`
 	FileID       int64  `json:"file_id"`
 	Size         int64  `json:"size"`
 	LivePath     string `json:"live_path"`
@@ -200,8 +202,13 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 			out.Links = make([]linkView, len(links))
 			for i, l := range links {
 				out.Links[i] = linkView{
-					ArrType: string(l.ArrType), FileID: l.FileID,
-					Size: l.Size, LivePath: l.LivePath, DroppedPath: l.DroppedPath,
+					ArrType:      string(l.ArrType),
+					ArrURL:       s.arrBaseURL(l.ArrType),
+					TitleSlug:    l.TitleSlug,
+					FileID:       l.FileID,
+					Size:         l.Size,
+					LivePath:     l.LivePath,
+					DroppedPath:  l.DroppedPath,
 					ImportedPath: l.ImportedPath,
 				}
 			}
@@ -628,6 +635,31 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.opts.Version)
+}
+
+// arrBaseURL returns the configured base URL for the given arr type, stripped of
+// any trailing slash. Returns an empty string when the config is not wired or
+// the arr type is unknown.
+func (s *Server) arrBaseURL(t triagearr.ArrType) string {
+	if s.opts.Config == nil {
+		return ""
+	}
+	switch t {
+	case triagearr.ArrTypeSonarr:
+		return strings.TrimRight(s.opts.Config.Arrs.Sonarr.URL, "/")
+	case triagearr.ArrTypeRadarr:
+		return strings.TrimRight(s.opts.Config.Arrs.Radarr.URL, "/")
+	case triagearr.ArrTypeLidarr:
+		return strings.TrimRight(s.opts.Config.Arrs.Lidarr.URL, "/")
+	case triagearr.ArrTypeReadarr:
+		return strings.TrimRight(s.opts.Config.Arrs.Readarr.URL, "/")
+	case triagearr.ArrTypeWhisparrV2:
+		return strings.TrimRight(s.opts.Config.Arrs.WhisparrV2.URL, "/")
+	case triagearr.ArrTypeWhisparrV3:
+		return strings.TrimRight(s.opts.Config.Arrs.WhisparrV3.URL, "/")
+	default:
+		return ""
+	}
 }
 
 func intParam(q url.Values, key string, def, min, max int) int {

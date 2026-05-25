@@ -28,13 +28,14 @@ type MediaID int64
 
 // MediaItem is the *arr's view of a piece of media (series, movie, album, ...).
 type MediaItem struct {
-	ID       MediaID
-	ArrType  ArrType
-	Title    string
-	Path     string
-	Size     int64
-	Tags     []string
-	LastSeen time.Time
+	ID        MediaID
+	ArrType   ArrType
+	Title     string
+	TitleSlug string // URL slug used by Sonarr (/series/<slug>) and Radarr (/movie/<slug>)
+	Path      string
+	Size      int64
+	Tags      []string
+	LastSeen  time.Time
 }
 
 // MediaFile is one on-disk file owned by an *arr media item. Sonarr maps these
@@ -267,6 +268,7 @@ type Link struct {
 	ArrType      ArrType
 	FileID       int64
 	DownloadID   Hash
+	TitleSlug    string // URL slug for Sonarr/Radarr deep links; empty for other arr types
 	DroppedPath  string // *arr-side source path at import (diagnostic only)
 	ImportedPath string // *arr-side library path at import (diagnostic only)
 	LivePath     string // current path from media_files (M5 actor source of truth)

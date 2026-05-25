@@ -110,6 +110,7 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 type seriesEntry struct {
 	ID         int64  `json:"id"`
 	Title      string `json:"title"`
+	TitleSlug  string `json:"titleSlug"`
 	Path       string `json:"path"`
 	Tags       []int  `json:"tags"`
 	Statistics struct {
@@ -143,13 +144,14 @@ func (c *Client) ListMedia(ctx context.Context) ([]triagearr.MediaItem, error) {
 			}
 		}
 		out[i] = triagearr.MediaItem{
-			ID:       triagearr.MediaID(s.ID),
-			ArrType:  triagearr.ArrTypeSonarr,
-			Title:    s.Title,
-			Path:     s.Path,
-			Size:     s.Statistics.SizeOnDisk,
-			Tags:     labels,
-			LastSeen: now,
+			ID:        triagearr.MediaID(s.ID),
+			ArrType:   triagearr.ArrTypeSonarr,
+			Title:     s.Title,
+			TitleSlug: s.TitleSlug,
+			Path:      s.Path,
+			Size:      s.Statistics.SizeOnDisk,
+			Tags:      labels,
+			LastSeen:  now,
 		}
 	}
 	return out, nil

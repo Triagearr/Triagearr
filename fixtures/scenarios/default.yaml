@@ -177,6 +177,7 @@ sonarr:
   series:
     - id: 1
       title: "Cosmic Drift"
+      titleSlug: "cosmic-drift"
       path: "/data/tv/Cosmic Drift"
       tags: [1, 2]
       statistics: { sizeOnDisk: 12000000000 }
@@ -187,6 +188,7 @@ sonarr:
         - { id: 104, seriesId: 1, path: "/data/tv/Cosmic Drift/S01E04.mkv", size: 3000000000 }
     - id: 2
       title: "Lonely Show"
+      titleSlug: "lonely-show"
       path: "/data/tv/Lonely Show"
       tags: [1]
       statistics: { sizeOnDisk: 2500000000 }
@@ -194,6 +196,7 @@ sonarr:
         - { id: 105, seriesId: 2, path: "/data/tv/Lonely Show/S03E07.mkv", size: 2500000000 }
     - id: 3
       title: "Fresh Grab"
+      titleSlug: "fresh-grab"
       path: "/data/tv/Fresh Grab"
       tags: [2]
       statistics: { sizeOnDisk: 2000000000 }
@@ -247,6 +250,7 @@ radarr:
   movies:
     - id: 1
       title: "Cosmic Voyage (2024)"
+      titleSlug: "cosmic-voyage-2024"
       path: "/data/movies/Cosmic Voyage (2024)"
       sizeOnDisk: 8000000000
       tags: [1, 2]
@@ -254,6 +258,7 @@ radarr:
         - { id: 201, movieId: 1, path: "/data/movies/Cosmic Voyage (2024)/Cosmic.Voyage.mkv", size: 8000000000 }
     - id: 2
       title: "Old Forgotten Movie"
+      titleSlug: "old-forgotten-movie"
       path: "/data/movies/Old Forgotten Movie"
       sizeOnDisk: 6000000000
       tags: []

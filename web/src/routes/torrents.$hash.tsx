@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { useMemo } from "react";
 import { useSnapshots, useTorrent } from "@/api/hooks";
+import { ArrLogo } from "@/components/ArrLogo";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
@@ -10,6 +11,15 @@ import { Callout } from "@/components/ui/Callout";
 import { Sparkline } from "@/components/Sparkline";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { humanBytes, relativeTime, shortHash } from "@/lib/format";
+
+function arrDeepLink(arrType: string, arrUrl: string, titleSlug: string): string {
+  if (!arrUrl) return "";
+  if (titleSlug) {
+    if (arrType === "sonarr") return `${arrUrl}/series/${titleSlug}`;
+    if (arrType === "radarr") return `${arrUrl}/movie/${titleSlug}`;
+  }
+  return arrUrl;
+}
 
 function TorrentDetailPage() {
   const { hash } = Route.useParams();
@@ -178,18 +188,38 @@ function TorrentDetailPage() {
                         </TR>
                       </THead>
                       <TBody>
-                        {t.links.map((l) => (
-                          <TR key={`${l.arr_type}-${l.arr_name}-${l.file_id}`}>
-                            <TD>
-                              <Badge variant="muted">{l.arr_type}</Badge> {l.arr_name}
-                            </TD>
-                            <TD className="font-mono">{l.file_id}</TD>
-                            <TD className="text-right font-mono">{humanBytes(l.size)}</TD>
-                            <TD className="font-mono text-xs truncate max-w-md" title={l.live_path}>
-                              {l.live_path}
-                            </TD>
-                          </TR>
-                        ))}
+                        {t.links.map((l) => {
+                          const href = arrDeepLink(l.arr_type, l.arr_url, l.title_slug);
+                          return (
+                            <TR key={`${l.arr_type}-${l.file_id}`}>
+                              <TD>
+                                {href ? (
+                                  <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                                    title={`Open in ${l.arr_type}`}
+                                  >
+                                    <ArrLogo kind={l.arr_type} size={16} />
+                                    {l.arr_type}
+                                    <ArrowUpRight className="h-3 w-3 opacity-60" />
+                                  </a>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                                    <ArrLogo kind={l.arr_type} size={16} />
+                                    {l.arr_type}
+                                  </span>
+                                )}
+                              </TD>
+                              <TD className="font-mono">{l.file_id}</TD>
+                              <TD className="text-right font-mono">{humanBytes(l.size)}</TD>
+                              <TD className="font-mono text-xs truncate max-w-md" title={l.live_path}>
+                                {l.live_path}
+                              </TD>
+                            </TR>
+                          );
+                        })}
                       </TBody>
                     </Table>
                   )}

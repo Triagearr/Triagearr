@@ -11,16 +11,6 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-// arrKinds lists the *arr flavours in the order they are iterated.
-var arrKinds = []triagearr.ArrType{
-	triagearr.ArrTypeSonarr,
-	triagearr.ArrTypeRadarr,
-	triagearr.ArrTypeLidarr,
-	triagearr.ArrTypeReadarr,
-	triagearr.ArrTypeWhisparrV2,
-	triagearr.ArrTypeWhisparrV3,
-}
-
 // resolveArrConnections makes the arr_connections table the source of truth
 // for cfg.Arrs (ADR-0022). On an empty table it seeds from the YAML `arrs:`
 // block once; thereafter it rebuilds cfg.Arrs from the table and re-validates.

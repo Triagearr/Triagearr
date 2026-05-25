@@ -286,15 +286,16 @@ func torrentOrderBy(sortBy string) (string, error) {
 func (s *Store) UpsertMedia(ctx context.Context, m triagearr.MediaItem) error {
 	now := time.Now().UTC()
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO media(id, arr_type, title, path, size, tags, last_seen)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO media(id, arr_type, title, title_slug, path, size, tags, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id, arr_type) DO UPDATE SET
 			title=excluded.title,
+			title_slug=excluded.title_slug,
 			path=excluded.path,
 			size=excluded.size,
 			tags=excluded.tags,
 			last_seen=excluded.last_seen
-	`, int64(m.ID), string(m.ArrType), m.Title, m.Path, m.Size, strings.Join(m.Tags, ","), ts(now))
+	`, int64(m.ID), string(m.ArrType), m.Title, m.TitleSlug, m.Path, m.Size, strings.Join(m.Tags, ","), ts(now))
 	if err != nil {
 		return fmt.Errorf("upserting media %s/%d: %w", m.ArrType, m.ID, err)
 	}
@@ -800,15 +801,20 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 		ImportedPath string `db:"imported_path"`
 		Size         int64  `db:"size"`
 		LivePath     string `db:"live_path"`
+		TitleSlug    string `db:"title_slug"`
 	}
 	var rows []row
 	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT ai.arr_type, ai.file_id, ai.download_id,
-		       ai.dropped_path, ai.imported_path, ai.size, mf.path AS live_path
+		       ai.dropped_path, ai.imported_path, ai.size, mf.path AS live_path,
+		       COALESCE(m.title_slug, '') AS title_slug
 		FROM arr_imports ai
 		JOIN media_files mf
 		  ON mf.arr_type = ai.arr_type
 		 AND mf.file_id  = ai.file_id
+		LEFT JOIN media m
+		  ON m.arr_type = mf.arr_type
+		 AND m.id       = mf.media_id
 		WHERE ai.download_id = ?
 		ORDER BY ai.arr_type, ai.file_id
 	`, strings.ToLower(string(hash))); err != nil {
@@ -820,6 +826,7 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 			ArrType:      triagearr.ArrType(r.ArrType),
 			FileID:       r.FileID,
 			DownloadID:   triagearr.Hash(r.DownloadID),
+			TitleSlug:    r.TitleSlug,
 			DroppedPath:  r.DroppedPath,
 			ImportedPath: r.ImportedPath,
 			LivePath:     r.LivePath,
