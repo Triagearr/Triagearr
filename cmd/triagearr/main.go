@@ -395,6 +395,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 			Store:         s,
 			Linker:        linker.New(s),
 			Config:        cfg,
+			ConfigPath:    cfgPath,
 			Version:       server.VersionInfo{Version: version, Commit: commit, Date: date},
 			UIHandler:     web.Handler(),
 			Decider:       dec,

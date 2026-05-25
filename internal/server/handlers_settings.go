@@ -13,7 +13,9 @@ import (
 // settingsView is the GET /api/v1/settings response. Values mirrors the
 // effective config (current YAML + overrides merged), narrowed to the
 // editable sections. OverriddenKeys lets the UI badge fields that diverge
-// from the YAML baseline.
+// from the YAML baseline. BaselineValues, when present, holds the same
+// sections loaded without any overrides so the UI can show "what YAML says"
+// on hover.
 //
 // These DTOs duplicate config field names rather than embedding config
 // structs directly because:
@@ -26,9 +28,10 @@ import (
 // Keeping the DTOs adjacent to the handler avoids forcing json tags onto
 // every config struct (with the back-compat cost on other consumers).
 type settingsView struct {
-	Values         settingsValues `json:"values"`
-	OverriddenKeys []string       `json:"overridden_keys"`
-	Editable       []string       `json:"editable_prefixes"`
+	Values         settingsValues  `json:"values"`
+	OverriddenKeys []string        `json:"overridden_keys"`
+	Editable       []string        `json:"editable_prefixes"`
+	BaselineValues *settingsValues `json:"baseline_values,omitempty"`
 }
 
 type settingsValues struct {
@@ -152,7 +155,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		keys = append(keys, o.Key)
 	}
 
-	writeJSON(w, http.StatusOK, settingsView{
+	view := settingsView{
 		Values: settingsValues{
 			Scoring:       scoringToDTO(s.opts.Config.Scoring),
 			Polling:       pollingToDTO(s.opts.Config.Polling),
@@ -161,7 +164,28 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		},
 		OverriddenKeys: keys,
 		Editable:       config.EditableKeys(),
-	})
+	}
+
+	// When overrides are active and we know the config file path, load the
+	// YAML baseline (no overrides) so the UI can show "what YAML says" on hover.
+	if len(overrides) > 0 && s.opts.ConfigPath != "" {
+		baseline, err := config.LoadWithOverrides(s.opts.ConfigPath, nil)
+		if err != nil {
+			// Non-fatal: the effective config is still returned. The UI falls
+			// back to showing only the override badge without a hover value.
+			slog.Warn("could not load baseline config for settings view", "err", err)
+		} else {
+			bv := settingsValues{
+				Scoring:       scoringToDTO(baseline.Scoring),
+				Polling:       pollingToDTO(baseline.Polling),
+				Volume:        volumeToDTO(baseline.Volume),
+				Notifications: notificationsToDTO(baseline.Notifications),
+			}
+			view.BaselineValues = &bv
+		}
+	}
+
+	writeJSON(w, http.StatusOK, view)
 }
 
 // settingsPutRequest is the body shape for PUT /api/v1/settings. Each entry

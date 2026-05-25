@@ -61,6 +61,11 @@ type Options struct {
 	RunsPerMinute int
 	AuthPerMinute int
 
+	// ConfigPath is the YAML config file path. When set, the settings handler
+	// loads it without overrides to compute baseline (pre-override) values,
+	// which the UI shows on hover over an overridden field.
+	ConfigPath string
+
 	// Reload, when non-nil, is invoked after a successful PUT /api/v1/settings
 	// to ask the daemon to rebuild itself with the new effective config.
 	// Wired to a self-SIGHUP in cmd/triagearr; nil in tests.

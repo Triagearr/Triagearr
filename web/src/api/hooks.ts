@@ -316,7 +316,6 @@ export function useTestNotification() {
 
 export type ArrConnectionInput = {
   kind: string;
-  name: string;
   url: string;
   api_key: string;
   enabled: boolean;
@@ -348,10 +347,10 @@ function invalidateArrConnections(qc: ReturnType<typeof useQueryClient>) {
 export function useCreateArrConnection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: ArrConnectionInput) =>
-      apiFetch("/api/v1/arr-connections", ArrConnection, {
-        method: "POST",
-        body: JSON.stringify(input),
+    mutationFn: ({ kind, ...body }: ArrConnectionInput) =>
+      apiFetch(`/api/v1/arr-connections/${kind}`, ArrConnection, {
+        method: "PUT",
+        body: JSON.stringify(body),
       }),
     onSuccess: () => invalidateArrConnections(qc),
   });
@@ -360,11 +359,14 @@ export function useCreateArrConnection() {
 export function useUpdateArrConnection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, input }: { id: number; input: ArrConnectionInput }) =>
-      apiFetch(`/api/v1/arr-connections/${id}`, ArrConnection, {
+    mutationFn: ({ kind, input }: { kind: string; input: ArrConnectionInput }) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { kind: _k, ...body } = input;
+      return apiFetch(`/api/v1/arr-connections/${kind}`, ArrConnection, {
         method: "PUT",
-        body: JSON.stringify(input),
-      }),
+        body: JSON.stringify(body),
+      });
+    },
     onSuccess: () => invalidateArrConnections(qc),
   });
 }
@@ -372,8 +374,8 @@ export function useUpdateArrConnection() {
 export function useDeleteArrConnection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) =>
-      apiFetchVoid(`/api/v1/arr-connections/${id}`, { method: "DELETE" }),
+    mutationFn: (kind: string) =>
+      apiFetchVoid(`/api/v1/arr-connections/${kind}`, { method: "DELETE" }),
     onSuccess: () => invalidateArrConnections(qc),
   });
 }

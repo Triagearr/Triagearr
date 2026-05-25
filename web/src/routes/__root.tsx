@@ -1,117 +1,170 @@
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
-import { Activity, Gauge, ListChecks, Menu, Settings, X } from "lucide-react";
+import { Activity, Gauge, ListChecks, Menu, Moon, Settings, Sun, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { cn } from "@/lib/cn";
-import { useVersion } from "@/api/hooks";
+import { useSummary } from "@/api/hooks";
 import { Logo } from "@/components/Logo";
-
-// TanStack Router navigates via pushState, which doesn't fire `popstate`, so a
-// popstate listener for closing the drawer would be dead code. The Link
-// onClick handler below closes the drawer on navigation instead.
+import { relativeTime } from "@/lib/format";
+import { toggleTheme, resolveTheme, type Theme } from "@/lib/theme";
 
 const nav = [
-  { to: "/", label: "Dashboard", Icon: Gauge },
+  { to: "/", label: "Dashboard", Icon: Gauge, exact: true },
   { to: "/torrents", label: "Torrents", Icon: ListChecks },
   { to: "/actions", label: "Actions", Icon: Activity },
   { to: "/settings", label: "Settings", Icon: Settings },
 ];
 
+function Sidebar({ onClose }: { onClose?: () => void }) {
+  const summary = useSummary();
+  const data = summary.data;
+  const [theme, setTheme] = useState<Theme>(resolveTheme);
+
+  const arrs = data?.arrs ?? [];
+  const healthyCount = arrs.filter((a) => a.healthy).length;
+  const totalCount = arrs.length;
+  const volume = data?.volume;
+  const usedPct =
+    volume && Number(volume.total_bytes) > 0
+      ? ((Number(volume.used_bytes) / Number(volume.total_bytes)) * 100).toFixed(1)
+      : null;
+  const isCritical =
+    volume && usedPct != null
+      ? Number(usedPct) >= 100 - (volume.threshold_free_percent ?? 0)
+      : false;
+
+  function handleThemeToggle() {
+    const next = toggleTheme();
+    setTheme(next);
+  }
+
+  return (
+    <nav className="sidebar">
+      <div className="sidebar-brand">
+        <Logo size={30} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="sidebar-brand-name">Triagearr</div>
+          <div className="sidebar-brand-sub" style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>
+            {data ? "connected" : "—"}
+          </div>
+        </div>
+        {onClose && (
+          <button onClick={onClose} aria-label="Close menu" className="btn btn-ghost btn-sm" style={{ padding: "0 6px" }}>
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
+      <div className="sidebar-nav">
+        {nav.map(({ to, label, Icon, exact }) => (
+          <Link
+            key={to}
+            to={to}
+            onClick={onClose}
+            activeOptions={{ exact: exact ?? false }}
+            activeProps={{ className: "nav-item active" }}
+            inactiveProps={{ className: "nav-item" }}
+          >
+            <Icon size={15} />
+            <span>{label}</span>
+          </Link>
+        ))}
+      </div>
+
+      <div className="sidebar-foot">
+        <div className="sidebar-foot-row">
+          <span>Disk pressure</span>
+          <strong style={{ color: isCritical ? "var(--red-2)" : usedPct ? "var(--amber-2)" : undefined }}>
+            {usedPct != null ? `${usedPct}%` : "—"}
+          </strong>
+        </div>
+        <div className="sidebar-foot-row">
+          <span>*arrs healthy</span>
+          <strong>{totalCount > 0 ? `${healthyCount}/${totalCount}` : "—"}</strong>
+        </div>
+        {data?.last_runs?.[0] && (
+          <div className="sidebar-foot-row">
+            <span>Last run</span>
+            <strong>{relativeTime(data.last_runs[0].triggered_at)}</strong>
+          </div>
+        )}
+        <div className="sidebar-foot-divider" />
+        <div className="sidebar-foot-row">
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <span className={`dot ${data ? "green" : "red"}`} />
+            {data ? "Daemon up" : "Connecting…"}
+          </span>
+          <button
+            onClick={handleThemeToggle}
+            aria-label="Toggle dark/light mode"
+            className="btn btn-ghost btn-sm"
+            style={{ height: 22, padding: "0 5px" }}
+          >
+            {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
+          </button>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
 function Layout() {
-  const version = useVersion();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
-    if (drawerOpen) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = prev;
-      };
-    }
+    if (!drawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
   }, [drawerOpen]);
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row">
-      {/* Mobile top bar */}
-      <header className="md:hidden sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-border bg-card px-4 h-14">
-        <button
-          aria-label="Open menu"
-          onClick={() => setDrawerOpen(true)}
-          className="h-10 w-10 inline-flex items-center justify-center rounded-md hover:bg-accent"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-        <div className="flex items-center gap-2 font-semibold tracking-tight">
-          <Logo size={28} />
-          Triagearr
-        </div>
-        <div className="text-xs text-muted-foreground font-mono">
-          {version.data?.version ?? "…"}
-        </div>
-      </header>
+    <div className="app-shell">
+      {/* Desktop sidebar (hidden on small screens via CSS) */}
+      <div style={{ display: "contents" }} className="sidebar-desktop">
+        <Sidebar />
+      </div>
 
-      {/* Mobile drawer */}
+      {/* Mobile: slide-in drawer + scrim */}
       {drawerOpen && (
-        <button
-          aria-label="Close menu"
-          className="md:hidden fixed inset-0 z-30 bg-foreground/40"
-          onClick={() => setDrawerOpen(false)}
-        />
-      )}
-      <aside
-        className={cn(
-          // Mobile: off-canvas drawer.
-          "md:static fixed inset-y-0 left-0 z-40 w-64 max-w-[85vw] bg-card border-r border-border flex flex-col transition-transform",
-          drawerOpen ? "translate-x-0" : "-translate-x-full",
-          // Desktop: visible, no transform.
-          "md:translate-x-0 md:w-60 md:shrink-0",
-        )}
-      >
-        <div className="px-5 py-5 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Logo size={36} />
-            <div>
-              <div className="text-lg font-semibold tracking-tight">Triagearr</div>
-              <div className="text-xs text-muted-foreground">
-                {version.data?.version ?? "loading…"}
-              </div>
-            </div>
+        <>
+          <div className="scrim" style={{ zIndex: 35 }} onClick={() => setDrawerOpen(false)} />
+          <div style={{ position: "fixed", top: 0, left: 0, bottom: 0, width: 240, zIndex: 40 }}>
+            <Sidebar onClose={() => setDrawerOpen(false)} />
           </div>
-          <button
-            aria-label="Close menu"
-            className="md:hidden h-9 w-9 inline-flex items-center justify-center rounded-md hover:bg-accent"
-            onClick={() => setDrawerOpen(false)}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <nav className="flex-1 p-2 flex flex-col gap-1">
-          {nav.map(({ to, label, Icon }) => (
-            <Link
-              key={to}
-              to={to}
-              onClick={() => setDrawerOpen(false)}
-              className="flex items-center gap-3 rounded-md px-3 py-3 md:py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors [&.active]:bg-accent [&.active]:text-accent-foreground"
-              activeOptions={{ exact: to === "/" }}
-            >
-              <Icon className="h-4 w-4" />
-              <span>{label}</span>
-            </Link>
-          ))}
-        </nav>
-        <div className="px-5 py-4 border-t border-border text-xs text-muted-foreground">
-          {version.data?.commit && (
-            <div className="font-mono truncate" title={version.data.commit}>
-              {version.data.commit.slice(0, 10)}
-            </div>
-          )}
-        </div>
-      </aside>
+        </>
+      )}
 
-      <main className="flex-1 min-w-0 overflow-y-auto">
-        <div className="mx-auto w-full max-w-screen-2xl">
-          <Outlet />
+      {/* Main content */}
+      <main className="main">
+        {/* Mobile topbar */}
+        <div
+          className="topbar"
+          style={{
+            display: "none",
+            position: "sticky",
+            top: 0,
+            zIndex: 20,
+            paddingLeft: 10,
+          }}
+          id="mobile-topbar"
+        >
+          <button
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open menu"
+            className="btn btn-ghost btn-sm"
+            style={{ padding: "0 6px" }}
+          >
+            <Menu size={16} />
+          </button>
+          <Logo size={22} />
+          <span style={{ fontWeight: 600, fontSize: 13, letterSpacing: "-0.01em" }}>Triagearr</span>
         </div>
+        <style>{`
+          @media (max-width: 768px) {
+            .sidebar-desktop { display: none !important; }
+            #mobile-topbar { display: flex !important; }
+          }
+        `}</style>
+        <Outlet />
       </main>
     </div>
   );

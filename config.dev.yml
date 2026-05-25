@@ -24,23 +24,25 @@ storage:
 
 arrs:
   sonarr:
-    - name: dev
-      enabled: true
-      url: http://127.0.0.1:18989
-      api_key: dev-key-sonarr
-      poll: true
-      act: false
+    enabled: true
+    url: http://127.0.0.1:18989
+    api_key: dev-key-sonarr
+    poll: true
+    act: false
   radarr:
-    - name: dev
-      enabled: true
-      url: http://127.0.0.1:17878
-      api_key: dev-key-radarr
-      poll: true
-      act: false
-  lidarr: []
-  readarr: []
-  whisparr_v2: []
-  whisparr_v3: []
+    enabled: true
+    url: http://127.0.0.1:17878
+    api_key: dev-key-radarr
+    poll: true
+    act: false
+  lidarr:
+    enabled: false
+  readarr:
+    enabled: false
+  whisparr_v2:
+    enabled: false
+  whisparr_v3:
+    enabled: false
 
 qbit:
   enabled: true

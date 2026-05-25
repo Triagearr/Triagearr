@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 
 import "@/styles/globals.css";
+import { applyTheme, resolveTheme } from "@/lib/theme";
 import { routeTree } from "./routeTree.gen";
+
+// Apply theme before React mounts to avoid flash of wrong colours.
+applyTheme(resolveTheme());
 import { LoginGate } from "@/components/LoginGate";
 
 const queryClient = new QueryClient({

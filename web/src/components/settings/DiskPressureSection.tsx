@@ -1,5 +1,5 @@
 import { useVolume } from "@/api/hooks";
-import { PressureGauge } from "@/components/PressureGauge";
+import { DiskGaugeEditor } from "@/components/PressureGauge";
 import { Field, SectionShell, Subsection, type SectionHelpers } from "./SettingsField";
 
 export function DiskPressureSection() {
@@ -26,12 +26,14 @@ function DiskPressureFields({ h }: { h: SectionHelpers }) {
   return (
     <Subsection title={v.name}>
       {live ? (
-        <PressureGauge
-          volume={live}
-          threshold={thresholdVal}
-          target={targetVal}
-          onThresholdChange={(val) => h.setField(tk, String(val))}
-          onTargetChange={(val) => h.setField(gk, String(val))}
+        <DiskGaugeEditor
+          thresholdFree={thresholdVal}
+          targetFree={targetVal}
+          onThreshold={(val) => h.setField(tk, String(val))}
+          onTarget={(val) => h.setField(gk, String(val))}
+          usedPct={100 - (live.free_percent ?? 0)}
+          totalBytes={Number(live.total_bytes ?? 0)}
+          usedBytes={Number(live.used_bytes ?? 0)}
         />
       ) : (
         <div className="text-xs text-muted-foreground">

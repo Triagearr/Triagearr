@@ -7,6 +7,16 @@ import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
 
+// ── Provider catalogue ────────────────────────────────────────────────────────
+
+type ProviderMeta = {
+  id: string;
+  label: string;
+  description: string;
+  logo: React.ReactNode;
+  stub?: boolean;
+};
+
 // ── Provider logos ────────────────────────────────────────────────────────────
 
 function TelegramLogo({ className }: { className?: string }) {
@@ -26,52 +36,163 @@ function TelegramLogo({ className }: { className?: string }) {
   );
 }
 
-function CheckIcon() {
+// ── Tile ──────────────────────────────────────────────────────────────────────
+
+type TileStatus = "unconfigured" | "disabled" | "enabled";
+
+function tileStatus(enabled: boolean | undefined, configured: boolean): TileStatus {
+  if (!configured) return "unconfigured";
+  if (!enabled) return "disabled";
+  return "enabled";
+}
+
+function ProviderTile({
+  meta,
+  enabled,
+  configured,
+  onClick,
+}: {
+  meta: ProviderMeta;
+  enabled: boolean;
+  configured: boolean;
+  onClick: () => void;
+}) {
+  const status = tileStatus(enabled, configured);
+
+  const stateClass: Record<TileStatus, string> = {
+    unconfigured: "state-unconfigured",
+    disabled:     "state-disabled",
+    enabled:      "state-healthy",
+  };
+
+  const statusEl = (
+    <div className="arr-tile-state">
+      {status === "enabled"      && <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>Enabled</span></>}
+      {status === "disabled"     && <><span className="dot" /><span style={{ color: "var(--fg-3)" }}>Disabled</span></>}
+      {status === "unconfigured" && <span style={{ color: "var(--fg-3)" }}>Not configured</span>}
+    </div>
+  );
+
   return (
-    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-4 h-4">
-      <path
-        d="M3 8l3.5 3.5L13 4.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={meta.stub}
+      className={cn("arr-tile", stateClass[status], meta.stub && "opacity-50 cursor-not-allowed")}
+    >
+      {/* Tile header: logo + label + status */}
+      <div className="arr-tile-head">
+        <div style={{ width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {meta.logo}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="arr-tile-name">{meta.label}</div>
+          {meta.stub ? (
+            <div className="arr-tile-tag" style={{ color: "var(--fg-4)", fontSize: 10 }}>coming soon</div>
+          ) : (
+            <div className="arr-tile-tag">{meta.description}</div>
+          )}
+        </div>
+        {statusEl}
+      </div>
+
+      {/* Chips */}
+      {configured && (
+        <div className="arr-tile-toggles">
+          <span className={cn("arr-chip", enabled && "on")}>
+            <span className="arr-chip-dot" /> Enabled
+          </span>
+        </div>
+      )}
+
+      {/* Not configured prompt */}
+      {!configured && !meta.stub && (
+        <div className="arr-tile-empty">
+          <span>Click to configure</span>
+        </div>
+      )}
+    </button>
   );
 }
 
-// ── Provider card ─────────────────────────────────────────────────────────────
+// ── Credential field ──────────────────────────────────────────────────────────
 
-type ProviderCardProps = {
-  name: string;
-  description: string;
-  logo: React.ReactNode;
-  enabled: boolean;
-  onClick: () => void;
+type CredentialFieldProps = {
+  label: string;
+  keyName: string;
+  type: "text" | "password";
+  placeholder?: string;
+  value: string;
+  onChange: (v: string) => void;
+  dirty: boolean;
+  overridden: boolean;
+  onRevert: () => void;
 };
 
-function ProviderCard({ name, description, logo, enabled, onClick }: ProviderCardProps) {
+function CredentialField(p: CredentialFieldProps) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "group relative flex flex-col items-center gap-3 rounded-xl border p-6 text-center transition-colors",
-        "hover:border-primary/60 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        enabled ? "border-primary/40 bg-accent/20" : "border-border bg-card",
-      )}
-    >
-      {enabled && (
-        <span className="absolute top-2.5 right-2.5 flex items-center gap-1 text-xs font-medium text-emerald-500">
-          <CheckIcon />
-          On
-        </span>
-      )}
-      <div className="w-14 h-14 flex items-center justify-center">{logo}</div>
-      <div>
-        <div className="font-medium text-sm">{name}</div>
-        <div className="text-xs text-muted-foreground mt-0.5">{description}</div>
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-muted-foreground font-mono">{p.label}</label>
+        <div className="flex items-center gap-1">
+          {p.dirty && <Badge variant="warning">edited</Badge>}
+          {!p.dirty && p.overridden && (
+            <>
+              <Badge>overridden</Badge>
+              <Button size="sm" variant="ghost" onClick={p.onRevert} title="Revert to YAML default">
+                ↺
+              </Button>
+            </>
+          )}
+        </div>
       </div>
-    </button>
+      <Input
+        type={p.type}
+        value={p.value}
+        placeholder={p.placeholder}
+        onChange={(e) => p.onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+// ── Toggle row ────────────────────────────────────────────────────────────────
+
+function ToggleRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-border p-4">
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        {hint && <div className="text-xs text-muted-foreground mt-0.5">{hint}</div>}
+      </div>
+      <button
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={cn(
+          "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          checked ? "bg-primary" : "bg-input",
+        )}
+      >
+        <span
+          className={cn(
+            "pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow-lg transition-transform",
+            checked ? "translate-x-5" : "translate-x-0",
+          )}
+        />
+      </button>
+    </div>
   );
 }
 
@@ -155,31 +276,12 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
       ) : (
         <div className="space-y-6">
           {/* Enable toggle */}
-          <div className="flex items-center justify-between rounded-lg border border-border p-4">
-            <div>
-              <div className="text-sm font-medium">Enable Telegram notifications</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                Fires on disk-pressure deletes only — not on manual runs.
-              </div>
-            </div>
-            <button
-              role="switch"
-              aria-checked={enabledVal}
-              onClick={() => set("notifications.telegram.enabled", String(!enabledVal))}
-              className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                enabledVal ? "bg-primary" : "bg-input",
-              )}
-            >
-              <span
-                className={cn(
-                  "pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow-lg transition-transform",
-                  enabledVal ? "translate-x-5" : "translate-x-0",
-                )}
-              />
-            </button>
-          </div>
+          <ToggleRow
+            label="Enable Telegram notifications"
+            hint="Fires on disk-pressure deletes only — not on manual runs."
+            checked={enabledVal}
+            onChange={(v) => set("notifications.telegram.enabled", String(v))}
+          />
 
           {/* Credentials */}
           <div className="space-y-4">
@@ -264,47 +366,6 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
-// ── Credential field ──────────────────────────────────────────────────────────
-
-type CredentialFieldProps = {
-  label: string;
-  keyName: string;
-  type: "text" | "password";
-  placeholder?: string;
-  value: string;
-  onChange: (v: string) => void;
-  dirty: boolean;
-  overridden: boolean;
-  onRevert: () => void;
-};
-
-function CredentialField(p: CredentialFieldProps) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <label className="text-xs font-medium text-muted-foreground font-mono">{p.label}</label>
-        <div className="flex items-center gap-1">
-          {p.dirty && <Badge variant="warning">edited</Badge>}
-          {!p.dirty && p.overridden && (
-            <>
-              <Badge>overridden</Badge>
-              <Button size="sm" variant="ghost" onClick={p.onRevert} title="Revert to YAML default">
-                ↺
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-      <Input
-        type={p.type}
-        value={p.value}
-        placeholder={p.placeholder}
-        onChange={(e) => p.onChange(e.target.value)}
-      />
-    </div>
-  );
-}
-
 // ── Main section ──────────────────────────────────────────────────────────────
 
 type OpenProvider = "telegram" | null;
@@ -315,6 +376,17 @@ export function NotificationSection() {
 
   const tg = settings.data?.values.notifications.telegram;
   const telegramEnabled = tg?.enabled ?? false;
+  // Considered configured once bot_token is set (minimum required credential).
+  const telegramConfigured = Boolean(tg?.bot_token);
+
+  const PROVIDERS: ProviderMeta[] = [
+    {
+      id: "telegram",
+      label: "Telegram",
+      description: "Bot API",
+      logo: <TelegramLogo className="w-9 h-9" />,
+    },
+  ];
 
   return (
     <>
@@ -322,19 +394,21 @@ export function NotificationSection() {
         <div>
           <h2 className="text-lg font-semibold">Notifications</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Choose a provider to configure. Notifications fire only on disk-pressure deletes —
+            Click a tile to configure. Notifications fire only on disk-pressure deletes —
             manual runs stay silent. Credentials are stored as runtime overrides.
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          <ProviderCard
-            name="Telegram"
-            description="Bot API"
-            logo={<TelegramLogo className="w-12 h-12" />}
-            enabled={telegramEnabled}
-            onClick={() => setOpen("telegram")}
-          />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {PROVIDERS.map((meta) => (
+            <ProviderTile
+              key={meta.id}
+              meta={meta}
+              enabled={meta.id === "telegram" ? telegramEnabled : false}
+              configured={meta.id === "telegram" ? telegramConfigured : false}
+              onClick={() => setOpen(meta.id as OpenProvider)}
+            />
+          ))}
         </div>
       </div>
 
