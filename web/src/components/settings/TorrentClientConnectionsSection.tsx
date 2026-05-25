@@ -79,10 +79,17 @@ function KindTile({
             <div className="arr-tile-tag" style={{ color: "var(--fg-4)", fontSize: 10 }}>coming soon</div>
           )}
         </div>
-        <div className="arr-tile-state">
-          {status === "configured"   && <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>Configured</span></>}
-          {status === "disabled"     && <><span className="dot" /><span style={{ color: "var(--fg-3)" }}>Disabled</span></>}
-          {status === "unconfigured" && <span style={{ color: "var(--fg-3)" }}>Not configured</span>}
+        <div
+          className="arr-tile-state"
+          title={
+            status === "configured"   ? "Configured"
+            : status === "disabled"   ? "Disabled"
+            :                           "Not configured"
+          }
+        >
+          {status === "configured"   && <><span className="dot green" /><span className="arr-tile-state-text" style={{ color: "var(--green-2)" }}>Configured</span></>}
+          {status === "disabled"     && <><span className="dot" /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>Disabled</span></>}
+          {status === "unconfigured" && <><span className="dot" style={{ background: "transparent", border: "1px dashed var(--border-2)" }} /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>Not configured</span></>}
         </div>
       </div>
 

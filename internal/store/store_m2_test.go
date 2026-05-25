@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -85,6 +86,54 @@ func TestUpsertTorrent_PersistsPrivateAndTags(t *testing.T) {
 	require.Len(t, rows, 1)
 	require.True(t, rows[0].Private)
 	require.Equal(t, "archive", rows[0].Tags)
+}
+
+func TestSetTorrentProtected_SurvivesUpsert(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "abc", Name: "Foo", AddedOn: now, Private: false,
+	}))
+
+	// Default: not protected.
+	prot, at, err := s.GetTorrentProtected(ctx, "abc")
+	require.NoError(t, err)
+	require.False(t, prot)
+	require.Nil(t, at)
+
+	// Protect.
+	require.NoError(t, s.SetTorrentProtected(ctx, "abc", true))
+	prot, at, err = s.GetTorrentProtected(ctx, "abc")
+	require.NoError(t, err)
+	require.True(t, prot)
+	require.NotNil(t, at)
+
+	// Scorer view must reflect the flag.
+	st, err := s.GetTorrentForScoring(ctx, "abc")
+	require.NoError(t, err)
+	require.True(t, st.Protected)
+
+	// Re-upserting the torrent (simulates a qBit sync tick) must NOT clear it:
+	// the protected columns are deliberately omitted from the UPSERT SET clause.
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "abc", Name: "Foo Renamed", AddedOn: now, Private: true,
+	}))
+	prot, _, err = s.GetTorrentProtected(ctx, "abc")
+	require.NoError(t, err)
+	require.True(t, prot, "qbit sync must not clobber the protected flag")
+
+	// Unprotect: timestamp cleared.
+	require.NoError(t, s.SetTorrentProtected(ctx, "abc", false))
+	prot, at, err = s.GetTorrentProtected(ctx, "abc")
+	require.NoError(t, err)
+	require.False(t, prot)
+	require.Nil(t, at)
+
+	// Unknown hash → sql.ErrNoRows.
+	err = s.SetTorrentProtected(ctx, "nope", true)
+	require.ErrorIs(t, err, sql.ErrNoRows)
 }
 
 func TestDownsampleRange_AggregatesAndDeletes(t *testing.T) {

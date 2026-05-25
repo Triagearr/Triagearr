@@ -185,6 +185,15 @@ func TestScoreAll_PublicHealthyVsRareVsGraveyard(t *testing.T) {
 	for _, r := range eligible {
 		require.False(t, r.Excluded)
 	}
+
+	// Protect the healthy public torrent: rescoring it must surface the
+	// triagearr_protected exclusion reason. Done last so it doesn't perturb
+	// the eligible-count assertion above.
+	require.NoError(t, s.SetTorrentProtected(ctx, "publichealthy", true))
+	b, err := sc.ScoreOne(ctx, "publichealthy")
+	require.NoError(t, err)
+	require.True(t, b.Excluded)
+	require.Contains(t, b.ExclusionReasons, "triagearr_protected")
 }
 
 func TestScoreOne_VelocityWorksAcrossDownsampleBoundary(t *testing.T) {

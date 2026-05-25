@@ -399,6 +399,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 			ConfigPath:    cfgPath,
 			Version:       server.VersionInfo{Version: version, Commit: commit, Date: date},
 			UIHandler:     web.Handler(),
+			Scorer:        sc,
 			Decider:       dec,
 			Volume:        func() decider.Volume { return theVolume(cfg) },
 			DaemonLive:    daemonLive,

@@ -1,15 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, ArrowUpRight } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Lock, Shield, ShieldOff, Unlock } from "lucide-react";
 import { useMemo } from "react";
-import { useSnapshots, useTorrent } from "@/api/hooks";
+import { useSetTorrentProtected, useSnapshots, useTorrent } from "@/api/hooks";
 import { ArrLogo } from "@/components/ArrLogo";
-import { Badge } from "@/components/ui/Badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Tabs } from "@/components/ui/Tabs";
-import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { Callout } from "@/components/ui/Callout";
-import { Sparkline } from "@/components/Sparkline";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
+import { Sparkline } from "@/components/Sparkline";
 import { humanBytes, relativeTime, shortHash } from "@/lib/format";
 
 function arrDeepLink(arrType: string, arrUrl: string, titleSlug: string): string {
@@ -21,13 +16,21 @@ function arrDeepLink(arrType: string, arrUrl: string, titleSlug: string): string
   return arrUrl;
 }
 
+function scoreTier(score: number | null | undefined): "low" | "med" | "high" {
+  if (score == null) return "low";
+  if (score <= 1) return "low";
+  if (score <= 5) return "med";
+  return "high";
+}
+
 function TorrentDetailPage() {
   const { hash } = Route.useParams();
   const torrent = useTorrent(hash);
   const snaps = useSnapshots(hash);
+  const setProtected = useSetTorrentProtected();
 
   const snapshots = snaps.data?.snapshots;
-  const series = useMemo(
+  const ratioSeries = useMemo(
     () => (snapshots ?? []).map((p) => ({ ts: p.ts, value: p.ratio })),
     [snapshots],
   );
@@ -36,245 +39,264 @@ function TorrentDetailPage() {
     [snapshots],
   );
 
-  if (torrent.isLoading) return <div className="p-4 sm:p-6 text-sm text-muted-foreground">Loading…</div>;
-  if (torrent.isError)
-    return (
-      <div className="p-4 sm:p-6">
-        <Link to="/torrents" className="text-sm text-muted-foreground flex items-center gap-1">
-          <ArrowLeft className="h-4 w-4" /> back to torrents
-        </Link>
-        <div className="mt-4">
-          <Callout>{String(torrent.error)}</Callout>
-        </div>
-      </div>
-    );
-  if (!torrent.data) return null;
   const t = torrent.data;
+  const score = t?.score?.score;
+  const tier = scoreTier(score);
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-5xl">
-      <Link to="/torrents" className="text-sm text-muted-foreground flex items-center gap-1">
-        <ArrowLeft className="h-4 w-4" /> back to torrents
-      </Link>
-
-      <header className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold truncate">{t.name}</h1>
-          <div className="text-xs text-muted-foreground font-mono break-all">{t.hash}</div>
+    <div style={{ display: "contents" }}>
+      {/* Topbar */}
+      <div className="topbar">
+        <Link
+          to="/torrents"
+          className="btn btn-ghost btn-sm"
+          style={{ textDecoration: "none", padding: "0 6px" }}
+        >
+          <ArrowLeft size={14} />
+        </Link>
+        <div className="topbar-title">Torrent</div>
+        <div className="topbar-sub" style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>
+          {t ? shortHash(t.hash, 12) : "—"}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {t.private ? <Badge>private</Badge> : <Badge variant="muted">public</Badge>}
-          {t.score?.excluded && <Badge variant="warning">excluded</Badge>}
-          {t.score && !t.score.any_tracker_alive && <Badge variant="warning">tracker dead</Badge>}
-        </div>
-      </header>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Size" value={humanBytes(t.size)} />
-        <Stat label="Ratio" value={t.latest?.ratio != null ? t.latest.ratio.toFixed(3) : "—"} />
-        <Stat label="Seeders" value={t.latest?.seeders != null ? String(t.latest.seeders) : "—"} />
-        <Stat label="Score" value={t.score ? t.score.score.toFixed(2) : "—"} />
       </div>
 
-      <Tabs
-        tabs={[
-          {
-            id: "overview",
-            label: "Overview",
-            content: (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Metadata</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm space-y-1">
-                    <Row k="Category" v={t.category || "—"} />
-                    <Row k="Save path" v={<code className="font-mono text-xs">{t.save_path}</code>} />
-                    <Row k="Added" v={relativeTime(t.added_on)} />
-                    <Row k="Completed" v={t.completion_on ? relativeTime(t.completion_on) : "—"} />
-                    <Row k="Last seen" v={relativeTime(t.last_seen)} />
-                    <Row k="State" v={t.latest?.state ?? "—"} />
-                    <Row k="Uploaded" v={t.latest?.uploaded != null ? humanBytes(t.latest.uploaded) : "—"} />
-                    <Row k="Tags" v={t.tags || "—"} />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Trackers</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {t.trackers.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No trackers stored yet.</div>
-                    ) : (
-                      <Table>
-                        <THead>
-                          <TR>
-                            <TH>Host</TH>
-                            <TH>Status</TH>
-                            <TH>Last check</TH>
-                          </TR>
-                        </THead>
-                        <TBody>
-                          {t.trackers.map((tr) => (
-                            <TR key={`${tr.host}-${tr.url}`}>
-                              <TD>{tr.host || "—"}</TD>
-                              <TD>
-                                <Badge variant={tr.status === "working" ? "success" : "warning"}>
-                                  {tr.status}
-                                </Badge>
-                              </TD>
-                              <TD className="text-muted-foreground">{relativeTime(tr.last_checked)}</TD>
-                            </TR>
-                          ))}
-                        </TBody>
-                      </Table>
-                    )}
-                  </CardContent>
-                </Card>
+      <div className="page" style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 1100 }}>
+        {torrent.isLoading && (
+          <div style={{ color: "var(--fg-3)", fontSize: 13 }}>Loading…</div>
+        )}
+        {torrent.isError && (
+          <div className="card">
+            <div className="card-body" style={{ color: "var(--red-2)", fontSize: 13 }}>
+              {String(torrent.error)}
+            </div>
+          </div>
+        )}
+
+        {t && (
+          <>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.3, wordBreak: "break-word" }}>
+                  {t.name}
+                </div>
+                <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  {t.private
+                    ? <span className="badge"><Lock size={9} /> private</span>
+                    : <span className="badge"><Unlock size={9} /> public</span>}
+                  {t.protected && <span className="badge badge-warn"><Shield size={9} /> protected</span>}
+                  {t.score?.excluded && <span className="badge badge-warn">excluded</span>}
+                  {t.score && !t.score.any_tracker_alive && (
+                    <span className="badge badge-danger">tracker dead</span>
+                  )}
+                  <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 11, color: "var(--fg-3)", wordBreak: "break-all" }}>
+                    {t.hash}
+                  </span>
+                </div>
               </div>
-            ),
-          },
-          {
-            id: "score",
-            label: "Score",
-            content: (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Score breakdown</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <button
+                  className={`btn btn-sm ${t.protected ? "btn-ghost" : "btn-primary"}`}
+                  disabled={setProtected.isPending}
+                  onClick={() => setProtected.mutate({ hash: t.hash, protected: !t.protected })}
+                  title={
+                    t.protected
+                      ? "Remove the protection: this torrent becomes a normal cleanup candidate again."
+                      : "Protect this torrent from cleanup. Reversible at any time."
+                  }
+                >
+                  {t.protected ? <><ShieldOff size={12} /> Unprotect</> : <><Shield size={12} /> Protect</>}
+                </button>
+              </div>
+            </div>
+
+            {/* Stats grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, background: "var(--border)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
+              {[
+                ["Size",    humanBytes(t.size)],
+                ["Ratio",   t.latest?.ratio != null ? t.latest.ratio.toFixed(3) : "—"],
+                ["Seeders", t.latest?.seeders != null ? String(t.latest.seeders) : "—"],
+                ["Reap",    score != null ? score.toFixed(2) : "—"],
+              ].map(([k, v]) => (
+                <div key={k} style={{ background: "var(--card)", padding: "12px 14px" }}>
+                  <div style={{ fontSize: 11, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".05em" }}>{k}</div>
+                  <div style={{
+                    fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 22, fontWeight: 600,
+                    letterSpacing: "-0.02em", marginTop: 4,
+                    color: k === "Reap" ? (tier === "high" ? "var(--red-2)" : tier === "med" ? "var(--amber-2)" : "var(--green-2)") : "inherit",
+                  }}>{v}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Two-column: Metadata + Score */}
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16 }}>
+              <div className="card">
+                <div className="card-head"><div className="card-title">Metadata</div></div>
+                <div className="card-body">
+                  <dl className="kv-grid">
+                    <dt>Category</dt>      <dd>{t.category || "—"}</dd>
+                    <dt>Save path</dt>     <dd style={{ wordBreak: "break-all" }}>{t.save_path || "—"}</dd>
+                    <dt>Added</dt>         <dd>{relativeTime(t.added_on)}</dd>
+                    <dt>Completed</dt>     <dd>{t.completion_on ? relativeTime(t.completion_on) : "—"}</dd>
+                    <dt>Last seen</dt>     <dd>{relativeTime(t.last_seen)}</dd>
+                    <dt>State</dt>         <dd>{t.latest?.state ?? "—"}</dd>
+                    <dt>Uploaded</dt>      <dd>{t.latest?.uploaded != null ? humanBytes(t.latest.uploaded) : "—"}</dd>
+                    <dt>Tags</dt>          <dd>{t.tags || "—"}</dd>
+                    {t.protected && t.protected_at && (
+                      <>
+                        <dt>Protected</dt> <dd>{relativeTime(t.protected_at)}</dd>
+                      </>
+                    )}
+                  </dl>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-head">
+                  <div className="card-title">Score breakdown</div>
+                  {t.score && (
+                    <div className="card-sub">
+                      <span className="badge">{t.score.private ? "ratio-obligation" : "swarm-only"}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="card-body">
                   {t.score ? (
                     <>
-                      <div className="text-sm text-muted-foreground">
-                        computed {relativeTime(t.score.computed_at)} · regime{" "}
-                        <Badge variant="muted">{t.score.private ? "ratio-obligation" : "swarm-only"}</Badge>
-                        {t.score.excluded && (
-                          <>
-                            {" "}· <Badge variant="warning">excluded</Badge>{" "}
-                            <span className="text-xs">{t.score.exclusion_reasons}</span>
-                          </>
-                        )}
-                      </div>
+                      {t.score.excluded && (
+                        <div style={{ marginBottom: 10, fontSize: 12 }}>
+                          <span className="badge badge-warn">excluded</span>{" "}
+                          <span style={{ color: "var(--fg-3)" }}>{t.score.exclusion_reasons}</span>
+                        </div>
+                      )}
                       <ScoreBreakdown factors={t.score.factors} total={t.score.score} />
+                      <div style={{ marginTop: 8, fontSize: 11, color: "var(--fg-3)" }}>
+                        computed {relativeTime(t.score.computed_at)}
+                      </div>
                     </>
                   ) : (
-                    <div className="text-sm text-muted-foreground">No score persisted yet.</div>
+                    <div style={{ color: "var(--fg-3)", fontSize: 13 }}>No score persisted yet.</div>
                   )}
-                </CardContent>
-              </Card>
-            ),
-          },
-          {
-            id: "links",
-            label: `Links (${t.links.length})`,
-            content: (
-              <Card>
-                <CardHeader>
-                  <CardTitle>*arr-side imports</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {t.links.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">
-                      Orphan — no *arr instance imported this torrent (or import history not synced yet).
-                    </div>
-                  ) : (
-                    <Table>
-                      <THead>
-                        <TR>
-                          <TH>*arr</TH>
-                          <TH>File ID</TH>
-                          <TH className="text-right">Size</TH>
-                          <TH>Live path</TH>
-                        </TR>
-                      </THead>
-                      <TBody>
-                        {t.links.map((l) => {
-                          const href = arrDeepLink(l.arr_type, l.arr_url, l.title_slug);
-                          return (
-                            <TR key={`${l.arr_type}-${l.file_id}`}>
-                              <TD>
-                                {href ? (
-                                  <a
-                                    href={href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                                    title={`Open in ${l.arr_type}`}
-                                  >
-                                    <ArrLogo kind={l.arr_type} size={16} />
-                                    {l.arr_type}
-                                    <ArrowUpRight className="h-3 w-3 opacity-60" />
-                                  </a>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-                                    <ArrLogo kind={l.arr_type} size={16} />
-                                    {l.arr_type}
-                                  </span>
-                                )}
-                              </TD>
-                              <TD className="font-mono">{l.file_id}</TD>
-                              <TD className="text-right font-mono">{humanBytes(l.size)}</TD>
-                              <TD className="font-mono text-xs truncate max-w-md" title={l.live_path}>
-                                {l.live_path}
-                              </TD>
-                            </TR>
-                          );
-                        })}
-                      </TBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-            ),
-          },
-          {
-            id: "history",
-            label: "History",
-            content: (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Ratio over time</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Sparkline data={series} />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Seeders over time</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Sparkline data={seedSeries} color="var(--accent-foreground)" />
-                  </CardContent>
-                </Card>
+                </div>
               </div>
-            ),
-          },
-        ]}
-      />
+            </div>
 
-      <div className="text-xs text-muted-foreground">torrent {shortHash(t.hash)}</div>
-    </div>
-  );
-}
+            {/* Trackers */}
+            <div className="card">
+              <div className="card-head"><div className="card-title">Trackers</div></div>
+              <div className="card-body tight">
+                {t.trackers.length === 0 ? (
+                  <div style={{ padding: 14, color: "var(--fg-3)", fontSize: 13 }}>No trackers stored yet.</div>
+                ) : (
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>Host</th>
+                        <th>Status</th>
+                        <th style={{ textAlign: "right" }}>Last check</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {t.trackers.map((tr) => (
+                        <tr key={`${tr.host}-${tr.url}`}>
+                          <td className="mono">{tr.host || "—"}</td>
+                          <td>
+                            <span className={`badge ${tr.status === "working" ? "badge-success" : "badge-danger"}`}>
+                              {tr.status}
+                            </span>
+                          </td>
+                          <td className="num" style={{ color: "var(--fg-3)" }}>{relativeTime(tr.last_checked)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="p-3">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className="mt-1 text-xl font-semibold font-mono">{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
+            {/* Links */}
+            <div className="card">
+              <div className="card-head">
+                <div className="card-title">*arr links</div>
+                <div className="card-sub">{t.links.length}</div>
+              </div>
+              <div className="card-body tight">
+                {t.links.length === 0 ? (
+                  <div style={{ padding: 14, color: "var(--fg-3)", fontSize: 13 }}>
+                    Orphan — no *arr instance imported this torrent (or import history not synced yet).
+                  </div>
+                ) : (
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>*arr</th>
+                        <th style={{ width: 90 }}>File ID</th>
+                        <th style={{ width: 100, textAlign: "right" }}>Size</th>
+                        <th>Live path</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {t.links.map((l) => {
+                        const href = arrDeepLink(l.arr_type, l.arr_url, l.title_slug);
+                        return (
+                          <tr key={`${l.arr_type}-${l.file_id}`}>
+                            <td>
+                              {href ? (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "inherit", textDecoration: "none" }}
+                                  title={`Open in ${l.arr_type}`}
+                                >
+                                  <ArrLogo kind={l.arr_type} size={16} />
+                                  {l.arr_type}
+                                  <ArrowUpRight size={11} style={{ opacity: 0.6 }} />
+                                </a>
+                              ) : (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
+                                  <ArrLogo kind={l.arr_type} size={16} />
+                                  {l.arr_type}
+                                </span>
+                              )}
+                            </td>
+                            <td className="mono">{l.file_id}</td>
+                            <td className="num">{humanBytes(l.size)}</td>
+                            <td className="mono" style={{ fontSize: 11, color: "var(--fg-3)", maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.live_path}>
+                              {l.live_path}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
 
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-border/40 pb-1 last:border-0">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">{k}</span>
-      <span className="text-sm text-right truncate">{v}</span>
+            {/* History */}
+            {ratioSeries.length > 1 && (
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16 }}>
+                <div className="card">
+                  <div className="card-head"><div className="card-title">Ratio · last 30 days</div></div>
+                  <div className="card-body">
+                    <div style={{ color: tier === "high" ? "var(--red-2)" : "var(--primary)" }}>
+                      <Sparkline data={ratioSeries} />
+                    </div>
+                  </div>
+                </div>
+                <div className="card">
+                  <div className="card-head"><div className="card-title">Seeders · last 30 days</div></div>
+                  <div className="card-body">
+                    <Sparkline data={seedSeries} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

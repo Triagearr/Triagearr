@@ -199,6 +199,25 @@ export function useTorrent(hash: string) {
   });
 }
 
+// PUT /api/v1/torrents/{hash}/protected — toggles the user-driven protection
+// flag. Server triggers a single-hash rescore so the excluded badge updates
+// immediately; we invalidate the torrent + scores queries to reflect that.
+export function useSetTorrentProtected() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ hash, protected: prot }: { hash: string; protected: boolean }) =>
+      apiFetchVoid(`/api/v1/torrents/${hash}/protected`, {
+        method: "PUT",
+        body: JSON.stringify({ protected: prot }),
+      }),
+    onSuccess: (_data, { hash }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.torrent(hash) });
+      qc.invalidateQueries({ queryKey: queryKeys.scores });
+      qc.invalidateQueries({ queryKey: ["torrents"] });
+    },
+  });
+}
+
 export function useSnapshots(hash: string, since = "720h") {
   return useQuery({
     queryKey: queryKeys.snapshots(hash, since),

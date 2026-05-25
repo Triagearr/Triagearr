@@ -23,6 +23,7 @@ type ScoringTorrent struct {
 	AddedOn      time.Time  `db:"added_on"`
 	CompletionOn *time.Time `db:"completion_on"`
 	Private      bool       `db:"private"`
+	Protected    bool       `db:"protected"`
 }
 
 // GetTorrentForScoring loads one torrent's scoring fields. Returns sql.ErrNoRows
@@ -30,7 +31,7 @@ type ScoringTorrent struct {
 func (s *Store) GetTorrentForScoring(ctx context.Context, hash triagearr.Hash) (ScoringTorrent, error) {
 	var row ScoringTorrent
 	err := s.reader.GetContext(ctx, &row, `
-		SELECT hash, name, category, tags, size, added_on, completion_on, private
+		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected
 		FROM torrents WHERE hash = ?
 	`, string(hash))
 	if err != nil {
@@ -43,7 +44,7 @@ func (s *Store) GetTorrentForScoring(ctx context.Context, hash triagearr.Hash) (
 func (s *Store) ListTorrentsForScoring(ctx context.Context) ([]ScoringTorrent, error) {
 	var rows []ScoringTorrent
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT hash, name, category, tags, size, added_on, completion_on, private
+		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected
 		FROM torrents ORDER BY hash
 	`); err != nil {
 		return nil, fmt.Errorf("listing torrents for scoring: %w", err)

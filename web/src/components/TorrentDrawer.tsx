@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, Lock, Unlock, X } from "lucide-react";
+import { ArrowUpRight, Lock, Shield, ShieldOff, Unlock, X } from "lucide-react";
 import { useMemo } from "react";
-import { useSnapshots, useTorrent } from "@/api/hooks";
+import { useSetTorrentProtected, useSnapshots, useTorrent } from "@/api/hooks";
 import { ArrLogo } from "@/components/ArrLogo";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { Sparkline } from "@/components/Sparkline";
@@ -22,6 +22,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
   const open = Boolean(hash);
   const torrent = useTorrent(hash ?? "");
   const snaps = useSnapshots(hash ?? "");
+  const setProtected = useSetTorrentProtected();
 
   const ratioSeries = useMemo(
     () => (snaps.data?.snapshots ?? []).map((p) => ({ ts: p.ts, value: p.ratio })),
@@ -57,6 +58,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
                   ? <span className="badge"><Lock size={9} /> private</span>
                   : <span className="badge"><Unlock size={9} /> public</span>
                 }
+                {t.protected && <span className="badge badge-warn"><Shield size={9} /> protected</span>}
                 {t.score?.excluded && <span className="badge badge-warn">excluded</span>}
                 {t.score && !t.score.any_tracker_alive && (
                   <span className="badge badge-danger">tracker dead</span>
@@ -199,6 +201,18 @@ export function TorrentDrawer({ hash, onClose }: Props) {
               >
                 Open full page <ArrowUpRight size={11} />
               </Link>
+              <button
+                className={`btn btn-sm ${t.protected ? "btn-ghost" : "btn-primary"}`}
+                disabled={setProtected.isPending}
+                onClick={() => setProtected.mutate({ hash: t.hash, protected: !t.protected })}
+                title={
+                  t.protected
+                    ? "Remove the protection: this torrent becomes a normal cleanup candidate again."
+                    : "Protect this torrent from cleanup. Reversible at any time."
+                }
+              >
+                {t.protected ? <><ShieldOff size={11} /> Unprotect</> : <><Shield size={11} /> Protect</>}
+              </button>
             </div>
           </div>
         )}

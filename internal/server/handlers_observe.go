@@ -117,6 +117,8 @@ type torrentDetailResponse struct {
 	Private      bool       `json:"private"`
 	Tags         string     `json:"tags"`
 	LastSeen     time.Time  `json:"last_seen"`
+	Protected    bool       `json:"protected"`
+	ProtectedAt  *time.Time `json:"protected_at,omitempty"`
 
 	Latest *torrentLatest `json:"latest,omitempty"`
 
@@ -179,6 +181,7 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 		Hash: row.Hash, Name: row.Name, Category: row.Category, SavePath: row.SavePath,
 		Size: row.Size, AddedOn: row.AddedOn, CompletionOn: row.CompletionOn,
 		Private: row.Private, Tags: row.Tags, LastSeen: row.LastSeen,
+		Protected: row.Protected, ProtectedAt: row.ProtectedAt,
 	}
 	if row.SnapshotAt != nil {
 		out.Latest = &torrentLatest{
@@ -232,6 +235,38 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 		out.Links = []linkView{}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+type setProtectedRequest struct {
+	Protected bool `json:"protected"`
+}
+
+// handleSetTorrentProtected toggles the user-driven protection flag. Idempotent
+// (PUT). Triggers an immediate single-hash rescore so the Decider's view of the
+// torrent (excluded yes/no) updates without waiting for the next scoring pass.
+func (s *Server) handleSetTorrentProtected(w http.ResponseWriter, r *http.Request) {
+	hash := triagearr.Hash(strings.ToLower(r.PathValue("hash")))
+	var body setProtectedRequest
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+
+	if err := s.opts.Store.SetTorrentProtected(r.Context(), hash, body.Protected); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "torrent not found")
+			return
+		}
+		writeInternal(w, err)
+		return
+	}
+
+	if s.opts.Scorer != nil {
+		if _, err := s.opts.Scorer.ScoreOne(r.Context(), hash); err != nil {
+			slog.Warn("rescore after protect toggle failed", "hash", hash, "err", err)
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type snapshotPoint struct {

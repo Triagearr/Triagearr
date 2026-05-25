@@ -662,16 +662,22 @@
   gap: 10px;
   font-family: inherit;
   color: var(--fg);
+  container-type: inline-size;
+}
+/* Hide the verbose state text on narrow tiles so the *arr name keeps room.
+   The tooltip on .arr-tile-state still surfaces the full label. */
+@container (max-width: 240px) {
+  .arr-tile-state-text { display: none; }
 }
 .arr-tile:hover  { border-color: var(--border-2); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
 .arr-tile.state-healthy      { border-left: 3px solid var(--green); }
 .arr-tile.state-down         { border-left: 3px solid var(--red); }
 .arr-tile.state-disabled     { border-left: 3px solid var(--border-2); }
 .arr-tile.state-unconfigured { border-left: 3px dashed var(--border-2); }
-.arr-tile-head { display: flex; align-items: center; gap: 10px; }
-.arr-tile-name { font-weight: 600; font-size: 13px; }
+.arr-tile-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.arr-tile-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .arr-tile-tag  { font-size: 11px; color: var(--fg-3); margin-top: 1px; }
-.arr-tile-state { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; flex-shrink: 0; }
+.arr-tile-state { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; flex-shrink: 0; min-width: 0; }
 .arr-tile-url { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .arr-tile-toggles { display: flex; gap: 6px; flex-wrap: wrap; }
 .arr-chip {

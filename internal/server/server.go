@@ -22,6 +22,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/linker"
 	"github.com/Triagearr/Triagearr/internal/notify"
+	"github.com/Triagearr/Triagearr/internal/scorer"
 	"github.com/Triagearr/Triagearr/internal/store"
 )
 
@@ -41,6 +42,11 @@ type Options struct {
 	Config    *config.Config
 	Version   VersionInfo
 	UIHandler http.Handler
+
+	// Scorer drives the single-hash rescore on protect-toggle so the Decider's
+	// view (excluded yes/no) updates without waiting for the next pass. Nil in
+	// tests that don't exercise the protect endpoint.
+	Scorer *scorer.Scorer
 
 	Decider *decider.Decider
 	// Volume returns the single watched volume the Decider plans against
@@ -119,6 +125,7 @@ func New(opts Options) *Server {
 	mux.HandleFunc("GET /api/v1/torrents/categories", s.security(s.auth(s.handleTorrentCategories)))
 	mux.HandleFunc("GET /api/v1/torrents/{hash}", s.security(s.auth(s.handleGetTorrent)))
 	mux.HandleFunc("GET /api/v1/torrents/{hash}/snapshots", s.security(s.auth(s.handleTorrentSnapshots)))
+	mux.HandleFunc("PUT /api/v1/torrents/{hash}/protected", s.security(s.auth(s.handleSetTorrentProtected)))
 	mux.HandleFunc("GET /api/v1/scores", s.security(s.auth(s.handleListScores)))
 	mux.HandleFunc("GET /api/v1/volume", s.security(s.auth(s.handleVolume)))
 	mux.HandleFunc("GET /api/v1/volume/history", s.security(s.auth(s.handleVolumeHistory)))

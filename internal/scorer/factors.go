@@ -234,6 +234,10 @@ func factorTrackerDead(trackers []trackerView, now time.Time, grace time.Duratio
 func evaluateExclusions(t store.ScoringTorrent, linkedMedia []store.LinkedMedia, qb config.TorrentClientInstanceConfig, arrs config.ArrsConfig) []string {
 	var reasons []string
 
+	if t.Protected {
+		reasons = append(reasons, "triagearr_protected")
+	}
+
 	if t.Category != "" && containsFold(qb.CategoryExclude, t.Category) {
 		reasons = append(reasons, "qbit_category:"+t.Category)
 	}

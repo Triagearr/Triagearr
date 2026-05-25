@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -91,6 +92,51 @@ func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 		return fmt.Errorf("upserting torrent %s: %w", t.Hash, err)
 	}
 	return nil
+}
+
+// SetTorrentProtected toggles the user-driven protection flag for one torrent.
+// Protecting stamps protected_at = now; unprotecting clears it. Returns
+// sql.ErrNoRows when the hash is unknown so callers can map to 404.
+func (s *Store) SetTorrentProtected(ctx context.Context, hash triagearr.Hash, protected bool) error {
+	var stampedAt any
+	if protected {
+		stampedAt = ts(time.Now().UTC())
+	}
+	res, err := s.writer.ExecContext(ctx, `
+		UPDATE torrents SET protected = ?, protected_at = ? WHERE hash = ?
+	`, boolToInt(protected), stampedAt, string(hash))
+	if err != nil {
+		return fmt.Errorf("updating protected for %s: %w", hash, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected for %s: %w", hash, err)
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// GetTorrentProtected reads the protection flag and timestamp. Returns
+// sql.ErrNoRows when the hash is unknown.
+func (s *Store) GetTorrentProtected(ctx context.Context, hash triagearr.Hash) (bool, *time.Time, error) {
+	var protected int
+	var at *time.Time
+	err := s.reader.QueryRowContext(ctx, `
+		SELECT protected, protected_at FROM torrents WHERE hash = ?
+	`, string(hash)).Scan(&protected, &at)
+	if err != nil {
+		return false, nil, err
+	}
+	return protected != 0, at, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // ErrHashNotFound is returned by ResolveTorrentHash when no torrent matches

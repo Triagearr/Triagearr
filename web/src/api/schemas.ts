@@ -107,6 +107,8 @@ export const TorrentDetail = z.object({
   private: z.boolean(),
   tags: z.string(),
   last_seen: ts,
+  protected: z.boolean(),
+  protected_at: ts.nullable().optional(),
   latest: z
     .object({
       ratio: z.number().nullable().optional(),
