@@ -75,16 +75,21 @@ arrs:
     enabled: false
 
 # -----------------------------------------------------------------------------
-# qBittorrent (single instance in V1)
+# Torrent clients — one instance per kind (ADR-0025)
 # -----------------------------------------------------------------------------
-qbit:
-  enabled: true
-  url: http://gluetun:8090       # qbit often shares gluetun's netns
-  username: ""
-  password: ""
-  category_exclude: [keep, archive]
-  tags_exclude: [forever, triagearr-keep]
-  delete_with_files: true        # delete physical files when nlink==1
+# Only the qbittorrent kind has a backend today; transmission/deluge/rtorrent
+# are scaffolded in the UI as "coming soon" and rejected by the daemon if
+# enabled in YAML. The block below is only read on first boot to seed the
+# torrent_client_connections table — thereafter the DB is the source of truth.
+torrent_clients:
+  qbittorrent:
+    enabled: true
+    url: http://gluetun:8090     # qbit often shares gluetun's netns
+    username: ""
+    password: ""
+    category_exclude: [keep, archive]
+    tags_exclude: [forever, triagearr-keep]
+    delete_with_files: true      # delete physical files when nlink==1
 
 # -----------------------------------------------------------------------------
 # Maintainerr (V2, optional)

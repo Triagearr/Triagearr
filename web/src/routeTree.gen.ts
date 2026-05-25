@@ -16,6 +16,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as TorrentsIndexRouteImport } from './routes/torrents.index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as TorrentsHashRouteImport } from './routes/torrents.$hash'
+import { Route as SettingsTorrentClientConnectionsRouteImport } from './routes/settings.torrent-client-connections'
 import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
 import { Route as SettingsScoringRouteImport } from './routes/settings.scoring'
 import { Route as SettingsPollingRouteImport } from './routes/settings.polling'
@@ -60,6 +61,12 @@ const TorrentsHashRoute = TorrentsHashRouteImport.update({
   path: '/$hash',
   getParentRoute: () => TorrentsRoute,
 } as any)
+const SettingsTorrentClientConnectionsRoute =
+  SettingsTorrentClientConnectionsRouteImport.update({
+    id: '/torrent-client-connections',
+    path: '/torrent-client-connections',
+    getParentRoute: () => SettingsRoute,
+  } as any)
 const SettingsSecurityRoute = SettingsSecurityRouteImport.update({
   id: '/security',
   path: '/security',
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/settings/polling': typeof SettingsPollingRoute
   '/settings/scoring': typeof SettingsScoringRoute
   '/settings/security': typeof SettingsSecurityRoute
+  '/settings/torrent-client-connections': typeof SettingsTorrentClientConnectionsRoute
   '/torrents/$hash': typeof TorrentsHashRoute
   '/settings/': typeof SettingsIndexRoute
   '/torrents/': typeof TorrentsIndexRoute
@@ -129,6 +137,7 @@ export interface FileRoutesByTo {
   '/settings/polling': typeof SettingsPollingRoute
   '/settings/scoring': typeof SettingsScoringRoute
   '/settings/security': typeof SettingsSecurityRoute
+  '/settings/torrent-client-connections': typeof SettingsTorrentClientConnectionsRoute
   '/torrents/$hash': typeof TorrentsHashRoute
   '/settings': typeof SettingsIndexRoute
   '/torrents': typeof TorrentsIndexRoute
@@ -147,6 +156,7 @@ export interface FileRoutesById {
   '/settings/polling': typeof SettingsPollingRoute
   '/settings/scoring': typeof SettingsScoringRoute
   '/settings/security': typeof SettingsSecurityRoute
+  '/settings/torrent-client-connections': typeof SettingsTorrentClientConnectionsRoute
   '/torrents/$hash': typeof TorrentsHashRoute
   '/settings/': typeof SettingsIndexRoute
   '/torrents/': typeof TorrentsIndexRoute
@@ -166,6 +176,7 @@ export interface FileRouteTypes {
     | '/settings/polling'
     | '/settings/scoring'
     | '/settings/security'
+    | '/settings/torrent-client-connections'
     | '/torrents/$hash'
     | '/settings/'
     | '/torrents/'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '/settings/polling'
     | '/settings/scoring'
     | '/settings/security'
+    | '/settings/torrent-client-connections'
     | '/torrents/$hash'
     | '/settings'
     | '/torrents'
@@ -198,6 +210,7 @@ export interface FileRouteTypes {
     | '/settings/polling'
     | '/settings/scoring'
     | '/settings/security'
+    | '/settings/torrent-client-connections'
     | '/torrents/$hash'
     | '/settings/'
     | '/torrents/'
@@ -260,6 +273,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/torrents/$hash'
       preLoaderRoute: typeof TorrentsHashRouteImport
       parentRoute: typeof TorrentsRoute
+    }
+    '/settings/torrent-client-connections': {
+      id: '/settings/torrent-client-connections'
+      path: '/torrent-client-connections'
+      fullPath: '/settings/torrent-client-connections'
+      preLoaderRoute: typeof SettingsTorrentClientConnectionsRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/settings/security': {
       id: '/settings/security'
@@ -329,6 +349,7 @@ interface SettingsRouteChildren {
   SettingsPollingRoute: typeof SettingsPollingRoute
   SettingsScoringRoute: typeof SettingsScoringRoute
   SettingsSecurityRoute: typeof SettingsSecurityRoute
+  SettingsTorrentClientConnectionsRoute: typeof SettingsTorrentClientConnectionsRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
@@ -341,6 +362,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsPollingRoute: SettingsPollingRoute,
   SettingsScoringRoute: SettingsScoringRoute,
   SettingsSecurityRoute: SettingsSecurityRoute,
+  SettingsTorrentClientConnectionsRoute: SettingsTorrentClientConnectionsRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
 

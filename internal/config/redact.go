@@ -5,7 +5,7 @@ package config
 // HTTP API or to log.
 //
 // Secrets covered:
-//   - Qbit.Password
+//   - TorrentClients.<kind>.Password
 //   - Arrs.<type>.APIKey
 //   - Notifications.Telegram.BotToken
 //
@@ -14,22 +14,21 @@ package config
 func (c Config) Redacted() Config {
 	out := c
 
-	if out.Qbit.Password != "" {
-		out.Qbit.Password = RedactedPlaceholder
-	}
+	out.TorrentClients.EachPtr(func(_ string, inst *TorrentClientInstanceConfig) {
+		if inst.Password != "" {
+			inst.Password = RedactedPlaceholder
+		}
+	})
 
 	if out.Notifications.Telegram.BotToken != "" {
 		out.Notifications.Telegram.BotToken = RedactedPlaceholder
 	}
 
-	for _, slot := range []*ArrInstanceConfig{
-		&out.Arrs.Sonarr, &out.Arrs.Radarr, &out.Arrs.Lidarr,
-		&out.Arrs.Readarr, &out.Arrs.WhisparrV2, &out.Arrs.WhisparrV3,
-	} {
-		if slot.APIKey != "" {
-			slot.APIKey = RedactedPlaceholder
+	out.Arrs.EachPtr(func(_ string, inst *ArrInstanceConfig) {
+		if inst.APIKey != "" {
+			inst.APIKey = RedactedPlaceholder
 		}
-	}
+	})
 
 	return out
 }

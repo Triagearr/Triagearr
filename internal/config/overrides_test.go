@@ -23,11 +23,12 @@ arrs:
     api_key: test-key
     poll: true
     act: false
-qbit:
-  enabled: true
-  url: http://qbit:8090
-  username: ""
-  password: ""
+torrent_clients:
+  qbittorrent:
+    enabled: true
+    url: http://qbit:8090
+    username: ""
+    password: ""
 volume:
   name: media
   path: /tmp

@@ -207,7 +207,7 @@ func TestTrackerPolicyFor_StrictestWins(t *testing.T) {
 }
 
 func TestEvaluateExclusions(t *testing.T) {
-	qb := config.QbitConfig{
+	qb := config.TorrentClientInstanceConfig{
 		CategoryExclude: []string{"keep"},
 		TagsExclude:     []string{"protected"},
 	}

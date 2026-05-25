@@ -1,6 +1,6 @@
 import { useVolume } from "@/api/hooks";
 import { DiskGaugeEditor } from "@/components/PressureGauge";
-import { Field, SectionShell, Subsection, type SectionHelpers } from "./SettingsField";
+import { Field, SectionShell, type SectionHelpers } from "./SettingsField";
 
 export function DiskPressureSection() {
   return (
@@ -24,7 +24,7 @@ function DiskPressureFields({ h }: { h: SectionHelpers }) {
   const targetVal = Number(h.fieldValue(gk, v.disk_pressure.target_free_percent));
 
   return (
-    <Subsection title={v.name}>
+    <>
       {live ? (
         <DiskGaugeEditor
           thresholdFree={thresholdVal}
@@ -73,6 +73,6 @@ function DiskPressureFields({ h }: { h: SectionHelpers }) {
         dirty={h.isDirty(mk)}
         onRevert={() => h.revert(mk)}
       />
-    </Subsection>
+    </>
   );
 }

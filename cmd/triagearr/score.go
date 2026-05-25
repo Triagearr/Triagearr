@@ -69,7 +69,7 @@ func scoreExplainAction(ctx context.Context, cmd *cli.Command) error {
 	defer func() { _ = s.Close() }()
 
 	if cmd.Bool("recompute") {
-		sc := scorer.New(scorer.Options{Cfg: cfg.Scoring, Qbit: cfg.Qbit, Arrs: cfg.Arrs, Store: s})
+		sc := scorer.New(scorer.Options{Cfg: cfg.Scoring, Qbit: cfg.TorrentClients.Qbittorrent, Arrs: cfg.Arrs, Store: s})
 		b, err := sc.ScoreOne(ctx, hash)
 		if err != nil {
 			return err
@@ -102,7 +102,7 @@ func scoreRecomputeAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer func() { _ = s.Close() }()
-	sc := scorer.New(scorer.Options{Cfg: cfg.Scoring, Qbit: cfg.Qbit, Arrs: cfg.Arrs, Store: s})
+	sc := scorer.New(scorer.Options{Cfg: cfg.Scoring, Qbit: cfg.TorrentClients.Qbittorrent, Arrs: cfg.Arrs, Store: s})
 	b, err := sc.ScoreOne(ctx, hash)
 	if err != nil {
 		return err

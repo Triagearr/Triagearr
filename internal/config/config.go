@@ -23,7 +23,11 @@ type Config struct {
 	HTTP    HTTPConfig    `koanf:"http"`
 	Storage StorageConfig `koanf:"storage"`
 	Arrs    ArrsConfig    `koanf:"arrs"`
-	Qbit    QbitConfig    `koanf:"qbit"`
+	// TorrentClients holds the configured torrent client instance per kind.
+	// Exactly one instance per kind is supported — the kind is the identity
+	// (ADR-0025). Only qbittorrent has a backend today; the other kinds are
+	// scaffolded for future backends.
+	TorrentClients TorrentClientsConfig `koanf:"torrent_clients"`
 	// Volume is the single watched filesystem mount. Triagearr watches exactly
 	// one volume — the TRaSH shared data root (ADR-0024).
 	Volume  VolumeConfig  `koanf:"volume"`
@@ -137,6 +141,40 @@ type ArrsConfig struct {
 	WhisparrV3 ArrInstanceConfig `koanf:"whisparr_v3"`
 }
 
+// EachPtr iterates over every *arr slot, yielding (kind label, pointer).
+// Use this for any code that needs to read or mutate every slot uniformly —
+// it is the single source of truth for the supported *arr kinds.
+func (c *ArrsConfig) EachPtr(fn func(label string, inst *ArrInstanceConfig)) {
+	fn("sonarr", &c.Sonarr)
+	fn("radarr", &c.Radarr)
+	fn("lidarr", &c.Lidarr)
+	fn("readarr", &c.Readarr)
+	fn("whisparr_v2", &c.WhisparrV2)
+	fn("whisparr_v3", &c.WhisparrV3)
+}
+
+// SetByKind assigns inst to the slot named by kind. Returns false when kind
+// is unknown — callers typically log and skip.
+func (c *ArrsConfig) SetByKind(kind string, inst ArrInstanceConfig) bool {
+	switch kind {
+	case "sonarr":
+		c.Sonarr = inst
+	case "radarr":
+		c.Radarr = inst
+	case "lidarr":
+		c.Lidarr = inst
+	case "readarr":
+		c.Readarr = inst
+	case "whisparr_v2":
+		c.WhisparrV2 = inst
+	case "whisparr_v3":
+		c.WhisparrV3 = inst
+	default:
+		return false
+	}
+	return true
+}
+
 // ArrInstanceConfig captures one arrs.<type> block. The type key in the YAML
 // is the identity — there is no separate name field.
 type ArrInstanceConfig struct {
@@ -150,8 +188,52 @@ type ArrInstanceConfig struct {
 	Timeout        time.Duration `koanf:"timeout"`
 }
 
-// QbitConfig configures the qBittorrent client.
-type QbitConfig struct {
+// TorrentClientsConfig holds the configured torrent client instance per kind.
+// Exactly one instance per kind is supported — the kind is the identity.
+// Only qbittorrent has a backend implementation today.
+type TorrentClientsConfig struct {
+	Qbittorrent  TorrentClientInstanceConfig `koanf:"qbittorrent"`
+	Transmission TorrentClientInstanceConfig `koanf:"transmission"` // scaffold, no backend yet
+	Deluge       TorrentClientInstanceConfig `koanf:"deluge"`       // scaffold, no backend yet
+	Rtorrent     TorrentClientInstanceConfig `koanf:"rtorrent"`     // scaffold, no backend yet
+}
+
+// EachPtr iterates over every torrent-client slot, yielding (kind label,
+// pointer). Single source of truth for the supported torrent-client kinds.
+func (c *TorrentClientsConfig) EachPtr(fn func(label string, inst *TorrentClientInstanceConfig)) {
+	fn("qbittorrent", &c.Qbittorrent)
+	fn("transmission", &c.Transmission)
+	fn("deluge", &c.Deluge)
+	fn("rtorrent", &c.Rtorrent)
+}
+
+// HasBackend reports whether a kind has a working backend today. Only
+// qbittorrent does; transmission/deluge/rtorrent are scaffolded.
+func (TorrentClientsConfig) HasBackend(kind string) bool {
+	return kind == "qbittorrent"
+}
+
+// SetByKind assigns inst to the slot named by kind. Returns false when kind
+// is unknown.
+func (c *TorrentClientsConfig) SetByKind(kind string, inst TorrentClientInstanceConfig) bool {
+	switch kind {
+	case "qbittorrent":
+		c.Qbittorrent = inst
+	case "transmission":
+		c.Transmission = inst
+	case "deluge":
+		c.Deluge = inst
+	case "rtorrent":
+		c.Rtorrent = inst
+	default:
+		return false
+	}
+	return true
+}
+
+// TorrentClientInstanceConfig captures one torrent_clients.<kind> block. The
+// kind key in the YAML is the identity — there is no separate name field.
+type TorrentClientInstanceConfig struct {
 	Enabled         bool          `koanf:"enabled"`
 	URL             string        `koanf:"url"`
 	Username        string        `koanf:"username"`
@@ -220,8 +302,8 @@ const (
 	defaultRunsPerMinute      = 60
 	defaultAuthPerMinute      = 30
 	defaultSQLitePath         = "/config/triagearr.db"
-	defaultArrTimeout         = 30 * time.Second
-	defaultQbitTimeout        = 30 * time.Second
+	defaultArrTimeout           = 30 * time.Second
+	defaultTorrentClientTimeout = 30 * time.Second
 	defaultQbitInterval       = 30 * time.Minute
 	defaultArrInterval        = time.Hour
 	defaultArrFileMinInterval = 200 * time.Millisecond // ≈ 5 req/s

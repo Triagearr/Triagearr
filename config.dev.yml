@@ -44,14 +44,15 @@ arrs:
   whisparr_v3:
     enabled: false
 
-qbit:
-  enabled: true
-  url: http://127.0.0.1:18090
-  username: admin
-  password: adminadmin
-  category_exclude: [keep]
-  tags_exclude: [triagearr-keep]
-  delete_with_files: true
+torrent_clients:
+  qbittorrent:
+    enabled: true
+    url: http://127.0.0.1:18090
+    username: admin
+    password: adminadmin
+    category_exclude: [keep]
+    tags_exclude: [triagearr-keep]
+    delete_with_files: true
 
 maintainerr:
   enabled: false

@@ -134,6 +134,10 @@ func New(opts Options) *Server {
 	mux.HandleFunc("POST /api/v1/arr-connections/test", s.security(s.auth(s.handleTestArrConnection)))
 	mux.HandleFunc("PUT /api/v1/arr-connections/{kind}", s.security(s.auth(s.handleUpsertArrConnection)))
 	mux.HandleFunc("DELETE /api/v1/arr-connections/{kind}", s.security(s.auth(s.handleDeleteArrConnection)))
+	mux.HandleFunc("GET /api/v1/torrent-client-connections", s.security(s.auth(s.handleListTorrentClientConnections)))
+	mux.HandleFunc("POST /api/v1/torrent-client-connections/test", s.security(s.auth(s.handleTestTorrentClientConnection)))
+	mux.HandleFunc("PUT /api/v1/torrent-client-connections/{kind}", s.security(s.auth(s.handleUpsertTorrentClientConnection)))
+	mux.HandleFunc("DELETE /api/v1/torrent-client-connections/{kind}", s.security(s.auth(s.handleDeleteTorrentClientConnection)))
 
 	// Auth endpoints. GET /session is unauthenticated (the SPA uses it to
 	// decide whether to show the login screen). POST /session and the

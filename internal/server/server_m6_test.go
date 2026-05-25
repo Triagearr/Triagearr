@@ -75,7 +75,9 @@ func TestConfigRedaction_NoSecretLeaks(t *testing.T) {
 	secrets := []string{"sk-very-secret-arr-key", "qbit-pass-9000"}
 	cfg := &config.Config{
 		HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"},
-		Qbit: config.QbitConfig{Enabled: true, URL: "http://qbit", Username: "u", Password: secrets[1]},
+		TorrentClients: config.TorrentClientsConfig{
+			Qbittorrent: config.TorrentClientInstanceConfig{Enabled: true, URL: "http://qbit", Username: "u", Password: secrets[1]},
+		},
 		Arrs: config.ArrsConfig{Sonarr: config.ArrInstanceConfig{
 			Enabled: true, URL: "http://sonarr", APIKey: secrets[0],
 		}},

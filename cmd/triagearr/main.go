@@ -21,6 +21,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/actor"
 	"github.com/Triagearr/Triagearr/internal/clients/qbit"
 	"github.com/Triagearr/Triagearr/internal/clients/registry"
+	"github.com/Triagearr/Triagearr/internal/clients/torrentregistry"
 	"github.com/Triagearr/Triagearr/internal/config"
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/linker"
@@ -264,20 +265,20 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 	// of poller ticks coalesces and senders never block.
 	scoreSignal := make(chan struct{}, 1)
 
+	treg, err := torrentregistry.BuildFromConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("building torrent client registry: %w", err)
+	}
 	var qb *qbit.Client
-	if cfg.Qbit.Enabled {
-		qbBuilt, qbErr := qbit.New(qbit.Options{
-			BaseURL:  cfg.Qbit.URL,
-			Username: cfg.Qbit.Username,
-			Password: cfg.Qbit.Password,
-			Timeout:  cfg.Qbit.Timeout,
-		})
-		if qbErr != nil {
-			return fmt.Errorf("building qbit client: %w", qbErr)
+	if active, ok := treg.Active(); ok {
+		// In V1 the only implemented torrent client is qBittorrent; the
+		// pollers and FilesPoller still require the concrete *qbit.Client
+		// for now (their fields are typed against it).
+		if qc, isQbit := active.(*qbit.Client); isQbit {
+			qb = qc
+			ps = append(ps, &pollers.QbitPoller{Client: qb, Store: s, Interval: cfg.Polling.QbitInterval, Notify: scoreSignal})
+			ps = append(ps, &pollers.TrackerPoller{Client: qb, Store: s, Interval: cfg.Polling.TrackerInterval, Notify: scoreSignal})
 		}
-		qb = qbBuilt
-		ps = append(ps, &pollers.QbitPoller{Client: qb, Store: s, Interval: cfg.Polling.QbitInterval, Notify: scoreSignal})
-		ps = append(ps, &pollers.TrackerPoller{Client: qb, Store: s, Interval: cfg.Polling.TrackerInterval, Notify: scoreSignal})
 	}
 
 	pollingArrs := reg.AllPolling()
@@ -333,7 +334,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 
 	sc := scorer.New(scorer.Options{
 		Cfg:   cfg.Scoring,
-		Qbit:  cfg.Qbit,
+		Qbit:  cfg.TorrentClients.Qbittorrent,
 		Arrs:  cfg.Arrs,
 		Store: s,
 	})
@@ -473,17 +474,17 @@ func buildNotifier(cfg config.NotificationsConfig) *notify.Dispatcher {
 // caller (no goroutines, no SIGHUP). Returns the qbit client too so callers
 // can keep it alive for the duration of Execute.
 func buildActor(cfg *config.Config, s *store.Store) (*actor.Actor, *qbit.Client, error) {
-	if !cfg.Qbit.Enabled {
-		return nil, nil, errors.New("qbit must be enabled to run --live actions")
-	}
-	qb, err := qbit.New(qbit.Options{
-		BaseURL:  cfg.Qbit.URL,
-		Username: cfg.Qbit.Username,
-		Password: cfg.Qbit.Password,
-		Timeout:  cfg.Qbit.Timeout,
-	})
+	treg, err := torrentregistry.BuildFromConfig(cfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building qbit client: %w", err)
+		return nil, nil, fmt.Errorf("building torrent client registry: %w", err)
+	}
+	active, ok := treg.Active()
+	if !ok {
+		return nil, nil, errors.New("a torrent client must be enabled to run --live actions")
+	}
+	qb, ok := active.(*qbit.Client)
+	if !ok {
+		return nil, nil, errors.New("only qbittorrent is supported as torrent client today")
 	}
 	reg, err := registry.BuildFromConfig(cfg)
 	if err != nil {
@@ -563,6 +564,10 @@ func loadWithOverrides(ctx context.Context, path string, s *store.Store) (*confi
 	// arr_connections (the DB table) is the source of truth for *arr
 	// instances; the YAML `arrs:` block only seeds it on first boot (ADR-0022).
 	if err := resolveArrConnections(ctx, s, cfg); err != nil {
+		return nil, err
+	}
+	// Same pattern for torrent clients (ADR-0025).
+	if err := resolveTorrentClientConnections(ctx, s, cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil

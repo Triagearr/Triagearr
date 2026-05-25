@@ -231,7 +231,7 @@ func factorTrackerDead(trackers []trackerView, now time.Time, grace time.Duratio
 // evaluateExclusions tags a torrent with the reasons it should not be acted on.
 // Per the user's decision, the scorer still computes all factors for excluded
 // torrents (UI visibility); the Decider (M4) filters them out.
-func evaluateExclusions(t store.ScoringTorrent, linkedMedia []store.LinkedMedia, qb config.QbitConfig, arrs config.ArrsConfig) []string {
+func evaluateExclusions(t store.ScoringTorrent, linkedMedia []store.LinkedMedia, qb config.TorrentClientInstanceConfig, arrs config.ArrsConfig) []string {
 	var reasons []string
 
 	if t.Category != "" && containsFold(qb.CategoryExclude, t.Category) {

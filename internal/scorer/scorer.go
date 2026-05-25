@@ -21,7 +21,7 @@ import (
 // rebuild the same normaliser (acceptable — a single-hash explain is rare).
 type Scorer struct {
 	cfg   config.ScoringConfig
-	qb    config.QbitConfig
+	qb    config.TorrentClientInstanceConfig
 	arrs  config.ArrsConfig
 	store *store.Store
 	now   func() time.Time
@@ -30,7 +30,7 @@ type Scorer struct {
 // Options configure a Scorer. Now is injected so tests can pin time.
 type Options struct {
 	Cfg   config.ScoringConfig
-	Qbit  config.QbitConfig
+	Qbit  config.TorrentClientInstanceConfig
 	Arrs  config.ArrsConfig
 	Store *store.Store
 	Now   func() time.Time

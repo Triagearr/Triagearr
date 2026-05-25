@@ -155,20 +155,17 @@ func applyDefaults(c *Config) {
 	if c.Storage.Vacuum.MinReclaimMB == 0 {
 		c.Storage.Vacuum.MinReclaimMB = defaultVacuumMinReclaimMB
 	}
-	if c.Qbit.Timeout == 0 {
-		c.Qbit.Timeout = defaultQbitTimeout
-	}
+	c.TorrentClients.EachPtr(func(_ string, inst *TorrentClientInstanceConfig) {
+		applyTorrentClientDefaults(inst)
+	})
 	if c.Volume.Name == "" {
 		c.Volume.Name = defaultVolumeName
 	}
 	applyScoringDefaults(&c.Scoring)
 	applyActionDefaults(&c.Action)
-	applyArrDefaults(&c.Arrs.Sonarr)
-	applyArrDefaults(&c.Arrs.Radarr)
-	applyArrDefaults(&c.Arrs.Lidarr)
-	applyArrDefaults(&c.Arrs.Readarr)
-	applyArrDefaults(&c.Arrs.WhisparrV2)
-	applyArrDefaults(&c.Arrs.WhisparrV3)
+	c.Arrs.EachPtr(func(_ string, inst *ArrInstanceConfig) {
+		applyArrDefaults(inst)
+	})
 }
 
 func applyScoringDefaults(s *ScoringConfig) {
@@ -216,42 +213,56 @@ func applyArrDefaults(inst *ArrInstanceConfig) {
 	}
 }
 
+func applyTorrentClientDefaults(inst *TorrentClientInstanceConfig) {
+	if inst.Timeout == 0 {
+		inst.Timeout = defaultTorrentClientTimeout
+	}
+}
+
 // Validate runs schema-level checks that aren't expressible at unmarshal time.
 func Validate(c *Config) error {
 	if c.Mode != ModeDryRun && c.Mode != ModeLive {
 		return fmt.Errorf("mode: must be %q or %q, got %q", ModeDryRun, ModeLive, c.Mode)
 	}
 
-	for _, group := range []struct {
-		label string
-		inst  ArrInstanceConfig
-	}{
-		{"sonarr", c.Arrs.Sonarr},
-		{"radarr", c.Arrs.Radarr},
-		{"lidarr", c.Arrs.Lidarr},
-		{"readarr", c.Arrs.Readarr},
-		{"whisparr_v2", c.Arrs.WhisparrV2},
-		{"whisparr_v3", c.Arrs.WhisparrV3},
-	} {
-		if !group.inst.Enabled {
-			continue
+	var arrErr error
+	c.Arrs.EachPtr(func(label string, inst *ArrInstanceConfig) {
+		if arrErr != nil || !inst.Enabled {
+			return
 		}
-		if _, err := url.Parse(group.inst.URL); err != nil || group.inst.URL == "" {
-			return fmt.Errorf("arrs.%s.url: invalid URL %q", group.label, group.inst.URL)
+		if _, err := url.Parse(inst.URL); err != nil || inst.URL == "" {
+			arrErr = fmt.Errorf("arrs.%s.url: invalid URL %q", label, inst.URL)
+			return
 		}
-		if group.inst.APIKey == "" {
-			return fmt.Errorf("arrs.%s.api_key: required when enabled", group.label)
+		if inst.APIKey == "" {
+			arrErr = fmt.Errorf("arrs.%s.api_key: required when enabled", label)
 		}
+	})
+	if arrErr != nil {
+		return arrErr
 	}
 
 	if c.Volume.Path == "" {
 		return fmt.Errorf("volume.path: required")
 	}
 
-	if c.Qbit.Enabled {
-		if _, err := url.Parse(c.Qbit.URL); err != nil || c.Qbit.URL == "" {
-			return fmt.Errorf("qbit.url: invalid URL %q", c.Qbit.URL)
+	// Kinds without a backend refuse to start when enabled — the daemon would
+	// otherwise silently ignore them.
+	var tcErr error
+	c.TorrentClients.EachPtr(func(label string, inst *TorrentClientInstanceConfig) {
+		if tcErr != nil || !inst.Enabled {
+			return
 		}
+		if !c.TorrentClients.HasBackend(label) {
+			tcErr = fmt.Errorf("torrent_clients.%s: kind is scaffolded but has no backend yet", label)
+			return
+		}
+		if _, err := url.Parse(inst.URL); err != nil || inst.URL == "" {
+			tcErr = fmt.Errorf("torrent_clients.%s.url: invalid URL %q", label, inst.URL)
+		}
+	})
+	if tcErr != nil {
+		return tcErr
 	}
 
 	if tg := c.Notifications.Telegram; tg.Enabled {
@@ -281,13 +292,11 @@ func Validate(c *Config) error {
 // AnyArrEnabledForPolling returns true if at least one *arr is enabled+poll.
 // Used by the daemon to decide whether to start the arr poller goroutine.
 func (c *Config) AnyArrEnabledForPolling() bool {
-	for _, inst := range []ArrInstanceConfig{
-		c.Arrs.Sonarr, c.Arrs.Radarr, c.Arrs.Lidarr,
-		c.Arrs.Readarr, c.Arrs.WhisparrV2, c.Arrs.WhisparrV3,
-	} {
+	var any bool
+	c.Arrs.EachPtr(func(_ string, inst *ArrInstanceConfig) {
 		if inst.Enabled && inst.Poll {
-			return true
+			any = true
 		}
-	}
-	return false
+	})
+	return any
 }

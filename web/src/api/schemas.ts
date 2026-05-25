@@ -347,3 +347,25 @@ export const ArrConnectionList = z.object({
   connections: z.array(ArrConnection).nullable(),
 });
 export type ArrConnectionT = z.infer<typeof ArrConnection>;
+
+// TorrentClientConnection mirrors the torrent_client_connections table
+// (ADR-0025). password is sent verbatim — the endpoint is behind auth and
+// the UI renders it as a password field. Only kind="qbittorrent" is
+// implemented today; transmission/deluge/rtorrent are scaffolded tiles in
+// the UI and rejected by the HTTP layer.
+export const TorrentClientConnection = z.object({
+  id: z.number(),
+  kind: z.string(),
+  url: z.string(),
+  username: z.string(),
+  password: z.string(),
+  enabled: z.boolean(),
+  category_exclude: z.array(z.string()).nullable(),
+  tags_exclude: z.array(z.string()).nullable(),
+  delete_with_files: z.boolean(),
+  timeout_seconds: z.number(),
+});
+export const TorrentClientConnectionList = z.object({
+  connections: z.array(TorrentClientConnection).nullable(),
+});
+export type TorrentClientConnectionT = z.infer<typeof TorrentClientConnection>;

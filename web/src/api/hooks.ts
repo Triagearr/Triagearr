@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { z } from "zod";
 import { apiFetch, apiFetchVoid } from "./client";
 import {
   ActionDetail,
@@ -6,6 +7,8 @@ import {
   ArrConnection,
   ArrConnectionList,
   ArrList,
+  TorrentClientConnection,
+  TorrentClientConnectionList,
   AuthChangePasswordResponse,
   AuthEnableResponse,
   ConfigShape,
@@ -43,6 +46,7 @@ export const queryKeys = {
   action: (id: number) => ["action", id] as const,
   arrs: ["arrs"] as const,
   arrConnections: ["arr-connections"] as const,
+  torrentClientConnections: ["torrent-client-connections"] as const,
   config: ["config"] as const,
   settings: ["settings"] as const,
 };
@@ -326,76 +330,133 @@ export type ArrConnectionInput = {
   timeout_seconds: number;
 };
 
-export function useArrConnections() {
-  return useQuery({
-    queryKey: queryKeys.arrConnections,
-    queryFn: () => apiFetch("/api/v1/arr-connections", ArrConnectionList),
-  });
+// createConnectionHooks builds the {list, create, update, delete, test} hook
+// set for a /api/v1/<basePath>-connections resource. *arr and torrent-client
+// connections share the same CRUD shape and only differ in their item schema,
+// query key, and which downstream views to re-invalidate on change.
+function createConnectionHooks<TList, TItem, TInput extends { kind: string }, TTest>(opts: {
+  basePath: string;
+  listSchema: z.ZodType<TList>;
+  itemSchema: z.ZodType<TItem>;
+  queryKey: readonly unknown[];
+  // extraInvalidateKeys are invalidated 1.5s after a mutation, alongside the
+  // resource's own key. The daemon SIGHUPs itself on connection changes; this
+  // delay lets the registry rebuild before the UI re-reads.
+  extraInvalidateKeys?: readonly (readonly unknown[])[];
+}) {
+  const { basePath, listSchema, itemSchema, queryKey, extraInvalidateKeys = [] } = opts;
+
+  const invalidate = (qc: ReturnType<typeof useQueryClient>) => {
+    qc.invalidateQueries({ queryKey });
+    setTimeout(() => {
+      qc.invalidateQueries({ queryKey });
+      for (const k of extraInvalidateKeys) {
+        qc.invalidateQueries({ queryKey: k });
+      }
+    }, 1500);
+  };
+
+  const upsert = (kind: string, body: Omit<TInput, "kind">) =>
+    apiFetch(`${basePath}/${kind}`, itemSchema, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+
+  const useList = () =>
+    useQuery({ queryKey, queryFn: () => apiFetch(basePath, listSchema) });
+
+  const useCreate = () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: ({ kind, ...body }: TInput) => upsert(kind, body as Omit<TInput, "kind">),
+      onSuccess: () => invalidate(qc),
+    });
+  };
+
+  const useUpdate = () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: ({ kind, input }: { kind: string; input: TInput }) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { kind: _k, ...body } = input;
+        return upsert(kind, body as Omit<TInput, "kind">);
+      },
+      onSuccess: () => invalidate(qc),
+    });
+  };
+
+  const useDelete = () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: (kind: string) =>
+        apiFetchVoid(`${basePath}/${kind}`, { method: "DELETE" }),
+      onSuccess: () => invalidate(qc),
+    });
+  };
+
+  const useTest = () =>
+    useMutation({
+      mutationFn: (input: TTest) =>
+        apiFetchVoid(`${basePath}/test`, {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+    });
+
+  return { useList, useCreate, useUpdate, useDelete, useTest };
 }
 
-// A connection change triggers a daemon self-SIGHUP; the registry rebuilds
-// after a short window, so we re-invalidate the arr views once it settles.
-function invalidateArrConnections(qc: ReturnType<typeof useQueryClient>) {
-  qc.invalidateQueries({ queryKey: queryKeys.arrConnections });
-  setTimeout(() => {
-    qc.invalidateQueries({ queryKey: queryKeys.arrConnections });
-    qc.invalidateQueries({ queryKey: queryKeys.arrs });
-    qc.invalidateQueries({ queryKey: queryKeys.summary });
-  }, 1500);
-}
+const arrConnHooks = createConnectionHooks<
+  z.infer<typeof ArrConnectionList>,
+  z.infer<typeof ArrConnection>,
+  ArrConnectionInput,
+  { kind: string; url: string; api_key: string; timeout_seconds: number }
+>({
+  basePath: "/api/v1/arr-connections",
+  listSchema: ArrConnectionList,
+  itemSchema: ArrConnection,
+  queryKey: queryKeys.arrConnections,
+  extraInvalidateKeys: [queryKeys.arrs, queryKeys.summary],
+});
 
-export function useCreateArrConnection() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ kind, ...body }: ArrConnectionInput) =>
-      apiFetch(`/api/v1/arr-connections/${kind}`, ArrConnection, {
-        method: "PUT",
-        body: JSON.stringify(body),
-      }),
-    onSuccess: () => invalidateArrConnections(qc),
-  });
-}
+export const useArrConnections = arrConnHooks.useList;
+export const useCreateArrConnection = arrConnHooks.useCreate;
+export const useUpdateArrConnection = arrConnHooks.useUpdate;
+export const useDeleteArrConnection = arrConnHooks.useDelete;
+export const useTestArrConnection = arrConnHooks.useTest;
 
-export function useUpdateArrConnection() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ kind, input }: { kind: string; input: ArrConnectionInput }) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { kind: _k, ...body } = input;
-      return apiFetch(`/api/v1/arr-connections/${kind}`, ArrConnection, {
-        method: "PUT",
-        body: JSON.stringify(body),
-      });
-    },
-    onSuccess: () => invalidateArrConnections(qc),
-  });
-}
+// --- Torrent client connections (ADR-0025) -------------------------------
 
-export function useDeleteArrConnection() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (kind: string) =>
-      apiFetchVoid(`/api/v1/arr-connections/${kind}`, { method: "DELETE" }),
-    onSuccess: () => invalidateArrConnections(qc),
-  });
-}
+export type TorrentClientConnectionInput = {
+  kind: string;
+  url: string;
+  username: string;
+  password: string;
+  enabled: boolean;
+  category_exclude: string[];
+  tags_exclude: string[];
+  delete_with_files: boolean;
+  timeout_seconds: number;
+};
 
-// POST /api/v1/arr-connections/test — pings the posted credentials so the
-// operator can verify a connection before saving it.
-export function useTestArrConnection() {
-  return useMutation({
-    mutationFn: (input: {
-      kind: string;
-      url: string;
-      api_key: string;
-      timeout_seconds: number;
-    }) =>
-      apiFetchVoid("/api/v1/arr-connections/test", {
-        method: "POST",
-        body: JSON.stringify(input),
-      }),
-  });
-}
+const torrentConnHooks = createConnectionHooks<
+  z.infer<typeof TorrentClientConnectionList>,
+  z.infer<typeof TorrentClientConnection>,
+  TorrentClientConnectionInput,
+  { kind: string; url: string; username: string; password: string; timeout_seconds: number }
+>({
+  basePath: "/api/v1/torrent-client-connections",
+  listSchema: TorrentClientConnectionList,
+  itemSchema: TorrentClientConnection,
+  queryKey: queryKeys.torrentClientConnections,
+  extraInvalidateKeys: [queryKeys.summary],
+});
+
+export const useTorrentClientConnections = torrentConnHooks.useList;
+export const useCreateTorrentClientConnection = torrentConnHooks.useCreate;
+export const useUpdateTorrentClientConnection = torrentConnHooks.useUpdate;
+export const useDeleteTorrentClientConnection = torrentConnHooks.useDelete;
+export const useTestTorrentClientConnection = torrentConnHooks.useTest;
 
 export function useTriggerRun() {
   const qc = useQueryClient();

@@ -8,7 +8,6 @@ import (
 
 	"github.com/Triagearr/Triagearr/internal/config"
 	"github.com/Triagearr/Triagearr/internal/store"
-	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
 // resolveArrConnections makes the arr_connections table the source of truth
@@ -42,24 +41,13 @@ func resolveArrConnections(ctx context.Context, s *store.Store, cfg *config.Conf
 // flattenArrs maps each ArrsConfig field to a store.ArrConnection. Zero-value
 // entries (no URL) are skipped — they represent unconfigured types.
 func flattenArrs(cfg *config.Config) []store.ArrConnection {
-	pairs := []struct {
-		kind triagearr.ArrType
-		inst config.ArrInstanceConfig
-	}{
-		{triagearr.ArrTypeSonarr, cfg.Arrs.Sonarr},
-		{triagearr.ArrTypeRadarr, cfg.Arrs.Radarr},
-		{triagearr.ArrTypeLidarr, cfg.Arrs.Lidarr},
-		{triagearr.ArrTypeReadarr, cfg.Arrs.Readarr},
-		{triagearr.ArrTypeWhisparrV2, cfg.Arrs.WhisparrV2},
-		{triagearr.ArrTypeWhisparrV3, cfg.Arrs.WhisparrV3},
-	}
 	var out []store.ArrConnection
-	for _, p := range pairs {
-		if p.inst.URL == "" && !p.inst.Enabled {
-			continue // zero-value / unconfigured
+	cfg.Arrs.EachPtr(func(label string, inst *config.ArrInstanceConfig) {
+		if inst.URL == "" && !inst.Enabled {
+			return
 		}
-		out = append(out, instanceToConnection(string(p.kind), p.inst))
-	}
+		out = append(out, instanceToConnection(label, *inst))
+	})
 	return out
 }
 
@@ -68,21 +56,7 @@ func flattenArrs(cfg *config.Config) []store.ArrConnection {
 func arrsConfigFromConnections(conns []store.ArrConnection) config.ArrsConfig {
 	var ac config.ArrsConfig
 	for _, c := range conns {
-		inst := connectionToInstance(c)
-		switch triagearr.ArrType(c.Kind) {
-		case triagearr.ArrTypeSonarr:
-			ac.Sonarr = inst
-		case triagearr.ArrTypeRadarr:
-			ac.Radarr = inst
-		case triagearr.ArrTypeLidarr:
-			ac.Lidarr = inst
-		case triagearr.ArrTypeReadarr:
-			ac.Readarr = inst
-		case triagearr.ArrTypeWhisparrV2:
-			ac.WhisparrV2 = inst
-		case triagearr.ArrTypeWhisparrV3:
-			ac.WhisparrV3 = inst
-		default:
+		if !ac.SetByKind(c.Kind, connectionToInstance(c)) {
 			slog.Warn("ignoring arr_connection with unknown kind", "kind", c.Kind)
 		}
 	}

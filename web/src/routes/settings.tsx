@@ -1,8 +1,9 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { Bell, Database, Gauge, Info, Link2, Settings2, Shield, SlidersHorizontal, Timer } from "lucide-react";
+import { Bell, Database, Download, Gauge, Info, Link2, Settings2, Shield, SlidersHorizontal, Timer } from "lucide-react";
 
 const sections = [
-  { to: "/settings/arr-connections", label: "*arr connections", Icon: Link2 },
+  { to: "/settings/arr-connections",            label: "*arr connections",   Icon: Link2 },
+  { to: "/settings/torrent-client-connections", label: "Torrent connections", Icon: Download },
   { to: "/settings/scoring",         label: "Scoring",          Icon: SlidersHorizontal },
   { to: "/settings/polling",         label: "Polling",          Icon: Timer },
   { to: "/settings/disk-pressure",   label: "Disk pressure",    Icon: Gauge },

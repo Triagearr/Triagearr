@@ -140,7 +140,7 @@ func TestScoreAll_PublicHealthyVsRareVsGraveyard(t *testing.T) {
 
 	sc := scorer.New(scorer.Options{
 		Cfg:   testConfig(),
-		Qbit:  config.QbitConfig{TagsExclude: []string{"keep"}},
+		Qbit:  config.TorrentClientInstanceConfig{TagsExclude: []string{"keep"}},
 		Store: s,
 		Now:   func() time.Time { return now },
 	})
