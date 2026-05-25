@@ -1,15 +1,150 @@
 -- Consolidated schema baseline (alpha).
 --
--- This single file replaces the former 0001..0012 chain. Triagearr is alpha:
--- the only deployed database is recreated from scratch alongside this squash,
--- so no incremental upgrade path is preserved. New schema work appends a fresh
--- 0002_*.sql; this file is never edited in place once a release ships.
+-- Triagearr is alpha: there is no incremental upgrade path. The only deployed
+-- database is recreated from scratch alongside any squash, so this file may
+-- be re-edited freely until v1.0 ships. After v1.0, schema work appends a
+-- fresh 0002_*.sql and this file becomes immutable.
 --
--- Per-decision rationale lives in docs/adr/. One *arr instance per kind and
--- one watched volume are baseline invariants (no arr_name, no volume_name).
+-- Decision rationale lives in docs/adr/. Baseline invariants: one *arr
+-- instance per kind (no arr_name), one watched volume (no volume_name).
 
--- *arr instance health observations. Distinct from arr_connections, which owns
--- the connection *config* (ADR-0022); this table is just last-known health.
+------------------------------------------------------------------------------
+-- Torrents
+------------------------------------------------------------------------------
+
+-- private defaults to 1: a row is assumed private until the next qBit poll
+-- proves otherwise, so the scorer never treats a private torrent as swarm-only.
+-- protected is user-driven; the qBit upsert deliberately leaves it untouched
+-- so the flag survives sync ticks.
+CREATE TABLE torrents (
+    hash          TEXT      PRIMARY KEY,
+    name          TEXT      NOT NULL,
+    category      TEXT      NOT NULL DEFAULT '',
+    save_path     TEXT      NOT NULL DEFAULT '',
+    size          INTEGER   NOT NULL DEFAULT 0,
+    added_on      TIMESTAMP NOT NULL,
+    completion_on TIMESTAMP,
+    private       INTEGER   NOT NULL DEFAULT 1,
+    tags          TEXT      NOT NULL DEFAULT '',
+    last_seen     TIMESTAMP NOT NULL,
+    protected     INTEGER   NOT NULL DEFAULT 0,
+    protected_at  TIMESTAMP
+);
+CREATE INDEX idx_torrents_last_seen ON torrents(last_seen);
+CREATE INDEX idx_torrents_category  ON torrents(category);
+
+-- Per-file hardlink count (ADR-0023). Consumed by the Decider's cross-seed
+-- pre-filter (max-nlink lookup) and the Actor's T3.5 atomic stat re-check.
+-- Pruning is manual: PruneStaleTorrents must cascade here, same pattern as
+-- snapshots_raw and torrent_trackers.
+CREATE TABLE torrent_files (
+    torrent_hash TEXT      NOT NULL,
+    rel_path     TEXT      NOT NULL,
+    size_bytes   INTEGER   NOT NULL,
+    nlink        INTEGER,
+    sampled_at   TIMESTAMP,
+    PRIMARY KEY (torrent_hash, rel_path)
+) WITHOUT ROWID;
+-- No secondary index on (nlink) or (sampled_at): every torrent_files query
+-- filters by torrent_hash, which is the leading PK column.
+
+CREATE TABLE snapshots_raw (
+    torrent_hash  TEXT      NOT NULL,
+    ts            TIMESTAMP NOT NULL,
+    ratio         REAL      NOT NULL,
+    uploaded      INTEGER   NOT NULL,
+    seeders       INTEGER   NOT NULL,
+    leechers      INTEGER   NOT NULL,
+    state         TEXT      NOT NULL,
+    last_activity TIMESTAMP NOT NULL,
+    PRIMARY KEY (torrent_hash, ts)
+) WITHOUT ROWID;
+-- ts-only index serves the retention / downsample sweeps
+-- (DELETE WHERE ts < ?, GROUP BY date(ts) WHERE ts < ?). The PK leads on
+-- torrent_hash so ts alone can't ride it.
+CREATE INDEX idx_snapshots_raw_ts ON snapshots_raw(ts);
+
+-- uploaded_max lets Factor 2 honour the 30-day velocity window after
+-- snapshots_raw has expired. A zero is treated as "no data" by the scorer.
+CREATE TABLE snapshots_daily (
+    torrent_hash TEXT    NOT NULL,
+    day          DATE    NOT NULL,
+    ratio_avg    REAL    NOT NULL,
+    ratio_min    REAL    NOT NULL,
+    ratio_max    REAL    NOT NULL,
+    seeders_avg  REAL    NOT NULL,
+    seeders_min  INTEGER NOT NULL,
+    seeders_max  INTEGER NOT NULL,
+    uploaded_max INTEGER NOT NULL DEFAULT 0,
+    samples      INTEGER NOT NULL,
+    PRIMARY KEY (torrent_hash, day)
+) WITHOUT ROWID;
+-- day-only index for retention (DELETE WHERE day < ?). Same reason as
+-- idx_snapshots_raw_ts: PK leads on torrent_hash.
+CREATE INDEX idx_snapshots_daily_day ON snapshots_daily(day);
+
+-- first_seen_dead records when a tracker first reported status=4, so Factor 7
+-- measures "sustained dead" rather than "last polled". qBit exposes no
+-- status-changed-at field, so the transition is observed in ReplaceTrackers.
+CREATE TABLE torrent_trackers (
+    torrent_hash    TEXT      NOT NULL,
+    tracker_url     TEXT      NOT NULL,
+    tracker_host    TEXT      NOT NULL,
+    status          INTEGER   NOT NULL,
+    last_msg        TEXT      NOT NULL DEFAULT '',
+    last_checked    TIMESTAMP NOT NULL,
+    first_seen_dead TIMESTAMP,
+    PRIMARY KEY (torrent_hash, tracker_url)
+) WITHOUT ROWID;
+-- No secondary index on tracker_host: it appears only in ORDER BY, never in
+-- a WHERE predicate.
+
+------------------------------------------------------------------------------
+-- *arr-side state
+------------------------------------------------------------------------------
+
+CREATE TABLE media (
+    id         INTEGER   NOT NULL,
+    arr_type   TEXT      NOT NULL,
+    title      TEXT      NOT NULL,
+    title_slug TEXT      NOT NULL DEFAULT '',
+    path       TEXT      NOT NULL DEFAULT '',
+    size       INTEGER   NOT NULL DEFAULT 0,
+    tags       TEXT      NOT NULL DEFAULT '',
+    last_seen  TIMESTAMP NOT NULL,
+    PRIMARY KEY (arr_type, id)
+);
+CREATE INDEX idx_media_last_seen ON media(last_seen);
+
+CREATE TABLE media_files (
+    arr_type  TEXT      NOT NULL,
+    file_id   INTEGER   NOT NULL,
+    media_id  INTEGER   NOT NULL,
+    path      TEXT      NOT NULL,
+    size      INTEGER   NOT NULL DEFAULT 0,
+    last_seen TIMESTAMP NOT NULL,
+    PRIMARY KEY (arr_type, file_id)
+);
+CREATE INDEX idx_media_files_media ON media_files(arr_type, media_id);
+
+-- API-only hardlink map (ADR-0012). download_id is the lowercased qBit
+-- info-hash that *arr's import history recorded for this file.
+CREATE TABLE arr_imports (
+    arr_type      TEXT      NOT NULL,
+    file_id       INTEGER   NOT NULL,
+    download_id   TEXT      NOT NULL,
+    dropped_path  TEXT      NOT NULL DEFAULT '',
+    imported_path TEXT      NOT NULL DEFAULT '',
+    size          INTEGER   NOT NULL DEFAULT 0,
+    history_id    INTEGER   NOT NULL,
+    imported_at   TIMESTAMP NOT NULL,
+    PRIMARY KEY (arr_type, file_id)
+);
+CREATE INDEX idx_arr_imports_download ON arr_imports(download_id);
+CREATE INDEX idx_arr_imports_history  ON arr_imports(arr_type, history_id);
+
+-- Last-known *arr health. Distinct from arr_connections (ADR-0022) which
+-- owns the connection config; this table is just the most recent probe.
 CREATE TABLE arr_instances (
     kind              TEXT NOT NULL PRIMARY KEY,
     url               TEXT NOT NULL,
@@ -18,232 +153,171 @@ CREATE TABLE arr_instances (
     last_error        TEXT
 );
 
--- private defaults to 1: a row is assumed private until the next qBit poll
--- proves otherwise, so the scorer never treats a private torrent as swarm-only.
-CREATE TABLE torrents (
-    hash          TEXT PRIMARY KEY,
-    name          TEXT NOT NULL,
-    category      TEXT NOT NULL DEFAULT '',
-    save_path     TEXT NOT NULL DEFAULT '',
-    size          INTEGER NOT NULL DEFAULT 0,
-    added_on      TIMESTAMP NOT NULL,
-    completion_on TIMESTAMP,
-    private       INTEGER NOT NULL DEFAULT 1,
-    tags          TEXT NOT NULL DEFAULT '',
-    last_seen     TIMESTAMP NOT NULL
-);
-CREATE INDEX idx_torrents_last_seen ON torrents(last_seen);
-CREATE INDEX idx_torrents_category  ON torrents(category);
+------------------------------------------------------------------------------
+-- Disk pressure
+------------------------------------------------------------------------------
 
-CREATE TABLE snapshots_raw (
-    torrent_hash  TEXT NOT NULL,
-    ts            TIMESTAMP NOT NULL,
-    ratio         REAL NOT NULL,
-    uploaded      INTEGER NOT NULL,
-    seeders       INTEGER NOT NULL,
-    leechers      INTEGER NOT NULL,
-    state         TEXT NOT NULL,
-    last_activity TIMESTAMP NOT NULL,
-    PRIMARY KEY (torrent_hash, ts)
-) WITHOUT ROWID;
-
-CREATE TABLE media (
-    id        INTEGER NOT NULL,
-    arr_type  TEXT NOT NULL,
-    title     TEXT NOT NULL,
-    path      TEXT NOT NULL DEFAULT '',
-    size      INTEGER NOT NULL DEFAULT 0,
-    tags      TEXT NOT NULL DEFAULT '',
-    last_seen TIMESTAMP NOT NULL,
-    PRIMARY KEY (arr_type, id)
-);
-CREATE INDEX idx_media_last_seen ON media(last_seen);
-
--- Triagearr watches exactly one volume (ADR-0024), so a snapshot is keyed by
--- timestamp alone.
+-- One watched volume (ADR-0024), so a snapshot is keyed by timestamp alone.
 CREATE TABLE disk_pressure (
     ts           TIMESTAMP NOT NULL PRIMARY KEY,
-    path         TEXT NOT NULL,
-    total_bytes  INTEGER NOT NULL,
-    used_bytes   INTEGER NOT NULL,
-    free_bytes   INTEGER NOT NULL,
-    free_percent REAL NOT NULL
+    path         TEXT      NOT NULL,
+    total_bytes  INTEGER   NOT NULL,
+    used_bytes   INTEGER   NOT NULL,
+    free_bytes   INTEGER   NOT NULL,
+    free_percent REAL      NOT NULL
 ) WITHOUT ROWID;
 
--- first_seen_dead records when a tracker first reported status=4, so Factor 7
--- measures "sustained dead" rather than "last polled". qBit exposes no
--- status-changed-at field, so the transition is observed in ReplaceTrackers.
-CREATE TABLE torrent_trackers (
-    torrent_hash    TEXT NOT NULL,
-    tracker_url     TEXT NOT NULL,
-    tracker_host    TEXT NOT NULL,
-    status          INTEGER NOT NULL,
-    last_msg        TEXT NOT NULL DEFAULT '',
-    last_checked    TIMESTAMP NOT NULL,
-    first_seen_dead TIMESTAMP,
-    PRIMARY KEY (torrent_hash, tracker_url)
-) WITHOUT ROWID;
-CREATE INDEX idx_torrent_trackers_host ON torrent_trackers(tracker_host);
-
-CREATE TABLE media_files (
-    arr_type  TEXT NOT NULL,
-    file_id   INTEGER NOT NULL,
-    media_id  INTEGER NOT NULL,
-    path      TEXT NOT NULL,
-    size      INTEGER NOT NULL DEFAULT 0,
-    last_seen TIMESTAMP NOT NULL,
-    PRIMARY KEY (arr_type, file_id)
-);
-CREATE INDEX idx_media_files_media ON media_files(arr_type, media_id);
-
--- uploaded_max lets Factor 2 honour the 30-day velocity window after
--- snapshots_raw has expired. A zero is treated as "no data" by the scorer.
-CREATE TABLE snapshots_daily (
-    torrent_hash TEXT NOT NULL,
-    day          DATE NOT NULL,
-    ratio_avg    REAL NOT NULL,
-    ratio_min    REAL NOT NULL,
-    ratio_max    REAL NOT NULL,
-    seeders_avg  REAL NOT NULL,
-    seeders_min  INTEGER NOT NULL,
-    seeders_max  INTEGER NOT NULL,
-    uploaded_max INTEGER NOT NULL DEFAULT 0,
-    samples      INTEGER NOT NULL,
-    PRIMARY KEY (torrent_hash, day)
-) WITHOUT ROWID;
-
--- API-only hardlink map (ADR-0012). download_id is the lowercased qBit
--- info-hash that *arr's import history recorded for this file.
-CREATE TABLE arr_imports (
-    arr_type      TEXT    NOT NULL,
-    file_id       INTEGER NOT NULL,
-    download_id   TEXT    NOT NULL,
-    dropped_path  TEXT    NOT NULL DEFAULT '',
-    imported_path TEXT    NOT NULL DEFAULT '',
-    size          INTEGER NOT NULL DEFAULT 0,
-    history_id    INTEGER NOT NULL,
-    imported_at   TIMESTAMP NOT NULL,
-    PRIMARY KEY (arr_type, file_id)
-);
-CREATE INDEX idx_arr_imports_download ON arr_imports(download_id);
-CREATE INDEX idx_arr_imports_history  ON arr_imports(arr_type, history_id);
+------------------------------------------------------------------------------
+-- Scoring
+------------------------------------------------------------------------------
 
 -- The partial index serves the Decider's hot path: eligible candidates ranked
 -- by score. factors_json is the breakdown read whole by the explain path.
 CREATE TABLE scores (
-    torrent_hash      TEXT NOT NULL PRIMARY KEY,
-    score             REAL NOT NULL,
-    private           INTEGER NOT NULL,
-    any_tracker_alive INTEGER NOT NULL,
-    excluded          INTEGER NOT NULL DEFAULT 0,
-    exclusion_reasons TEXT NOT NULL DEFAULT '',
-    factors_json      TEXT NOT NULL,
+    torrent_hash      TEXT      NOT NULL PRIMARY KEY,
+    score             REAL      NOT NULL,
+    private           INTEGER   NOT NULL,
+    any_tracker_alive INTEGER   NOT NULL,
+    excluded          INTEGER   NOT NULL DEFAULT 0,
+    exclusion_reasons TEXT      NOT NULL DEFAULT '',
+    factors_json      TEXT      NOT NULL,
     computed_at       TIMESTAMP NOT NULL
 ) WITHOUT ROWID;
 CREATE INDEX idx_scores_eligible ON scores(score DESC) WHERE excluded = 0;
 
+------------------------------------------------------------------------------
+-- Runs / actions / audit
+------------------------------------------------------------------------------
+
 CREATE TABLE runs (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    triggered_by          TEXT NOT NULL,
+    id                    INTEGER   PRIMARY KEY AUTOINCREMENT,
+    triggered_by          TEXT      NOT NULL,
     triggered_at          TIMESTAMP NOT NULL,
-    mode                  TEXT NOT NULL,
+    mode                  TEXT      NOT NULL,
     free_pct_at_fire      REAL,
     target_free_pct       REAL,
-    estimated_freed_bytes INTEGER NOT NULL DEFAULT 0,
-    stop_reason           TEXT NOT NULL,
-    status                TEXT NOT NULL DEFAULT 'completed'
+    estimated_freed_bytes INTEGER   NOT NULL DEFAULT 0,
+    stop_reason           TEXT      NOT NULL,
+    status                TEXT      NOT NULL DEFAULT 'completed'
 );
-CREATE INDEX runs_triggered_at_idx ON runs(triggered_at DESC);
+CREATE INDEX idx_runs_triggered_at ON runs(triggered_at DESC);
 
 CREATE TABLE run_items (
     run_id           INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
     rank             INTEGER NOT NULL,
-    torrent_hash     TEXT NOT NULL,
-    score            REAL NOT NULL,
+    torrent_hash     TEXT    NOT NULL,
+    score            REAL    NOT NULL,
     size_bytes       INTEGER NOT NULL,
     would_free_bytes INTEGER NOT NULL,
     PRIMARY KEY (run_id, rank)
 );
-CREATE INDEX run_items_hash_idx ON run_items(torrent_hash);
+CREATE INDEX idx_run_items_hash ON run_items(torrent_hash);
 
 -- One row per candidate the actor attempts. started_at is indexed for the
 -- dashboard's global action timeline (ORDER BY started_at DESC).
+-- status enum: pending | running | succeeded | aborted_arr_fail
+--            | aborted_nlink_check | failed_qbit | skipped_cross_seed
+-- Source of truth: internal/triagearr/types.go ActionStatus.
 CREATE TABLE actions (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id       INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-    rank         INTEGER NOT NULL,
-    torrent_hash TEXT NOT NULL,
+    id           INTEGER   PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER   NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    rank         INTEGER   NOT NULL,
+    torrent_hash TEXT      NOT NULL,
     started_at   TIMESTAMP NOT NULL,
     finished_at  TIMESTAMP,
-    status       TEXT NOT NULL,
-        -- pending | running | succeeded | aborted_arr_fail
-        --   | aborted_nlink_check | failed_qbit | skipped_cross_seed
-        -- Source of truth: internal/triagearr/types.go ActionStatus.
-    freed_bytes  INTEGER NOT NULL DEFAULT 0,
+    status       TEXT      NOT NULL,
+    freed_bytes  INTEGER   NOT NULL DEFAULT 0,
     UNIQUE(run_id, rank)
 );
-CREATE INDEX actions_hash_idx       ON actions(torrent_hash);
-CREATE INDEX actions_status_idx     ON actions(status);
-CREATE INDEX actions_started_at_idx ON actions(started_at DESC);
+CREATE INDEX idx_actions_hash       ON actions(torrent_hash);
+CREATE INDEX idx_actions_status     ON actions(status);
+CREATE INDEX idx_actions_started_at ON actions(started_at DESC);
 
 -- One row per API call — per-file granularity on the *arr side so a partial
 -- season-pack outcome is reconstructible from the DB alone.
+-- step enum:    arr_delete | qbit_delete | nlink_check
+-- outcome enum: ok | failed | skipped | not_attempted
 CREATE TABLE audit_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    action_id   INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+    id          INTEGER   PRIMARY KEY AUTOINCREMENT,
+    action_id   INTEGER   NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
     ts          TIMESTAMP NOT NULL,
-    step        TEXT NOT NULL,   -- arr_delete | qbit_delete
+    step        TEXT      NOT NULL,
     arr_type    TEXT,
     arr_file_id INTEGER,
-    outcome     TEXT NOT NULL,   -- ok | failed | skipped | not_attempted
+    outcome     TEXT      NOT NULL,
     detail      TEXT
 );
-CREATE INDEX audit_log_action_idx ON audit_log(action_id, ts);
+CREATE INDEX idx_audit_log_action ON audit_log(action_id, ts);
+
+------------------------------------------------------------------------------
+-- Auth
+------------------------------------------------------------------------------
 
 -- Built-in auth (opt-in via UI). Auth is OFF while auth_users is empty. The DB
 -- stores only sha256(token); the token itself lives only in the browser cookie.
 CREATE TABLE auth_users (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    username            TEXT NOT NULL UNIQUE,
-    password_hash       TEXT NOT NULL,           -- bcrypt
+    id                  INTEGER   PRIMARY KEY AUTOINCREMENT,
+    username            TEXT      NOT NULL UNIQUE,
+    password_hash       TEXT      NOT NULL,
     created_at          TIMESTAMP NOT NULL,
     password_changed_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE auth_sessions (
-    token_hash   TEXT PRIMARY KEY,               -- sha256 hex of the cookie token
-    user_id      INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    token_hash   TEXT      PRIMARY KEY,
+    user_id      INTEGER   NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
     created_at   TIMESTAMP NOT NULL,
     expires_at   TIMESTAMP NOT NULL,
     last_seen_at TIMESTAMP NOT NULL
 );
-CREATE INDEX auth_sessions_expires_idx ON auth_sessions(expires_at);
-CREATE INDEX auth_sessions_user_idx    ON auth_sessions(user_id);
+CREATE INDEX idx_auth_sessions_expires ON auth_sessions(expires_at);
+CREATE INDEX idx_auth_sessions_user    ON auth_sessions(user_id);
+
+------------------------------------------------------------------------------
+-- Settings & connections (DB-owned, YAML only seeds on first boot)
+------------------------------------------------------------------------------
 
 -- Runtime-editable overrides merged on top of the YAML baseline. One row per
 -- dotted koanf key; value is a JSON literal so any scalar/struct persists
 -- without a per-field schema change.
 CREATE TABLE settings_overrides (
-    key        TEXT PRIMARY KEY,
-    value_json TEXT NOT NULL,
+    key        TEXT      PRIMARY KEY,
+    value_json TEXT      NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
 
--- *arr connections owned by the database (ADR-0022). The YAML `arrs:` block
--- only seeds this table on first boot; thereafter it is the source of truth.
--- kind is the sole identity (one instance per *arr type). act defaults to 0 —
--- the destructive opt-in is always explicit, per-instance.
+-- *arr connections (ADR-0022). kind is the sole identity (one instance per
+-- *arr type). act defaults to 0 — the destructive opt-in is always explicit,
+-- per-instance.
 CREATE TABLE arr_connections (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              INTEGER   PRIMARY KEY AUTOINCREMENT,
     kind            TEXT      NOT NULL UNIQUE,        -- sonarr|radarr|lidarr|readarr|whisparr_v2|whisparr_v3
     url             TEXT      NOT NULL,
     api_key         TEXT      NOT NULL,
     enabled         INTEGER   NOT NULL DEFAULT 1,
     poll            INTEGER   NOT NULL DEFAULT 1,
     act             INTEGER   NOT NULL DEFAULT 0,
-    tags_exclude    TEXT      NOT NULL DEFAULT '[]',   -- JSON array of strings
-    categories_only TEXT      NOT NULL DEFAULT '[]',   -- JSON array of strings
+    tags_exclude    TEXT      NOT NULL DEFAULT '[]',  -- JSON array of strings
+    categories_only TEXT      NOT NULL DEFAULT '[]',  -- JSON array of strings
     timeout_ms      INTEGER   NOT NULL DEFAULT 30000,
     created_at      TIMESTAMP NOT NULL,
     updated_at      TIMESTAMP NOT NULL
+);
+
+-- Torrent client connections (ADR-0025), mirroring arr_connections. Today only
+-- qbittorrent has a backend; transmission/deluge/rtorrent are scaffolded in
+-- the UI as "coming soon" but never accepted by the HTTP layer.
+CREATE TABLE torrent_client_connections (
+    id                INTEGER   PRIMARY KEY AUTOINCREMENT,
+    kind              TEXT      NOT NULL UNIQUE,       -- qbittorrent | transmission | deluge | rtorrent
+    url               TEXT      NOT NULL,
+    username          TEXT      NOT NULL DEFAULT '',
+    password          TEXT      NOT NULL DEFAULT '',
+    enabled           INTEGER   NOT NULL DEFAULT 1,
+    category_exclude  TEXT      NOT NULL DEFAULT '[]', -- JSON array of strings
+    tags_exclude      TEXT      NOT NULL DEFAULT '[]', -- JSON array of strings
+    delete_with_files INTEGER   NOT NULL DEFAULT 1,
+    timeout_ms        INTEGER   NOT NULL DEFAULT 30000,
+    created_at        TIMESTAMP NOT NULL,
+    updated_at        TIMESTAMP NOT NULL
 );
