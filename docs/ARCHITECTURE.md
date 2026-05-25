@@ -94,7 +94,7 @@ This keeps the DB lean indefinitely (~50 MB steady state for a 500-torrent libra
 
 ### 3. Linking (API-only, ADR-0012)
 
-The linker resolves the relationship between a qBittorrent torrent (by hash) and the *arr file(s) it produced — strictly via the *arr `history` endpoint, no filesystem stat. For each *arr instance the linker queries `GET /api/v3/history?eventType=downloadFolderImported` filtered by `downloadId == torrentHash`, then persists `(arr_name, arr_type, torrent_hash, file_id, imported_path, dropped_path)` rows in `arr_imports`.
+The linker resolves the relationship between a qBittorrent torrent (by hash) and the *arr file(s) it produced — strictly via the *arr `history` endpoint, no filesystem stat. For each *arr instance the linker queries `GET /api/v3/history?eventType=downloadFolderImported` filtered by `downloadId == torrentHash`, then persists `(arr_type, file_id, download_id, imported_path, dropped_path)` rows in `arr_imports`.
 
 Under the TRaSH-guides convention (ADR-0023) qBit and the *arrs see the same paths Triagearr sees — `imported_path` is directly usable.
 
@@ -162,10 +162,9 @@ All cross-component coupling goes through Go interfaces defined in `internal/tri
 
 ```go
 // ArrInstance is the contract every *arr client implements.
-// Multiple instances of each type can coexist (multi-Sonarr, etc.).
+// Exactly one instance per kind (sonarr, radarr, …) — the kind is the identity.
 type ArrInstance interface {
-    Name() string
-    Type() ArrType        // sonarr | radarr | lidarr | readarr | whisparr_v2 | whisparr_v3
+    Kind() ArrType        // sonarr | radarr | lidarr | readarr | whisparr_v2 | whisparr_v3
     Poll() bool           // is read-allowed
     Act()  bool           // is delete-allowed
     ListMedia(ctx context.Context) ([]MediaItem, error)
@@ -205,9 +204,9 @@ See [`docs/STORAGE.md`](STORAGE.md) for the full schema (to be written in M1). S
 | `snapshots_daily` | Downsampled daily aggregates, 1y retention | ~180k |
 | `torrents` | Current state of each qBit torrent (last seen) | ~500 |
 | `media` | *arr media items, joined to torrents via `arr_imports` (ADR-0012) | ~thousands |
-| `arr_instances` | Observed *arr instances, last health check | ~5-20 |
-| `arr_connections` | Configured *arr connections (source of truth, ADR-0022) | ~5-20 |
-| `disk_pressure` | Disk usage snapshots per volume, 30-day | ~10k |
+| `arr_instances` | Observed *arr instances, last health check | up to 6 (one per kind) |
+| `arr_connections` | Configured *arr connections (source of truth, ADR-0022) | up to 6 (one per kind) |
+| `disk_pressure` | Disk usage snapshots for the watched volume, 30-day | ~10k |
 | `scores` | Latest computed score per torrent, with breakdown | ~500 |
 | `actions` | Every action ever taken (or would-have-been) | grows slowly |
 | `audit_log` | Free-form context dump per decision | grows slowly |

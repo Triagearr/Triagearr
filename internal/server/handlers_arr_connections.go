@@ -20,7 +20,6 @@ import (
 type arrConnectionDTO struct {
 	ID             int64    `json:"id"`
 	Kind           string   `json:"kind"`
-	Name           string   `json:"name"`
 	URL            string   `json:"url"`
 	APIKey         string   `json:"api_key"`
 	Enabled        bool     `json:"enabled"`
@@ -31,10 +30,8 @@ type arrConnectionDTO struct {
 	TimeoutSeconds int      `json:"timeout_seconds"`
 }
 
-// arrConnectionInput is the writable subset accepted by POST and PUT.
+// arrConnectionInput is the writable subset accepted by PUT.
 type arrConnectionInput struct {
-	Kind           string   `json:"kind"`
-	Name           string   `json:"name"`
 	URL            string   `json:"url"`
 	APIKey         string   `json:"api_key"`
 	Enabled        bool     `json:"enabled"`
@@ -51,7 +48,7 @@ const defaultArrTimeoutSeconds = 30
 
 func connectionToDTO(c store.ArrConnection) arrConnectionDTO {
 	return arrConnectionDTO{
-		ID: c.ID, Kind: c.Kind, Name: c.Name, URL: c.URL, APIKey: c.APIKey,
+		ID: c.ID, Kind: c.Kind, URL: c.URL, APIKey: c.APIKey,
 		Enabled: c.Enabled, Poll: c.Poll, Act: c.Act,
 		TagsExclude: c.TagsExclude, CategoriesOnly: c.CategoriesOnly,
 		TimeoutSeconds: int(c.TimeoutMS / 1000),
@@ -59,16 +56,8 @@ func connectionToDTO(c store.ArrConnection) arrConnectionDTO {
 }
 
 // validateArrConnInput checks an input the same way config.Validate checks a
-// YAML instance, plus a stricter URL host check. Being stricter than
-// config.Validate is safe: anything this accepts also passes the re-validation
-// resolveArrConnections runs on reload.
+// YAML instance, plus a stricter URL host check.
 func validateArrConnInput(in arrConnectionInput) (string, bool) {
-	if !registry.KnownKind(in.Kind) {
-		return "kind must be one of sonarr, radarr, lidarr, readarr, whisparr_v2, whisparr_v3", false
-	}
-	if strings.TrimSpace(in.Name) == "" {
-		return "name is required", false
-	}
 	if in.Enabled {
 		u, err := url.Parse(in.URL)
 		if err != nil || in.URL == "" || u.Host == "" {
@@ -84,17 +73,14 @@ func validateArrConnInput(in arrConnectionInput) (string, bool) {
 	return "", true
 }
 
-// inputToConnection converts a validated input into a store row. id is set by
-// the caller (0 for create).
-func inputToConnection(id int64, in arrConnectionInput) store.ArrConnection {
+// inputToConnection converts a validated input into a store row for the given kind.
+func inputToConnection(kind string, in arrConnectionInput) store.ArrConnection {
 	secs := in.TimeoutSeconds
 	if secs == 0 {
 		secs = defaultArrTimeoutSeconds
 	}
 	return store.ArrConnection{
-		ID:             id,
-		Kind:           in.Kind,
-		Name:           strings.TrimSpace(in.Name),
+		Kind:           kind,
 		URL:            strings.TrimRight(in.URL, "/"),
 		APIKey:         in.APIKey,
 		Enabled:        in.Enabled,
@@ -104,20 +90,6 @@ func inputToConnection(id int64, in arrConnectionInput) store.ArrConnection {
 		CategoriesOnly: in.CategoriesOnly,
 		TimeoutMS:      int64(secs) * 1000,
 	}
-}
-
-// nameTaken reports whether (kind, name) already exists among existing rows,
-// ignoring the row identified by excludeID (0 ignores nothing).
-func nameTaken(existing []store.ArrConnection, kind, name string, excludeID int64) bool {
-	for _, c := range existing {
-		if c.ID == excludeID {
-			continue
-		}
-		if c.Kind == kind && c.Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Server) handleListArrConnections(w http.ResponseWriter, r *http.Request) {
@@ -133,82 +105,50 @@ func (s *Server) handleListArrConnections(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"connections": out})
 }
 
-func (s *Server) handleCreateArrConnection(w http.ResponseWriter, r *http.Request) {
-	var in arrConnectionInput
-	if !decodeJSONBody(w, r, &in) {
-		return
-	}
-	if msg, ok := validateArrConnInput(in); !ok {
-		writeError(w, http.StatusBadRequest, msg)
-		return
-	}
-	conn := inputToConnection(0, in)
-
-	existing, err := s.opts.Store.ListArrConnections(r.Context())
-	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-	if nameTaken(existing, conn.Kind, conn.Name, 0) {
-		writeError(w, http.StatusConflict, "a "+conn.Kind+" connection named "+conn.Name+" already exists")
-		return
-	}
-
-	id, err := s.opts.Store.CreateArrConnection(r.Context(), conn)
-	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-	conn.ID = id
-	s.reloadAfterArrChange()
-	writeJSON(w, http.StatusCreated, connectionToDTO(conn))
-}
-
-func (s *Server) handleUpdateArrConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseIDPath(w, r)
-	if !ok {
+// handleUpsertArrConnection handles PUT /api/v1/arr-connections/{kind}.
+// It creates or replaces the connection for the given kind.
+func (s *Server) handleUpsertArrConnection(w http.ResponseWriter, r *http.Request) {
+	kind := r.PathValue("kind")
+	if !registry.KnownKind(kind) {
+		writeError(w, http.StatusBadRequest, "kind must be one of sonarr, radarr, lidarr, readarr, whisparr_v2, whisparr_v3")
 		return
 	}
 	var in arrConnectionInput
 	if !decodeJSONBody(w, r, &in) {
 		return
 	}
-	if msg, ok := validateArrConnInput(in); !ok {
-		writeError(w, http.StatusBadRequest, msg)
-		return
-	}
-	conn := inputToConnection(id, in)
-
-	existing, err := s.opts.Store.ListArrConnections(r.Context())
-	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-	if nameTaken(existing, conn.Kind, conn.Name, id) {
-		writeError(w, http.StatusConflict, "a "+conn.Kind+" connection named "+conn.Name+" already exists")
-		return
-	}
-
-	if err := s.opts.Store.UpdateArrConnection(r.Context(), conn); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "no arr connection with that id")
-			return
+	// Carry-forward must happen BEFORE validation: the common edit case is
+	// "save settings while keeping the existing secret"; rejecting empty
+	// api_key when a stored one exists would force the operator to re-enter
+	// the key on every save.
+	if in.APIKey == "" {
+		if existing, err := s.opts.Store.GetArrConnectionByKind(r.Context(), kind); err == nil {
+			in.APIKey = existing.APIKey
 		}
+	}
+	if msg, ok := validateArrConnInput(in); !ok {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	conn := inputToConnection(kind, in)
+	saved, err := s.opts.Store.UpsertArrConnection(r.Context(), conn)
+	if err != nil {
 		writeInternal(w, err)
 		return
 	}
 	s.reloadAfterArrChange()
-	writeJSON(w, http.StatusOK, connectionToDTO(conn))
+	writeJSON(w, http.StatusOK, connectionToDTO(saved))
 }
 
 func (s *Server) handleDeleteArrConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseIDPath(w, r)
-	if !ok {
+	kind := r.PathValue("kind")
+	if !registry.KnownKind(kind) {
+		writeError(w, http.StatusBadRequest, "kind must be one of sonarr, radarr, lidarr, readarr, whisparr_v2, whisparr_v3")
 		return
 	}
-	if err := s.opts.Store.DeleteArrConnection(r.Context(), id); err != nil {
+	if err := s.opts.Store.DeleteArrConnectionByKind(r.Context(), kind); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "no arr connection with that id")
+			writeError(w, http.StatusNotFound, "no arr connection for kind "+kind)
 			return
 		}
 		writeInternal(w, err)

@@ -11,11 +11,11 @@ import (
 
 // ArrStore is the subset of store operations the arr poller needs.
 type ArrStore interface {
-	UpsertArrInstance(ctx context.Context, name string, typ triagearr.ArrType, url string, healthy bool, lastErr string) error
+	UpsertArrInstance(ctx context.Context, typ triagearr.ArrType, url string, healthy bool, lastErr string) error
 	UpsertMedia(ctx context.Context, m triagearr.MediaItem) error
 	UpsertMediaFile(ctx context.Context, f triagearr.MediaFile) error
-	UpsertArrImport(ctx context.Context, arrName string, arrType triagearr.ArrType, rec triagearr.ImportRecord) error
-	MaxHistoryID(ctx context.Context, arrName string, arrType triagearr.ArrType) (int64, error)
+	UpsertArrImport(ctx context.Context, arrType triagearr.ArrType, rec triagearr.ImportRecord) error
+	MaxHistoryID(ctx context.Context, arrType triagearr.ArrType) (int64, error)
 }
 
 // ArrPoller iterates the configured *arr instances and refreshes media + health.
@@ -36,9 +36,9 @@ type ArrPoller struct {
 	Notify chan<- struct{}
 }
 
-// URLKey is the canonical "<type>/<name>" key for the URLs map.
-func URLKey(name string, typ triagearr.ArrType) string {
-	return string(typ) + "/" + name
+// URLKey is the lookup key for the URLs map — the arr type string.
+func URLKey(typ triagearr.ArrType) string {
+	return string(typ)
 }
 
 // Name implements Poller.
@@ -57,15 +57,15 @@ func (p *ArrPoller) tick(ctx context.Context) error {
 }
 
 func (p *ArrPoller) pollOne(ctx context.Context, inst triagearr.ArrInstance) {
-	logger := slog.With("arr", inst.Type(), "name", inst.Name())
-	url := p.URLs[URLKey(inst.Name(), inst.Type())]
+	logger := slog.With("arr", inst.Type())
+	url := p.URLs[URLKey(inst.Type())]
 	healthErr := inst.HealthCheck(ctx)
 	healthy := healthErr == nil
 	lastErr := ""
 	if healthErr != nil {
 		lastErr = healthErr.Error()
 	}
-	if err := p.Store.UpsertArrInstance(ctx, inst.Name(), inst.Type(), url, healthy, lastErr); err != nil {
+	if err := p.Store.UpsertArrInstance(ctx, inst.Type(), url, healthy, lastErr); err != nil {
 		logger.Warn("upsert arr_instance failed", "err", err)
 	}
 	if !healthy {
@@ -133,7 +133,7 @@ func (p *ArrPoller) syncImports(ctx context.Context, inst triagearr.ArrInstance,
 	if !hasImportLister {
 		return 0, 0
 	}
-	since, err := p.Store.MaxHistoryID(ctx, inst.Name(), inst.Type())
+	since, err := p.Store.MaxHistoryID(ctx, inst.Type())
 	if err != nil {
 		logger.Warn("max history_id failed", "err", err)
 		return 0, 0
@@ -144,7 +144,7 @@ func (p *ArrPoller) syncImports(ctx context.Context, inst triagearr.ArrInstance,
 		return 0, 0
 	}
 	for _, r := range recs {
-		if err := p.Store.UpsertArrImport(ctx, inst.Name(), inst.Type(), r); err != nil {
+		if err := p.Store.UpsertArrImport(ctx, inst.Type(), r); err != nil {
 			logger.Warn("upsert arr_import failed", "file_id", r.FileID, "err", err)
 			failed++
 			continue

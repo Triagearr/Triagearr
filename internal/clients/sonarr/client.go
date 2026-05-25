@@ -144,7 +144,6 @@ func (c *Client) ListMedia(ctx context.Context) ([]triagearr.MediaItem, error) {
 		}
 		out[i] = triagearr.MediaItem{
 			ID:       triagearr.MediaID(s.ID),
-			ArrName:  c.name,
 			ArrType:  triagearr.ArrTypeSonarr,
 			Title:    s.Title,
 			Path:     s.Path,
@@ -187,7 +186,6 @@ func (c *Client) ListMediaFiles(ctx context.Context, seriesID triagearr.MediaID)
 	out := make([]triagearr.MediaFile, len(raw))
 	for i, e := range raw {
 		out[i] = triagearr.MediaFile{
-			ArrName: c.name,
 			ArrType: triagearr.ArrTypeSonarr,
 			FileID:  e.ID,
 			MediaID: triagearr.MediaID(e.SeriesID),

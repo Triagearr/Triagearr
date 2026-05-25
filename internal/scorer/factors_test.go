@@ -212,18 +212,18 @@ func TestEvaluateExclusions(t *testing.T) {
 		TagsExclude:     []string{"protected"},
 	}
 	arrs := config.ArrsConfig{
-		Sonarr: []config.ArrInstanceConfig{{Name: "main", TagsExclude: []string{"favourite"}}},
+		Sonarr: config.ArrInstanceConfig{TagsExclude: []string{"favourite"}},
 	}
 	tor := store.ScoringTorrent{
 		Hash: "h", Category: "keep", Tags: "hd,protected",
 	}
 	linked := []store.LinkedMedia{
-		{ArrName: "main", ArrType: string(triagearr.ArrTypeSonarr), MediaID: 1, Tags: "favourite,other"},
+		{ArrType: string(triagearr.ArrTypeSonarr), MediaID: 1, Tags: "favourite,other"},
 	}
 	reasons := evaluateExclusions(tor, linked, qb, arrs)
 	require.Contains(t, reasons, "qbit_category:keep")
 	require.Contains(t, reasons, "qbit_tag:protected")
-	require.Contains(t, reasons, "arr_tag:sonarr/main:favourite")
+	require.Contains(t, reasons, "arr_tag:sonarr:favourite")
 
 	noReason := evaluateExclusions(store.ScoringTorrent{Hash: "h2"}, nil, qb, arrs)
 	require.Empty(t, noReason)

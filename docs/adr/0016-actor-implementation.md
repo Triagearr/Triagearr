@@ -31,7 +31,7 @@ accounting, retry strategy, audit granularity.
 **Pipeline.** Per candidate, in order:
 
 1. `InsertAction(run_id, rank, hash, status=running)`
-2. `LinksByHash(hash)` → 0..N `(arr_name, file_id)` pairs
+2. `LinksByHash(hash)` → 0..N `(arr_type, file_id)` pairs
 3. For each link: `DeleteMediaFile(file_id, deleteFiles=true,
    addImportExclusion=cfg)` with retry on `triagearr.ErrTransient`. One
    `audit_log` row per call (`outcome ∈ {ok, failed, skipped,

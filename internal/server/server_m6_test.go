@@ -76,8 +76,8 @@ func TestConfigRedaction_NoSecretLeaks(t *testing.T) {
 	cfg := &config.Config{
 		HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"},
 		Qbit: config.QbitConfig{Enabled: true, URL: "http://qbit", Username: "u", Password: secrets[1]},
-		Arrs: config.ArrsConfig{Sonarr: []config.ArrInstanceConfig{
-			{Name: "primary", Enabled: true, URL: "http://sonarr", APIKey: secrets[0]},
+		Arrs: config.ArrsConfig{Sonarr: config.ArrInstanceConfig{
+			Enabled: true, URL: "http://sonarr", APIKey: secrets[0],
 		}},
 	}
 	h := buildSrvM6(t, cfg)

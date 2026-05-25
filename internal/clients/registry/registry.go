@@ -27,69 +27,51 @@ type Registry struct {
 func BuildFromConfig(cfg *config.Config) (*Registry, error) {
 	r := &Registry{}
 
-	for _, inst := range cfg.Arrs.Sonarr {
-		if !inst.Enabled {
-			continue
-		}
+	if inst := cfg.Arrs.Sonarr; inst.Enabled {
 		c, err := sonarr.New(sonarr.Options{
-			Name: inst.Name, BaseURL: inst.URL, APIKey: inst.APIKey,
+			Name: string(triagearr.ArrTypeSonarr), BaseURL: inst.URL, APIKey: inst.APIKey,
 			Poll: inst.Poll, Act: inst.Act, Timeout: inst.Timeout,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("registry: building sonarr/%s: %w", inst.Name, err)
+			return nil, fmt.Errorf("registry: building sonarr: %w", err)
 		}
 		r.instances = append(r.instances, c)
 	}
-	for _, inst := range cfg.Arrs.Radarr {
-		if !inst.Enabled {
-			continue
-		}
+	if inst := cfg.Arrs.Radarr; inst.Enabled {
 		c, err := radarr.New(radarr.Options{
-			Name: inst.Name, BaseURL: inst.URL, APIKey: inst.APIKey,
+			Name: string(triagearr.ArrTypeRadarr), BaseURL: inst.URL, APIKey: inst.APIKey,
 			Poll: inst.Poll, Act: inst.Act, Timeout: inst.Timeout,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("registry: building radarr/%s: %w", inst.Name, err)
+			return nil, fmt.Errorf("registry: building radarr: %w", err)
 		}
 		r.instances = append(r.instances, c)
 	}
-	for _, inst := range cfg.Arrs.Lidarr {
-		if !inst.Enabled {
-			continue
-		}
-		c, err := lidarr.New(lidarr.Options{Name: inst.Name, BaseURL: inst.URL, Poll: inst.Poll, Act: inst.Act})
+	if inst := cfg.Arrs.Lidarr; inst.Enabled {
+		c, err := lidarr.New(lidarr.Options{Name: string(triagearr.ArrTypeLidarr), BaseURL: inst.URL, Poll: inst.Poll, Act: inst.Act})
 		if err != nil {
-			return nil, fmt.Errorf("registry: building lidarr/%s: %w", inst.Name, err)
+			return nil, fmt.Errorf("registry: building lidarr: %w", err)
 		}
 		r.instances = append(r.instances, c)
 	}
-	for _, inst := range cfg.Arrs.Readarr {
-		if !inst.Enabled {
-			continue
-		}
-		c, err := readarr.New(readarr.Options{Name: inst.Name, BaseURL: inst.URL, Poll: inst.Poll, Act: inst.Act})
+	if inst := cfg.Arrs.Readarr; inst.Enabled {
+		c, err := readarr.New(readarr.Options{Name: string(triagearr.ArrTypeReadarr), BaseURL: inst.URL, Poll: inst.Poll, Act: inst.Act})
 		if err != nil {
-			return nil, fmt.Errorf("registry: building readarr/%s: %w", inst.Name, err)
+			return nil, fmt.Errorf("registry: building readarr: %w", err)
 		}
 		r.instances = append(r.instances, c)
 	}
-	for _, inst := range cfg.Arrs.WhisparrV2 {
-		if !inst.Enabled {
-			continue
-		}
-		c, err := whisparr_v2.New(whisparr_v2.Options{Name: inst.Name, BaseURL: inst.URL, Poll: inst.Poll, Act: inst.Act})
+	if inst := cfg.Arrs.WhisparrV2; inst.Enabled {
+		c, err := whisparr_v2.New(whisparr_v2.Options{Name: string(triagearr.ArrTypeWhisparrV2), BaseURL: inst.URL, Poll: inst.Poll, Act: inst.Act})
 		if err != nil {
-			return nil, fmt.Errorf("registry: building whisparr_v2/%s: %w", inst.Name, err)
+			return nil, fmt.Errorf("registry: building whisparr_v2: %w", err)
 		}
 		r.instances = append(r.instances, c)
 	}
-	for _, inst := range cfg.Arrs.WhisparrV3 {
-		if !inst.Enabled {
-			continue
-		}
-		c, err := whisparr_v3.New(whisparr_v3.Options{Name: inst.Name, BaseURL: inst.URL, Poll: inst.Poll, Act: inst.Act})
+	if inst := cfg.Arrs.WhisparrV3; inst.Enabled {
+		c, err := whisparr_v3.New(whisparr_v3.Options{Name: string(triagearr.ArrTypeWhisparrV3), BaseURL: inst.URL, Poll: inst.Poll, Act: inst.Act})
 		if err != nil {
-			return nil, fmt.Errorf("registry: building whisparr_v3/%s: %w", inst.Name, err)
+			return nil, fmt.Errorf("registry: building whisparr_v3: %w", err)
 		}
 		r.instances = append(r.instances, c)
 	}
@@ -160,13 +142,13 @@ func (r *Registry) AllPolling() []triagearr.ArrInstance {
 	return out
 }
 
-// Deleter returns the FileDeleter for the named instance when (a) the
+// Deleter returns the FileDeleter for the given arr kind when (a) the
 // instance exists, (b) it has `act: true`, and (c) the client implements
 // FileDeleter. Stub *arr types (lidarr/readarr/whisparr) deliberately do
 // not — they fail (c) and are rejected here.
-func (r *Registry) Deleter(name string) (triagearr.FileDeleter, bool) {
+func (r *Registry) Deleter(kind string) (triagearr.FileDeleter, bool) {
 	for _, inst := range r.instances {
-		if inst.Name() != name {
+		if string(inst.Type()) != kind {
 			continue
 		}
 		if !inst.Act() {

@@ -177,9 +177,8 @@ func parseTS(s string) (time.Time, error) {
 
 // LinkedMedia is one *arr-side media linked to a torrent via arr_imports.
 // Tags are the comma-separated string stored in media.tags; the scorer
-// splits them when matching against arrs.<type>.<name>.tags_exclude.
+// splits them when matching against arrs.<type>.tags_exclude.
 type LinkedMedia struct {
-	ArrName string `db:"arr_name"`
 	ArrType string `db:"arr_type"`
 	MediaID int64  `db:"media_id"`
 	Tags    string `db:"tags"`
@@ -190,18 +189,16 @@ type LinkedMedia struct {
 func (s *Store) LinkedMediaForHash(ctx context.Context, hash triagearr.Hash) ([]LinkedMedia, error) {
 	var rows []LinkedMedia
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT DISTINCT m.arr_name, m.arr_type, m.id AS media_id, m.tags
+		SELECT DISTINCT m.arr_type, m.id AS media_id, m.tags
 		FROM arr_imports ai
 		JOIN media_files mf
-		  ON mf.arr_name = ai.arr_name
-		 AND mf.arr_type = ai.arr_type
+		  ON mf.arr_type = ai.arr_type
 		 AND mf.file_id  = ai.file_id
 		JOIN media m
-		  ON m.arr_name = mf.arr_name
-		 AND m.arr_type = mf.arr_type
+		  ON m.arr_type = mf.arr_type
 		 AND m.id       = mf.media_id
 		WHERE ai.download_id = ?
-		ORDER BY m.arr_type, m.arr_name, m.id
+		ORDER BY m.arr_type, m.id
 	`, string(hash)); err != nil {
 		return nil, fmt.Errorf("listing linked media for %s: %w", hash, err)
 	}
@@ -214,7 +211,6 @@ func (s *Store) LinkedMediaForHash(ctx context.Context, hash triagearr.Hash) ([]
 func (s *Store) LinkedMediaAll(ctx context.Context) (map[string][]LinkedMedia, error) {
 	type row struct {
 		Hash    string `db:"download_id"`
-		ArrName string `db:"arr_name"`
 		ArrType string `db:"arr_type"`
 		MediaID int64  `db:"media_id"`
 		Tags    string `db:"tags"`
@@ -222,24 +218,22 @@ func (s *Store) LinkedMediaAll(ctx context.Context) (map[string][]LinkedMedia, e
 	var rows []row
 	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT DISTINCT LOWER(ai.download_id) AS download_id,
-		       m.arr_name, m.arr_type, m.id AS media_id, m.tags
+		       m.arr_type, m.id AS media_id, m.tags
 		FROM arr_imports ai
 		JOIN media_files mf
-		  ON mf.arr_name = ai.arr_name
-		 AND mf.arr_type = ai.arr_type
+		  ON mf.arr_type = ai.arr_type
 		 AND mf.file_id  = ai.file_id
 		JOIN media m
-		  ON m.arr_name = mf.arr_name
-		 AND m.arr_type = mf.arr_type
+		  ON m.arr_type = mf.arr_type
 		 AND m.id       = mf.media_id
-		ORDER BY ai.download_id, m.arr_type, m.arr_name, m.id
+		ORDER BY ai.download_id, m.arr_type, m.id
 	`); err != nil {
 		return nil, fmt.Errorf("listing all linked media: %w", err)
 	}
 	out := make(map[string][]LinkedMedia, len(rows))
 	for _, r := range rows {
 		out[r.Hash] = append(out[r.Hash], LinkedMedia{
-			ArrName: r.ArrName, ArrType: r.ArrType, MediaID: r.MediaID, Tags: r.Tags,
+			ArrType: r.ArrType, MediaID: r.MediaID, Tags: r.Tags,
 		})
 	}
 	return out, nil
@@ -345,4 +339,22 @@ func (s *Store) ListScores(ctx context.Context, opts ListScoresOpts) ([]ScoreRow
 		return nil, fmt.Errorf("listing scores: %w", err)
 	}
 	return rows, nil
+}
+
+// HashesWithArrImports returns the set of download_id hashes that have at
+// least one row in arr_imports. Used by the Decider to distinguish qbit-only
+// torrents (no *arr hardlink partner) from arr-managed ones when applying
+// the nlink cross-seed pre-filter.
+func (s *Store) HashesWithArrImports(ctx context.Context) (map[triagearr.Hash]struct{}, error) {
+	var hashes []string
+	if err := s.reader.SelectContext(ctx, &hashes,
+		`SELECT DISTINCT LOWER(download_id) FROM arr_imports`,
+	); err != nil {
+		return nil, fmt.Errorf("listing arr_imports hashes: %w", err)
+	}
+	out := make(map[triagearr.Hash]struct{}, len(hashes))
+	for _, h := range hashes {
+		out[triagearr.Hash(h)] = struct{}{}
+	}
+	return out, nil
 }

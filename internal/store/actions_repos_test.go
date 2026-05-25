@@ -84,7 +84,7 @@ func TestAuditPerFile_8ok_1fail_1notattempted(t *testing.T) {
 			ActionID:  actionID,
 			Timestamp: now,
 			Step:      triagearr.AuditStepArrDelete,
-			ArrName:   "sonarr-main",
+			ArrType:   "sonarr",
 			ArrFileID: int64(i),
 			Outcome:   triagearr.AuditOutcomeOK,
 		}))
@@ -94,7 +94,7 @@ func TestAuditPerFile_8ok_1fail_1notattempted(t *testing.T) {
 		ActionID:  actionID,
 		Timestamp: now,
 		Step:      triagearr.AuditStepArrDelete,
-		ArrName:   "sonarr-main",
+		ArrType:   "sonarr",
 		ArrFileID: 9,
 		Outcome:   triagearr.AuditOutcomeFailed,
 		Detail:    "HTTP 500",
@@ -104,7 +104,7 @@ func TestAuditPerFile_8ok_1fail_1notattempted(t *testing.T) {
 		ActionID:  actionID,
 		Timestamp: now,
 		Step:      triagearr.AuditStepArrDelete,
-		ArrName:   "sonarr-main",
+		ArrType:   "sonarr",
 		ArrFileID: 10,
 		Outcome:   triagearr.AuditOutcomeNotAttempted,
 	}))
@@ -116,7 +116,7 @@ func TestAuditPerFile_8ok_1fail_1notattempted(t *testing.T) {
 	var ok, failed, notAttempted int
 	for _, r := range rows {
 		require.Equal(t, triagearr.AuditStepArrDelete, r.Step)
-		require.Equal(t, "sonarr-main", r.ArrName)
+		require.Equal(t, "sonarr", r.ArrType)
 		switch r.Outcome {
 		case triagearr.AuditOutcomeOK:
 			ok++

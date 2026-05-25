@@ -50,15 +50,15 @@ func openStoreForArrTest(t *testing.T) *store.Store {
 func TestArrPoller_HealthyInstancePersistsMedia(t *testing.T) {
 	s := openStoreForArrTest(t)
 	fa := &fakeArr{
-		name: "main", typ: triagearr.ArrTypeSonarr, healthy: true,
+		name: "sonarr", typ: triagearr.ArrTypeSonarr, healthy: true,
 		items: []triagearr.MediaItem{
-			{ID: 1, ArrName: "main", ArrType: triagearr.ArrTypeSonarr, Title: "S1"},
-			{ID: 2, ArrName: "main", ArrType: triagearr.ArrTypeSonarr, Title: "S2"},
+			{ID: 1, ArrType: triagearr.ArrTypeSonarr, Title: "S1"},
+			{ID: 2, ArrType: triagearr.ArrTypeSonarr, Title: "S2"},
 		},
 	}
 	p := &pollers.ArrPoller{
 		Instances: []triagearr.ArrInstance{fa},
-		URLs:      map[string]string{pollers.URLKey("main", triagearr.ArrTypeSonarr): "http://sonarr"},
+		URLs:      map[string]string{pollers.URLKey(triagearr.ArrTypeSonarr): "http://sonarr"},
 		Store:     s,
 		Interval:  time.Hour,
 	}
@@ -68,7 +68,7 @@ func TestArrPoller_HealthyInstancePersistsMedia(t *testing.T) {
 	go func() { done <- p.Run(ctx) }()
 
 	require.Eventually(t, func() bool {
-		n, err := s.CountMedia(context.Background(), "main", triagearr.ArrTypeSonarr)
+		n, err := s.CountMedia(context.Background(), triagearr.ArrTypeSonarr)
 		return err == nil && n == 2
 	}, 2*time.Second, 10*time.Millisecond)
 
@@ -85,8 +85,8 @@ func TestArrPoller_HealthyInstancePersistsMedia(t *testing.T) {
 func TestArrPoller_UnhealthyInstanceSkipsListMedia(t *testing.T) {
 	s := openStoreForArrTest(t)
 	fa := &fakeArr{
-		name: "main", typ: triagearr.ArrTypeRadarr, healthy: false,
-		items: []triagearr.MediaItem{{ID: 99, ArrName: "main", ArrType: triagearr.ArrTypeRadarr, Title: "Should not land"}},
+		name: "radarr", typ: triagearr.ArrTypeRadarr, healthy: false,
+		items: []triagearr.MediaItem{{ID: 99, ArrType: triagearr.ArrTypeRadarr, Title: "Should not land"}},
 	}
 	p := &pollers.ArrPoller{
 		Instances: []triagearr.ArrInstance{fa},
@@ -104,7 +104,7 @@ func TestArrPoller_UnhealthyInstanceSkipsListMedia(t *testing.T) {
 		return len(rows) == 1 && !rows[0].Healthy
 	}, 2*time.Second, 10*time.Millisecond)
 
-	n, err := s.CountMedia(context.Background(), "main", triagearr.ArrTypeRadarr)
+	n, err := s.CountMedia(context.Background(), triagearr.ArrTypeRadarr)
 	require.NoError(t, err)
 	require.Equal(t, 0, n, "unhealthy instance must not have media inserted")
 

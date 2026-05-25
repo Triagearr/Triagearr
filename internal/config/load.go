@@ -163,12 +163,12 @@ func applyDefaults(c *Config) {
 	}
 	applyScoringDefaults(&c.Scoring)
 	applyActionDefaults(&c.Action)
-	applyArrDefaults(c.Arrs.Sonarr)
-	applyArrDefaults(c.Arrs.Radarr)
-	applyArrDefaults(c.Arrs.Lidarr)
-	applyArrDefaults(c.Arrs.Readarr)
-	applyArrDefaults(c.Arrs.WhisparrV2)
-	applyArrDefaults(c.Arrs.WhisparrV3)
+	applyArrDefaults(&c.Arrs.Sonarr)
+	applyArrDefaults(&c.Arrs.Radarr)
+	applyArrDefaults(&c.Arrs.Lidarr)
+	applyArrDefaults(&c.Arrs.Readarr)
+	applyArrDefaults(&c.Arrs.WhisparrV2)
+	applyArrDefaults(&c.Arrs.WhisparrV3)
 }
 
 func applyScoringDefaults(s *ScoringConfig) {
@@ -210,11 +210,9 @@ func applyActionDefaults(a *ActionConfig) {
 	}
 }
 
-func applyArrDefaults(insts []ArrInstanceConfig) {
-	for i := range insts {
-		if insts[i].Timeout == 0 {
-			insts[i].Timeout = defaultArrTimeout
-		}
+func applyArrDefaults(inst *ArrInstanceConfig) {
+	if inst.Timeout == 0 {
+		inst.Timeout = defaultArrTimeout
 	}
 }
 
@@ -226,7 +224,7 @@ func Validate(c *Config) error {
 
 	for _, group := range []struct {
 		label string
-		insts []ArrInstanceConfig
+		inst  ArrInstanceConfig
 	}{
 		{"sonarr", c.Arrs.Sonarr},
 		{"radarr", c.Arrs.Radarr},
@@ -235,24 +233,14 @@ func Validate(c *Config) error {
 		{"whisparr_v2", c.Arrs.WhisparrV2},
 		{"whisparr_v3", c.Arrs.WhisparrV3},
 	} {
-		seen := map[string]bool{}
-		for i, inst := range group.insts {
-			if inst.Name == "" {
-				return fmt.Errorf("arrs.%s[%d].name: required", group.label, i)
-			}
-			if seen[inst.Name] {
-				return fmt.Errorf("arrs.%s: duplicate name %q", group.label, inst.Name)
-			}
-			seen[inst.Name] = true
-			if !inst.Enabled {
-				continue
-			}
-			if _, err := url.Parse(inst.URL); err != nil || inst.URL == "" {
-				return fmt.Errorf("arrs.%s[%s].url: invalid URL %q", group.label, inst.Name, inst.URL)
-			}
-			if inst.APIKey == "" {
-				return fmt.Errorf("arrs.%s[%s].api_key: required when enabled", group.label, inst.Name)
-			}
+		if !group.inst.Enabled {
+			continue
+		}
+		if _, err := url.Parse(group.inst.URL); err != nil || group.inst.URL == "" {
+			return fmt.Errorf("arrs.%s.url: invalid URL %q", group.label, group.inst.URL)
+		}
+		if group.inst.APIKey == "" {
+			return fmt.Errorf("arrs.%s.api_key: required when enabled", group.label)
 		}
 	}
 
@@ -293,14 +281,12 @@ func Validate(c *Config) error {
 // AnyArrEnabledForPolling returns true if at least one *arr is enabled+poll.
 // Used by the daemon to decide whether to start the arr poller goroutine.
 func (c *Config) AnyArrEnabledForPolling() bool {
-	for _, group := range [][]ArrInstanceConfig{
+	for _, inst := range []ArrInstanceConfig{
 		c.Arrs.Sonarr, c.Arrs.Radarr, c.Arrs.Lidarr,
 		c.Arrs.Readarr, c.Arrs.WhisparrV2, c.Arrs.WhisparrV3,
 	} {
-		for _, inst := range group {
-			if inst.Enabled && inst.Poll {
-				return true
-			}
+		if inst.Enabled && inst.Poll {
+			return true
 		}
 	}
 	return false

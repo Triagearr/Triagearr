@@ -126,19 +126,20 @@ type StorageConfig struct {
 	Vacuum     VacuumConfig    `koanf:"vacuum"`
 }
 
-// ArrsConfig holds the configured *arr instances per type.
+// ArrsConfig holds the configured *arr instance per type.
+// Exactly one instance per type is supported — the type is the identity.
 type ArrsConfig struct {
-	Sonarr     []ArrInstanceConfig `koanf:"sonarr"`
-	Radarr     []ArrInstanceConfig `koanf:"radarr"`
-	Lidarr     []ArrInstanceConfig `koanf:"lidarr"`
-	Readarr    []ArrInstanceConfig `koanf:"readarr"`
-	WhisparrV2 []ArrInstanceConfig `koanf:"whisparr_v2"`
-	WhisparrV3 []ArrInstanceConfig `koanf:"whisparr_v3"`
+	Sonarr     ArrInstanceConfig `koanf:"sonarr"`
+	Radarr     ArrInstanceConfig `koanf:"radarr"`
+	Lidarr     ArrInstanceConfig `koanf:"lidarr"`
+	Readarr    ArrInstanceConfig `koanf:"readarr"`
+	WhisparrV2 ArrInstanceConfig `koanf:"whisparr_v2"`
+	WhisparrV3 ArrInstanceConfig `koanf:"whisparr_v3"`
 }
 
-// ArrInstanceConfig captures one entry from arrs.<type>[].
+// ArrInstanceConfig captures one arrs.<type> block. The type key in the YAML
+// is the identity — there is no separate name field.
 type ArrInstanceConfig struct {
-	Name           string        `koanf:"name"`
 	Enabled        bool          `koanf:"enabled"`
 	URL            string        `koanf:"url"`
 	APIKey         string        `koanf:"api_key"`

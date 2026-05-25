@@ -29,7 +29,6 @@ type MediaID int64
 // MediaItem is the *arr's view of a piece of media (series, movie, album, ...).
 type MediaItem struct {
 	ID       MediaID
-	ArrName  string
 	ArrType  ArrType
 	Title    string
 	Path     string
@@ -43,7 +42,6 @@ type MediaItem struct {
 // file_id to issue granular DELETEs without touching siblings of the same
 // series/movie.
 type MediaFile struct {
-	ArrName string
 	ArrType ArrType
 	FileID  int64
 	MediaID MediaID
@@ -181,8 +179,10 @@ type DiskUsage struct {
 	FreePercent float64
 }
 
-// QbitClient abstracts the qBittorrent download client. V1 supports one instance.
-type QbitClient interface {
+// TorrentClient abstracts the download client (qBittorrent today; Deluge,
+// Transmission, etc. in the future). Exactly one instance is supported per
+// Triagearr deployment.
+type TorrentClient interface {
 	ListTorrents(ctx context.Context) ([]Torrent, error)
 	TorrentFiles(ctx context.Context, h Hash) ([]TorrentFile, error)
 	ListTrackers(ctx context.Context, h Hash) ([]TrackerInfo, error)
@@ -264,7 +264,6 @@ type RunItem struct {
 // the linker (ADR-0012) and consumed by the M5 actor as the per-file DELETE
 // target list.
 type Link struct {
-	ArrName      string
 	ArrType      ArrType
 	FileID       int64
 	DownloadID   Hash
@@ -340,7 +339,7 @@ type AuditEntry struct {
 	ActionID  int64
 	Timestamp time.Time
 	Step      AuditStep
-	ArrName   string // empty for non-arr steps
+	ArrType   string // empty for non-arr steps; holds the arr kind (e.g. "sonarr")
 	ArrFileID int64  // 0 for non-arr steps
 	Outcome   AuditOutcome
 	Detail    string // truncated, redacted free-form context

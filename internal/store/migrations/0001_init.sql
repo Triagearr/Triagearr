@@ -5,22 +5,17 @@
 -- so no incremental upgrade path is preserved. New schema work appends a fresh
 -- 0002_*.sql; this file is never edited in place once a release ships.
 --
--- Per-decision rationale lives in docs/adr/. Notable corrections folded in
--- versus the old chain: media PK reordered to (arr_name, arr_type, id) so
--- lookups by *arr instance use the PK; an index on actions.started_at for the
--- dashboard timeline; a torrents.category index for the dashboard filter; the
--- unused scores(computed_at) index dropped.
+-- Per-decision rationale lives in docs/adr/. One *arr instance per kind and
+-- one watched volume are baseline invariants (no arr_name, no volume_name).
 
 -- *arr instance health observations. Distinct from arr_connections, which owns
 -- the connection *config* (ADR-0022); this table is just last-known health.
 CREATE TABLE arr_instances (
-    name              TEXT NOT NULL,
-    type              TEXT NOT NULL,
+    kind              TEXT NOT NULL PRIMARY KEY,
     url               TEXT NOT NULL,
     healthy           INTEGER NOT NULL DEFAULT 0,
     last_health_check TIMESTAMP,
-    last_error        TEXT,
-    PRIMARY KEY (name, type)
+    last_error        TEXT
 );
 
 -- private defaults to 1: a row is assumed private until the next qBit poll
@@ -52,18 +47,15 @@ CREATE TABLE snapshots_raw (
     PRIMARY KEY (torrent_hash, ts)
 ) WITHOUT ROWID;
 
--- PK leads with (arr_name, arr_type) so counts and joins scoped to one *arr
--- instance seek the PK instead of scanning.
 CREATE TABLE media (
     id        INTEGER NOT NULL,
-    arr_name  TEXT NOT NULL,
     arr_type  TEXT NOT NULL,
     title     TEXT NOT NULL,
     path      TEXT NOT NULL DEFAULT '',
     size      INTEGER NOT NULL DEFAULT 0,
     tags      TEXT NOT NULL DEFAULT '',
     last_seen TIMESTAMP NOT NULL,
-    PRIMARY KEY (arr_name, arr_type, id)
+    PRIMARY KEY (arr_type, id)
 );
 CREATE INDEX idx_media_last_seen ON media(last_seen);
 
@@ -94,16 +86,15 @@ CREATE TABLE torrent_trackers (
 CREATE INDEX idx_torrent_trackers_host ON torrent_trackers(tracker_host);
 
 CREATE TABLE media_files (
-    arr_name  TEXT NOT NULL,
     arr_type  TEXT NOT NULL,
     file_id   INTEGER NOT NULL,
     media_id  INTEGER NOT NULL,
     path      TEXT NOT NULL,
     size      INTEGER NOT NULL DEFAULT 0,
     last_seen TIMESTAMP NOT NULL,
-    PRIMARY KEY (arr_name, arr_type, file_id)
+    PRIMARY KEY (arr_type, file_id)
 );
-CREATE INDEX idx_media_files_media ON media_files(arr_name, arr_type, media_id);
+CREATE INDEX idx_media_files_media ON media_files(arr_type, media_id);
 
 -- uploaded_max lets Factor 2 honour the 30-day velocity window after
 -- snapshots_raw has expired. A zero is treated as "no data" by the scorer.
@@ -124,7 +115,6 @@ CREATE TABLE snapshots_daily (
 -- API-only hardlink map (ADR-0012). download_id is the lowercased qBit
 -- info-hash that *arr's import history recorded for this file.
 CREATE TABLE arr_imports (
-    arr_name      TEXT    NOT NULL,
     arr_type      TEXT    NOT NULL,
     file_id       INTEGER NOT NULL,
     download_id   TEXT    NOT NULL,
@@ -133,10 +123,10 @@ CREATE TABLE arr_imports (
     size          INTEGER NOT NULL DEFAULT 0,
     history_id    INTEGER NOT NULL,
     imported_at   TIMESTAMP NOT NULL,
-    PRIMARY KEY (arr_name, arr_type, file_id)
+    PRIMARY KEY (arr_type, file_id)
 );
 CREATE INDEX idx_arr_imports_download ON arr_imports(download_id);
-CREATE INDEX idx_arr_imports_history  ON arr_imports(arr_name, arr_type, history_id);
+CREATE INDEX idx_arr_imports_history  ON arr_imports(arr_type, history_id);
 
 -- The partial index serves the Decider's hot path: eligible candidates ranked
 -- by score. factors_json is the breakdown read whole by the explain path.
@@ -203,7 +193,7 @@ CREATE TABLE audit_log (
     action_id   INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
     ts          TIMESTAMP NOT NULL,
     step        TEXT NOT NULL,   -- arr_delete | qbit_delete
-    arr_name    TEXT,
+    arr_type    TEXT,
     arr_file_id INTEGER,
     outcome     TEXT NOT NULL,   -- ok | failed | skipped | not_attempted
     detail      TEXT
@@ -241,11 +231,11 @@ CREATE TABLE settings_overrides (
 
 -- *arr connections owned by the database (ADR-0022). The YAML `arrs:` block
 -- only seeds this table on first boot; thereafter it is the source of truth.
--- act defaults to 0 — the destructive opt-in is always explicit, per-instance.
+-- kind is the sole identity (one instance per *arr type). act defaults to 0 —
+-- the destructive opt-in is always explicit, per-instance.
 CREATE TABLE arr_connections (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind            TEXT      NOT NULL,            -- sonarr|radarr|lidarr|readarr|whisparr_v2|whisparr_v3
-    name            TEXT      NOT NULL,
+    kind            TEXT      NOT NULL UNIQUE,        -- sonarr|radarr|lidarr|readarr|whisparr_v2|whisparr_v3
     url             TEXT      NOT NULL,
     api_key         TEXT      NOT NULL,
     enabled         INTEGER   NOT NULL DEFAULT 1,
@@ -257,4 +247,3 @@ CREATE TABLE arr_connections (
     created_at      TIMESTAMP NOT NULL,
     updated_at      TIMESTAMP NOT NULL
 );
-CREATE UNIQUE INDEX idx_arr_connections_kind_name ON arr_connections(kind, name);

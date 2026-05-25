@@ -41,22 +41,24 @@ type Source interface {
 	TorrentSavePath(ctx context.Context, hash triagearr.Hash) (string, error)
 }
 
-// QbitClient is the qBit subset the Actor uses: enumerating the torrent's
-// files (for the T3.5 stat sweep) and the destructive whole-torrent delete.
-type QbitClient interface {
+// TorrentClient is the download-client subset the Actor uses: enumerating the
+// torrent's files (for the T3.5 stat sweep) and the destructive whole-torrent
+// delete. Implemented by *qbit.Client today; any future client (Deluge, etc.)
+// must satisfy the same interface.
+type TorrentClient interface {
 	TorrentFiles(ctx context.Context, h triagearr.Hash) ([]triagearr.TorrentFile, error)
 	Delete(ctx context.Context, h triagearr.Hash, opts triagearr.DeleteOpts) error
 }
 
-// DeleterResolver returns the *arr FileDeleter for an instance name, or
+// DeleterResolver returns the *arr FileDeleter for an instance kind, or
 // (nil, false) when the instance has `act: false`, is unknown, or doesn't
 // implement FileDeleter (stub *arr types).
-type DeleterResolver func(arrName string) (triagearr.FileDeleter, bool)
+type DeleterResolver func(arrKind string) (triagearr.FileDeleter, bool)
 
 // Options configures an Actor.
 type Options struct {
 	Source             Source
-	Qbit               QbitClient
+	Client             TorrentClient
 	Deleter            DeleterResolver
 	MaxDeletionsPerRun int           // 0 → unlimited (not recommended outside tests)
 	InterActionDelay   time.Duration // sleep between two whole-torrent qBit deletes
@@ -83,8 +85,8 @@ func New(opts Options) *Actor {
 	if opts.Source == nil {
 		panic("actor: Source is required")
 	}
-	if opts.Qbit == nil {
-		panic("actor: Qbit is required")
+	if opts.Client == nil {
+		panic("actor: Client is required")
 	}
 	if opts.Deleter == nil {
 		panic("actor: Deleter resolver is required")
@@ -149,13 +151,13 @@ func (a *Actor) Execute(ctx context.Context, runID int64) error {
 // audit appends one audit_log row for the given action/step. Errors are
 // swallowed because audit failures must never abort the destructive
 // pipeline — the action's terminal status is still recorded by finish().
-func (a *Actor) audit(ctx context.Context, actionID int64, step triagearr.AuditStep, outcome triagearr.AuditOutcome, arrName string, fileID int64, detail string) {
+func (a *Actor) audit(ctx context.Context, actionID int64, step triagearr.AuditStep, outcome triagearr.AuditOutcome, arrType string, fileID int64, detail string) {
 	_ = a.opts.Source.AppendAudit(ctx, triagearr.AuditEntry{
 		ActionID:  actionID,
 		Timestamp: a.opts.now(),
 		Step:      step,
 		Outcome:   outcome,
-		ArrName:   arrName,
+		ArrType:   arrType,
 		ArrFileID: fileID,
 		Detail:    detail,
 	})
@@ -205,7 +207,7 @@ func (a *Actor) processCandidate(ctx context.Context, runID int64, item triagear
 
 	delOpts := triagearr.DeleteOpts{DeleteFiles: true, AddImportExclusion: a.opts.AddImportExclusion}
 	if err := withRetry(ctx, a.opts.sleep, func() error {
-		return a.opts.Qbit.Delete(ctx, item.TorrentHash, delOpts)
+		return a.opts.Client.Delete(ctx, item.TorrentHash, delOpts)
 	}); err != nil {
 		a.audit(ctx, actionID, triagearr.AuditStepQbitDelete, triagearr.AuditOutcomeFailed, "", 0, truncate(err.Error()))
 		return a.finish(ctx, actionID, triagearr.ActionFailedQbit, 0, err)
@@ -228,10 +230,20 @@ func (a *Actor) checkNlink(ctx context.Context, actionID int64, hash triagearr.H
 		a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeFailed, "", 0, fmt.Sprintf("save_path: %v", err))
 		return false, fmt.Errorf("save_path %s: %w", hash, err)
 	}
-	files, err := a.opts.Qbit.TorrentFiles(ctx, hash)
-	if err != nil {
+	var files []triagearr.TorrentFile
+	if err := withRetry(ctx, a.opts.sleep, func() error {
+		var ferr error
+		files, ferr = a.opts.Client.TorrentFiles(ctx, hash)
+		return ferr
+	}); err != nil {
 		a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeFailed, "", 0, fmt.Sprintf("qbit files: %v", err))
 		return false, fmt.Errorf("qbit files %s: %w", hash, err)
+	}
+	// Empty file list means qBit has no data for this hash; deleting without
+	// verification could silently nuke inodes referenced by other torrents.
+	if len(files) == 0 {
+		a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeFailed, "", 0, "qbit returned no files")
+		return false, fmt.Errorf("qbit returned no files for hash %s; refusing to delete unverified", hash)
 	}
 	var checked, gone int
 	for _, f := range files {
@@ -259,34 +271,43 @@ func (a *Actor) checkNlink(ctx context.Context, actionID int64, hash triagearr.H
 }
 
 // fanoutArr issues per-file DELETEs against the *arr instances that own each
-// link. On the first failure (or an instance with act=false) the remaining
-// links are recorded as not_attempted and the function returns an error.
+// link. On the first failure the remaining links are recorded as not_attempted
+// and the function returns an error.
 // Already-deleted *arr files are NOT rolled back (see HARDLINK_TOPOLOGY case 4).
+//
+// Two-pass: all Deleters are resolved before any DELETE is issued so a missing
+// deleter (act=false or unknown kind) never leaves a partially-deleted torrent.
 func (a *Actor) fanoutArr(ctx context.Context, actionID int64, links []triagearr.Link) error {
+	deleters := make([]triagearr.FileDeleter, len(links))
+	for i, lk := range links {
+		kind := string(lk.ArrType)
+		d, ok := a.opts.Deleter(kind)
+		if !ok {
+			a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeSkipped, kind, lk.FileID, "instance act=false or no deleter")
+			a.markRemaining(ctx, actionID, links[i+1:])
+			return fmt.Errorf("instance %q is not actable", kind)
+		}
+		deleters[i] = d
+	}
 	delOpts := triagearr.DeleteOpts{DeleteFiles: true, AddImportExclusion: a.opts.AddImportExclusion}
 	for i, lk := range links {
-		deleter, ok := a.opts.Deleter(lk.ArrName)
-		if !ok {
-			a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeSkipped, lk.ArrName, lk.FileID, "instance act=false or no deleter")
-			a.markRemaining(ctx, actionID, links[i+1:])
-			return fmt.Errorf("instance %q is not actable", lk.ArrName)
-		}
+		kind := string(lk.ArrType)
 		err := withRetry(ctx, a.opts.sleep, func() error {
-			return deleter.DeleteMediaFile(ctx, lk.FileID, delOpts)
+			return deleters[i].DeleteMediaFile(ctx, lk.FileID, delOpts)
 		})
 		if err != nil {
-			a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeFailed, lk.ArrName, lk.FileID, truncate(err.Error()))
+			a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeFailed, kind, lk.FileID, truncate(err.Error()))
 			a.markRemaining(ctx, actionID, links[i+1:])
-			return fmt.Errorf("arr delete for file %d on %q: %w", lk.FileID, lk.ArrName, err)
+			return fmt.Errorf("arr delete for file %d on %q: %w", lk.FileID, kind, err)
 		}
-		a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeOK, lk.ArrName, lk.FileID, "")
+		a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeOK, kind, lk.FileID, "")
 	}
 	return nil
 }
 
 func (a *Actor) markRemaining(ctx context.Context, actionID int64, rest []triagearr.Link) {
 	for _, lk := range rest {
-		a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeNotAttempted, lk.ArrName, lk.FileID, "")
+		a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeNotAttempted, string(lk.ArrType), lk.FileID, "")
 	}
 }
 

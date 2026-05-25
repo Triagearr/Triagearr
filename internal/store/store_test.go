@@ -41,8 +41,8 @@ func TestUpsertArrInstance(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	require.NoError(t, s.UpsertArrInstance(ctx, "main", triagearr.ArrTypeSonarr, "http://sonarr:8989", true, ""))
-	require.NoError(t, s.UpsertArrInstance(ctx, "main", triagearr.ArrTypeSonarr, "http://sonarr:8989", false, "boom"))
+	require.NoError(t, s.UpsertArrInstance(ctx, triagearr.ArrTypeSonarr, "http://sonarr:8989", true, ""))
+	require.NoError(t, s.UpsertArrInstance(ctx, triagearr.ArrTypeSonarr, "http://sonarr:8989", false, "boom"))
 
 	rows, err := s.ListArrInstances(ctx)
 	require.NoError(t, err)
@@ -161,18 +161,18 @@ func TestUpsertMediaAndCount(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, s.UpsertMedia(ctx, triagearr.MediaItem{
-		ID: 1, ArrName: "main", ArrType: triagearr.ArrTypeSonarr,
+		ID: 1, ArrType: triagearr.ArrTypeSonarr,
 		Title: "S1", Path: "/m/S1", Size: 10, Tags: []string{"a", "b"},
 	}))
 	require.NoError(t, s.UpsertMedia(ctx, triagearr.MediaItem{
-		ID: 1, ArrName: "main", ArrType: triagearr.ArrTypeSonarr,
+		ID: 1, ArrType: triagearr.ArrTypeSonarr,
 		Title: "S1-updated", Path: "/m/S1", Size: 20,
 	}))
 	require.NoError(t, s.UpsertMedia(ctx, triagearr.MediaItem{
-		ID: 2, ArrName: "main", ArrType: triagearr.ArrTypeSonarr, Title: "S2",
+		ID: 2, ArrType: triagearr.ArrTypeSonarr, Title: "S2",
 	}))
 
-	n, err := s.CountMedia(ctx, "main", triagearr.ArrTypeSonarr)
+	n, err := s.CountMedia(ctx, triagearr.ArrTypeSonarr)
 	require.NoError(t, err)
 	require.Equal(t, 2, n)
 }

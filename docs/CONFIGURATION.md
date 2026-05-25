@@ -9,12 +9,12 @@ mode: dry-run               # dry-run | live
 http: { … }
 storage: { … }
 arrs:
-  sonarr: [ … ]
-  radarr: [ … ]
-  lidarr: [ … ]
-  readarr: [ … ]
-  whisparr_v2: [ … ]
-  whisparr_v3: [ … ]
+  sonarr: { … }
+  radarr: { … }
+  lidarr: { … }
+  readarr: { … }
+  whisparr_v2: { … }
+  whisparr_v3: { … }
 qbit: { … }
 maintainerr: { … }          # optional, V2
 volume: { … }
@@ -57,49 +57,47 @@ storage:
     min_reclaim_mb: 100     # only VACUUM if at least this much can be reclaimed
 ```
 
-## `arrs.*` — per-instance *arr configuration
+## `arrs.*` — one instance per *arr kind
 
-Each *arr type is a **list of instances**, so you can run multi-Sonarr (e.g. main + 4K), multi-Radarr, etc. **Empty lists are valid** and mean "don't poll this type".
+Each *arr kind (`sonarr`, `radarr`, …) has **exactly one** instance — the kind is the identity. A homelab runs one Sonarr, one Radarr, one Lidarr, etc. Multi-instance per kind was dropped before V1 (zero real-world payoff, lots of key-composition complexity).
+
+**Seed-only YAML (ADR-0022).** The block below seeds the `arr_connections` database table on first boot only. After that the table is the source of truth and is managed from the dashboard (Settings → *arr connections); edits to YAML have no effect on existing rows.
 
 ```yaml
 arrs:
   sonarr:
-    - name: main             # unique within type, free text
-      enabled: true          # master switch
-      url: http://sonarr:8989
-      api_key: ${SONARR_API_KEY}
-      poll: true             # if false, instance is registered but never polled
-      act: true              # if false, never delete via this instance
-      tags_exclude: [triagearr-keep]   # *arr tags that protect from deletion
-      categories_only: []    # optional category filter
-
-    - name: anime
-      enabled: false         # disabled — kept here for future use
-      url: http://sonarr-anime:8989
-      api_key: ${SONARR_ANIME_API_KEY}
+    enabled: true                    # master switch for this kind
+    url: http://sonarr:8989
+    api_key: ${SONARR_API_KEY}
+    poll: true                       # read state from this instance
+    act: false                       # ❗ destructive opt-in, per kind
+    tags_exclude: [triagearr-keep]   # *arr tags that protect media
+    categories_only: []              # optional category filter
 
   radarr:
-    - name: main
-      enabled: true
-      url: http://radarr:7878
-      api_key: ${RADARR_API_KEY}
-      poll: true
-      act: false             # read-only mode: poll it but never delete
+    enabled: true
+    url: http://radarr:7878
+    api_key: ${RADARR_API_KEY}
+    poll: true
+    act: false
 
-  lidarr: []                 # no instances → disabled
-  readarr: []
-  whisparr_v2: []
-  whisparr_v3: []
+  lidarr:
+    enabled: false
+  readarr:
+    enabled: false
+  whisparr_v2:
+    enabled: false
+  whisparr_v3:
+    enabled: false
 ```
 
 ### Common fields
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `name` | string | required | Unique within type. Used in logs and audit. |
-| `enabled` | bool | `false` | Master kill switch. |
-| `url` | string | required | Base URL, no trailing slash. |
-| `api_key` | string | required | API key from *arr settings. Use `${VAR}` for env interpolation. |
+| `enabled` | bool | `false` | Master kill switch for this kind. |
+| `url` | string | required when enabled | Base URL, no trailing slash. |
+| `api_key` | string | required when enabled | API key from *arr settings. Use `${VAR}` for env interpolation. |
 | `poll` | bool | `true` | Read-only access. |
 | `act` | bool | `false` | Permission to delete media via this instance. |
 | `tags_exclude` | []string | `[]` | Media tagged with any of these is never deleted. |
@@ -282,19 +280,17 @@ storage:
 
 arrs:
   sonarr:
-    - name: main
-      enabled: true
-      url: http://sonarr:8989
-      api_key: ${SONARR_API_KEY}
-      poll: true
-      act: true
+    enabled: true
+    url: http://sonarr:8989
+    api_key: ${SONARR_API_KEY}
+    poll: true
+    act: true
   radarr:
-    - name: main
-      enabled: true
-      url: http://radarr:7878
-      api_key: ${RADARR_API_KEY}
-      poll: true
-      act: true
+    enabled: true
+    url: http://radarr:7878
+    api_key: ${RADARR_API_KEY}
+    poll: true
+    act: true
 
 qbit:
   enabled: true

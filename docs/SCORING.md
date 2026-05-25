@@ -20,7 +20,7 @@ For every torrent, the scorer reads:
 | `snapshots_raw` (last 30d) | ratio, uploaded, seeders, leechers | velocity, swarm health |
 | `snapshots_daily` (last 365d) | aggregates | long-term trends |
 | `media` (joined via `arr_imports` per ADR-0012) | tags, *arr type, monitor status | exclusion filters |
-| `arr_instances` config | per-instance tags_exclude | exclusion filters |
+| `arr_connections` (ADR-0022) | per-kind tags_exclude, categories_only | exclusion filters |
 | `scoring.per_tracker` config | min_seed_days, min_ratio, rare_threshold | tracker-specific rules (keyed on tracker_host) |
 | filesystem | torrent age (added_on / completion_on), last_activity_on | core math |
 

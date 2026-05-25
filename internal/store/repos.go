@@ -22,8 +22,7 @@ func ts(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
 // ArrInstanceRow is the persisted view of an *arr instance health.
 type ArrInstanceRow struct {
-	Name            string     `db:"name"`
-	Type            string     `db:"type"`
+	Kind            string     `db:"kind"`
 	URL             string     `db:"url"`
 	Healthy         bool       `db:"healthy"`
 	LastHealthCheck *time.Time `db:"last_health_check"`
@@ -31,23 +30,23 @@ type ArrInstanceRow struct {
 }
 
 // UpsertArrInstance records the last-known health for an *arr instance.
-func (s *Store) UpsertArrInstance(ctx context.Context, name string, typ triagearr.ArrType, url string, healthy bool, lastErr string) error {
+func (s *Store) UpsertArrInstance(ctx context.Context, typ triagearr.ArrType, url string, healthy bool, lastErr string) error {
 	now := time.Now().UTC()
 	var lastErrCol any
 	if lastErr != "" {
 		lastErrCol = lastErr
 	}
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO arr_instances(name, type, url, healthy, last_health_check, last_error)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(name, type) DO UPDATE SET
+		INSERT INTO arr_instances(kind, url, healthy, last_health_check, last_error)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(kind) DO UPDATE SET
 			url=excluded.url,
 			healthy=excluded.healthy,
 			last_health_check=excluded.last_health_check,
 			last_error=excluded.last_error
-	`, name, string(typ), url, healthy, ts(now), lastErrCol)
+	`, string(typ), url, healthy, ts(now), lastErrCol)
 	if err != nil {
-		return fmt.Errorf("upserting arr_instance %s/%s: %w", typ, name, err)
+		return fmt.Errorf("upserting arr_instance %s: %w", typ, err)
 	}
 	return nil
 }
@@ -56,7 +55,7 @@ func (s *Store) UpsertArrInstance(ctx context.Context, name string, typ triagear
 func (s *Store) ListArrInstances(ctx context.Context) ([]ArrInstanceRow, error) {
 	var rows []ArrInstanceRow
 	if err := s.reader.SelectContext(ctx, &rows,
-		`SELECT name, type, url, healthy, last_health_check, last_error FROM arr_instances ORDER BY type, name`,
+		`SELECT kind, url, healthy, last_health_check, last_error FROM arr_instances ORDER BY kind`,
 	); err != nil {
 		return nil, fmt.Errorf("listing arr_instances: %w", err)
 	}
@@ -287,27 +286,27 @@ func torrentOrderBy(sortBy string) (string, error) {
 func (s *Store) UpsertMedia(ctx context.Context, m triagearr.MediaItem) error {
 	now := time.Now().UTC()
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO media(id, arr_name, arr_type, title, path, size, tags, last_seen)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id, arr_name, arr_type) DO UPDATE SET
+		INSERT INTO media(id, arr_type, title, path, size, tags, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id, arr_type) DO UPDATE SET
 			title=excluded.title,
 			path=excluded.path,
 			size=excluded.size,
 			tags=excluded.tags,
 			last_seen=excluded.last_seen
-	`, int64(m.ID), m.ArrName, string(m.ArrType), m.Title, m.Path, m.Size, strings.Join(m.Tags, ","), ts(now))
+	`, int64(m.ID), string(m.ArrType), m.Title, m.Path, m.Size, strings.Join(m.Tags, ","), ts(now))
 	if err != nil {
-		return fmt.Errorf("upserting media %s/%s/%d: %w", m.ArrType, m.ArrName, m.ID, err)
+		return fmt.Errorf("upserting media %s/%d: %w", m.ArrType, m.ID, err)
 	}
 	return nil
 }
 
 // CountMedia returns the number of media rows for the given *arr (for testing/inspect).
-func (s *Store) CountMedia(ctx context.Context, arrName string, arrType triagearr.ArrType) (int, error) {
+func (s *Store) CountMedia(ctx context.Context, arrType triagearr.ArrType) (int, error) {
 	var n int
 	if err := s.reader.GetContext(ctx, &n,
-		`SELECT COUNT(*) FROM media WHERE arr_name = ? AND arr_type = ?`,
-		arrName, string(arrType),
+		`SELECT COUNT(*) FROM media WHERE arr_type = ?`,
+		string(arrType),
 	); err != nil {
 		return 0, fmt.Errorf("counting media: %w", err)
 	}
@@ -476,23 +475,22 @@ func (s *Store) ListTrackers(ctx context.Context, hash triagearr.Hash) ([]Tracke
 func (s *Store) UpsertMediaFile(ctx context.Context, f triagearr.MediaFile) error {
 	now := time.Now().UTC()
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO media_files(arr_name, arr_type, file_id, media_id, path, size, last_seen)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(arr_name, arr_type, file_id) DO UPDATE SET
+		INSERT INTO media_files(arr_type, file_id, media_id, path, size, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(arr_type, file_id) DO UPDATE SET
 			media_id=excluded.media_id,
 			path=excluded.path,
 			size=excluded.size,
 			last_seen=excluded.last_seen
-	`, f.ArrName, string(f.ArrType), f.FileID, int64(f.MediaID), f.Path, f.Size, ts(now))
+	`, string(f.ArrType), f.FileID, int64(f.MediaID), f.Path, f.Size, ts(now))
 	if err != nil {
-		return fmt.Errorf("upserting media_file %s/%s/%d: %w", f.ArrType, f.ArrName, f.FileID, err)
+		return fmt.Errorf("upserting media_file %s/%d: %w", f.ArrType, f.FileID, err)
 	}
 	return nil
 }
 
 // MediaFileRow is the persisted view used by `inspect media` and the linker.
 type MediaFileRow struct {
-	ArrName  string    `db:"arr_name"`
 	ArrType  string    `db:"arr_type"`
 	FileID   int64     `db:"file_id"`
 	MediaID  int64     `db:"media_id"`
@@ -502,14 +500,14 @@ type MediaFileRow struct {
 }
 
 // ListMediaFilesByMedia returns the files attached to one media item.
-func (s *Store) ListMediaFilesByMedia(ctx context.Context, arrName string, arrType triagearr.ArrType, mediaID triagearr.MediaID) ([]MediaFileRow, error) {
+func (s *Store) ListMediaFilesByMedia(ctx context.Context, arrType triagearr.ArrType, mediaID triagearr.MediaID) ([]MediaFileRow, error) {
 	var rows []MediaFileRow
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT arr_name, arr_type, file_id, media_id, path, size, last_seen
+		SELECT arr_type, file_id, media_id, path, size, last_seen
 		FROM media_files
-		WHERE arr_name = ? AND arr_type = ? AND media_id = ?
+		WHERE arr_type = ? AND media_id = ?
 		ORDER BY path
-	`, arrName, string(arrType), int64(mediaID)); err != nil {
+	`, string(arrType), int64(mediaID)); err != nil {
 		return nil, fmt.Errorf("listing media_files: %w", err)
 	}
 	return rows, nil
@@ -751,36 +749,36 @@ func (s *Store) EnforceRetention(ctx context.Context, rawHorizon, dailyHorizon t
 // -----------------------------------------------------------------------------
 
 // UpsertArrImport records one *arr-side import (downloadFolderImported event).
-// PK is (arr_name, arr_type, file_id) — re-imports under the same fileId would
-// update the row; *arr's behaviour is to allocate a fresh fileId on every
-// import, so collisions in practice are rare.
-func (s *Store) UpsertArrImport(ctx context.Context, arrName string, arrType triagearr.ArrType, rec triagearr.ImportRecord) error {
+// PK is (arr_type, file_id) — re-imports under the same fileId update the row;
+// *arr's behaviour is to allocate a fresh fileId on every import, so collisions
+// in practice are rare.
+func (s *Store) UpsertArrImport(ctx context.Context, arrType triagearr.ArrType, rec triagearr.ImportRecord) error {
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO arr_imports(arr_name, arr_type, file_id, download_id, dropped_path, imported_path, size, history_id, imported_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(arr_name, arr_type, file_id) DO UPDATE SET
+		INSERT INTO arr_imports(arr_type, file_id, download_id, dropped_path, imported_path, size, history_id, imported_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(arr_type, file_id) DO UPDATE SET
 			download_id=excluded.download_id,
 			dropped_path=excluded.dropped_path,
 			imported_path=excluded.imported_path,
 			size=excluded.size,
 			history_id=excluded.history_id,
 			imported_at=excluded.imported_at
-	`, arrName, string(arrType), rec.FileID, string(rec.DownloadID),
+	`, string(arrType), rec.FileID, string(rec.DownloadID),
 		rec.DroppedPath, rec.ImportedPath, rec.Size, rec.HistoryID, ts(rec.ImportedAt))
 	if err != nil {
-		return fmt.Errorf("upserting arr_import %s/%s/%d: %w", arrType, arrName, rec.FileID, err)
+		return fmt.Errorf("upserting arr_import %s/%d: %w", arrType, rec.FileID, err)
 	}
 	return nil
 }
 
 // MaxHistoryID returns the highest history.id we've ingested for one *arr
 // instance, so the next poll can fetch only the delta.
-func (s *Store) MaxHistoryID(ctx context.Context, arrName string, arrType triagearr.ArrType) (int64, error) {
+func (s *Store) MaxHistoryID(ctx context.Context, arrType triagearr.ArrType) (int64, error) {
 	var v *int64
 	if err := s.reader.GetContext(ctx, &v, `
-		SELECT MAX(history_id) FROM arr_imports WHERE arr_name = ? AND arr_type = ?
-	`, arrName, string(arrType)); err != nil {
-		return 0, fmt.Errorf("max history_id for %s/%s: %w", arrType, arrName, err)
+		SELECT MAX(history_id) FROM arr_imports WHERE arr_type = ?
+	`, string(arrType)); err != nil {
+		return 0, fmt.Errorf("max history_id for %s: %w", arrType, err)
 	}
 	if v == nil {
 		return 0, nil
@@ -795,7 +793,6 @@ func (s *Store) MaxHistoryID(ctx context.Context, arrName string, arrType triage
 // with what M5 actor can actually act on.
 func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagearr.Link, error) {
 	type row struct {
-		ArrName      string `db:"arr_name"`
 		ArrType      string `db:"arr_type"`
 		FileID       int64  `db:"file_id"`
 		DownloadID   string `db:"download_id"`
@@ -806,22 +803,20 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 	}
 	var rows []row
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT ai.arr_name, ai.arr_type, ai.file_id, ai.download_id,
+		SELECT ai.arr_type, ai.file_id, ai.download_id,
 		       ai.dropped_path, ai.imported_path, ai.size, mf.path AS live_path
 		FROM arr_imports ai
 		JOIN media_files mf
-		  ON mf.arr_name = ai.arr_name
-		 AND mf.arr_type = ai.arr_type
+		  ON mf.arr_type = ai.arr_type
 		 AND mf.file_id  = ai.file_id
 		WHERE ai.download_id = ?
-		ORDER BY ai.arr_name, ai.file_id
+		ORDER BY ai.arr_type, ai.file_id
 	`, strings.ToLower(string(hash))); err != nil {
 		return nil, fmt.Errorf("listing links for %s: %w", hash, err)
 	}
 	out := make([]triagearr.Link, len(rows))
 	for i, r := range rows {
 		out[i] = triagearr.Link{
-			ArrName:      r.ArrName,
 			ArrType:      triagearr.ArrType(r.ArrType),
 			FileID:       r.FileID,
 			DownloadID:   triagearr.Hash(r.DownloadID),
@@ -836,11 +831,11 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 
 // CountArrImports returns the number of imports stored for one *arr instance,
 // surfaced by `inspect imports`.
-func (s *Store) CountArrImports(ctx context.Context, arrName string, arrType triagearr.ArrType) (int, error) {
+func (s *Store) CountArrImports(ctx context.Context, arrType triagearr.ArrType) (int, error) {
 	var n int
 	if err := s.reader.GetContext(ctx, &n,
-		`SELECT COUNT(*) FROM arr_imports WHERE arr_name = ? AND arr_type = ?`,
-		arrName, string(arrType),
+		`SELECT COUNT(*) FROM arr_imports WHERE arr_type = ?`,
+		string(arrType),
 	); err != nil {
 		return 0, fmt.Errorf("counting arr_imports: %w", err)
 	}

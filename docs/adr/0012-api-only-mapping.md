@@ -51,12 +51,12 @@ This makes *arr's history a **stronger** source of truth than `stat()` for our p
 
 ### Data flow
 
-1. New table `arr_imports` (migration 0003) keyed by `(arr_name, arr_type, file_id)`, storing `qbit_hash`, `dropped_path`, `imported_path`, `size`, `imported_at`. Persisted so we survive restarts and don't re-fetch the entire history every boot.
-2. Existing *arr poller fans out a paginated history fetch per instance (`/api/v3/history?eventType=3`), upserts new records into `arr_imports`. Cursored on the `id` column so we only pull deltas after the first sync.
+1. New table `arr_imports` keyed by `(arr_type, file_id)`, storing `download_id` (qBit hash), `dropped_path`, `imported_path`, `size`, `imported_at`. Persisted so we survive restarts and don't re-fetch the entire history every boot.
+2. The *arr poller fans out a paginated history fetch per instance (`/api/v3/history?eventType=3`), upserts new records into `arr_imports`. Cursored on the `id` column so we only pull deltas after the first sync.
 3. A new `internal/linker` package (replaces `internal/mapper`) exposes:
-   - `Links(hash triagearr.Hash) → []Link{ArrName, ArrType, FileID, DroppedPath, ImportedPath, Size}` — the *arr-side targets for a qBit torrent.
-   - `ByFileID(arrName, arrType, fileID) → Link` — reverse lookup for diagnostics.
-4. M5 actor uses `Links(hash)` to enumerate the per-file `(arrType, arrName, fileID)` DELETE targets, then proceeds with the *arr-then-qBit order. **No filesystem access. No T3.5 re-stat.**
+   - `Links(hash triagearr.Hash) → []Link{ArrType, FileID, DroppedPath, ImportedPath, Size}` — the *arr-side targets for a qBit torrent.
+   - `ByFileID(arrType, fileID) → Link` — reverse lookup for diagnostics.
+4. M5 actor uses `Links(hash)` to enumerate the per-file `(arrType, fileID)` DELETE targets, then proceeds with the *arr-then-qBit order. **No filesystem access. No T3.5 re-stat.**
 
 ### Hardlink-equivalence guarantee — what we keep, what we lose
 

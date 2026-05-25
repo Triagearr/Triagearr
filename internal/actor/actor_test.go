@@ -113,7 +113,12 @@ type fakeQbit struct {
 }
 
 func (q *fakeQbit) TorrentFiles(_ context.Context, h triagearr.Hash) ([]triagearr.TorrentFile, error) {
-	return q.files[h], nil
+	if files, ok := q.files[h]; ok {
+		return files, nil
+	}
+	// Default: one sentinel file so T3.5 can proceed. Tests that need specific
+	// file lists (T3.5 nlink scenarios) populate q.files explicitly.
+	return []triagearr.TorrentFile{{Name: "file.mkv"}}, nil
 }
 
 func (q *fakeQbit) Delete(_ context.Context, h triagearr.Hash, _ triagearr.DeleteOpts) error {
@@ -186,11 +191,11 @@ func liveRun(items []triagearr.RunItem) triagearr.Run {
 func TestActor_HappyPath_singleFile(t *testing.T) {
 	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h1", SizeBytes: 1000}}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
-		"h1": {{ArrName: "sonarr-main", FileID: 42}},
+		"h1": {{ArrType: triagearr.ArrTypeSonarr, FileID: 42}},
 	})
 	q := &fakeQbit{}
-	d := newFakeDeleter("sonarr-main")
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d)})
+	d := newFakeDeleter("sonarr")
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d)})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 
@@ -216,12 +221,12 @@ func TestActor_SeasonPack_8files_allOK(t *testing.T) {
 	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "pack", SizeBytes: 80000}}
 	var links []triagearr.Link
 	for i := int64(1); i <= 8; i++ {
-		links = append(links, triagearr.Link{ArrName: "sonarr-main", FileID: i})
+		links = append(links, triagearr.Link{ArrType: triagearr.ArrTypeSonarr, FileID: i})
 	}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{"pack": links})
 	q := &fakeQbit{}
-	d := newFakeDeleter("sonarr-main")
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d)})
+	d := newFakeDeleter("sonarr")
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d)})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 
@@ -235,13 +240,13 @@ func TestActor_ArrFailMidway_NotAttemptedRecorded(t *testing.T) {
 	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "pack", SizeBytes: 80000}}
 	var links []triagearr.Link
 	for i := int64(1); i <= 10; i++ {
-		links = append(links, triagearr.Link{ArrName: "sonarr-main", FileID: i})
+		links = append(links, triagearr.Link{ArrType: triagearr.ArrTypeSonarr, FileID: i})
 	}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{"pack": links})
 	q := &fakeQbit{}
-	d := newFakeDeleter("sonarr-main")
+	d := newFakeDeleter("sonarr")
 	d.failOn[5] = errors.New("HTTP 404") // hard fail (not transient)
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d)})
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d)})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 
@@ -270,11 +275,11 @@ func TestActor_ArrFailMidway_NotAttemptedRecorded(t *testing.T) {
 func TestActor_QbitFail_ArrAlreadyDone(t *testing.T) {
 	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h1", SizeBytes: 500}}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
-		"h1": {{ArrName: "sonarr-main", FileID: 1}},
+		"h1": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
 	})
 	q := &fakeQbit{failN: 5, failErr: errors.New("connection refused")} // not transient → no retry
-	d := newFakeDeleter("sonarr-main")
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d)})
+	d := newFakeDeleter("sonarr")
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d)})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 	require.Equal(t, triagearr.ActionFailedQbit, src.actions[1].Status)
@@ -287,13 +292,13 @@ func TestActor_QbitFail_ArrAlreadyDone(t *testing.T) {
 func TestActor_QbitTransientRetry(t *testing.T) {
 	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h1", SizeBytes: 500}}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
-		"h1": {{ArrName: "sonarr-main", FileID: 1}},
+		"h1": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
 	})
 	q := &fakeQbit{failN: 2, failErr: errTransient(errors.New("502"))}
-	d := newFakeDeleter("sonarr-main")
+	d := newFakeDeleter("sonarr")
 	a := actor.New(actor.Options{
 		Source:  src,
-		Qbit:    q,
+		Client: q,
 		Deleter: resolverFor(d),
 	})
 	require.NoError(t, a.Execute(context.Background(), 1))
@@ -319,13 +324,13 @@ func TestActor_RateCap_StopsEarly(t *testing.T) {
 		{Rank: 2, TorrentHash: "c", SizeBytes: 1},
 	}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
-		"a": {{ArrName: "s", FileID: 1}},
-		"b": {{ArrName: "s", FileID: 2}},
-		"c": {{ArrName: "s", FileID: 3}},
+		"a": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
+		"b": {{ArrType: triagearr.ArrTypeSonarr, FileID: 2}},
+		"c": {{ArrType: triagearr.ArrTypeSonarr, FileID: 3}},
 	})
 	q := &fakeQbit{}
-	d := newFakeDeleter("s")
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d), MaxDeletionsPerRun: 2})
+	d := newFakeDeleter("sonarr")
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d), MaxDeletionsPerRun: 2})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 	require.Len(t, src.actions, 2) // c never inserted
@@ -337,11 +342,11 @@ func TestActor_DryRunMode_NoCallsMade(t *testing.T) {
 	run := liveRun(items)
 	run.Mode = "dry-run"
 	src := newFakeSource(run, items, map[triagearr.Hash][]triagearr.Link{
-		"h": {{ArrName: "s", FileID: 1}},
+		"h": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
 	})
 	q := &fakeQbit{}
-	d := newFakeDeleter("s")
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d)})
+	d := newFakeDeleter("sonarr")
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d)})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 	require.Empty(t, q.calls)
@@ -354,11 +359,11 @@ func TestActor_CronTriggered_Refused(t *testing.T) {
 	run := liveRun(items)
 	run.TriggeredBy = triagearr.RunTrigger("cron")
 	src := newFakeSource(run, items, map[triagearr.Hash][]triagearr.Link{
-		"h": {{ArrName: "s", FileID: 1}},
+		"h": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
 	})
 	q := &fakeQbit{}
-	d := newFakeDeleter("s")
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d)})
+	d := newFakeDeleter("sonarr")
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d)})
 
 	err := a.Execute(context.Background(), 1)
 	require.Error(t, err)
@@ -372,12 +377,12 @@ func TestActor_CronTriggered_Refused(t *testing.T) {
 func TestActor_T35_SkipsCrossSeed(t *testing.T) {
 	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h", SizeBytes: 1000}}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
-		"h": {{ArrName: "s", FileID: 1}},
+		"h": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
 	})
 	q := &fakeQbit{files: map[triagearr.Hash][]triagearr.TorrentFile{
 		"h": {{Name: "ep01.mkv"}, {Name: "ep02.mkv"}},
 	}}
-	d := newFakeDeleter("s")
+	d := newFakeDeleter("sonarr")
 	// Second file reports nlink=2 → cross-seed conflict, abort qBit step.
 	stat := func(path string) (int64, int64, error) {
 		if filepath.Base(path) == "ep02.mkv" {
@@ -385,7 +390,7 @@ func TestActor_T35_SkipsCrossSeed(t *testing.T) {
 		}
 		return 0, 1, nil
 	}
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d), Stat: stat})
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d), Stat: stat})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 	require.Empty(t, q.calls, "qBit delete must not run when T3.5 sees nlink>1")
@@ -408,16 +413,16 @@ func TestActor_T35_SkipsCrossSeed(t *testing.T) {
 func TestActor_T35_StatErrorAborts(t *testing.T) {
 	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h", SizeBytes: 1000}}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
-		"h": {{ArrName: "s", FileID: 1}},
+		"h": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
 	})
 	q := &fakeQbit{files: map[triagearr.Hash][]triagearr.TorrentFile{
 		"h": {{Name: "ep01.mkv"}},
 	}}
-	d := newFakeDeleter("s")
+	d := newFakeDeleter("sonarr")
 	stat := func(_ string) (int64, int64, error) {
 		return 0, 0, errors.New("permission denied")
 	}
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d), Stat: stat})
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d), Stat: stat})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 	require.Empty(t, q.calls, "qBit delete must not run when T3.5 stat failed")
@@ -432,14 +437,14 @@ func TestActor_T35_StatErrorAborts(t *testing.T) {
 func TestActor_T35_EnoentProceeds(t *testing.T) {
 	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h", SizeBytes: 1000}}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
-		"h": {{ArrName: "s", FileID: 1}},
+		"h": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
 	})
 	q := &fakeQbit{files: map[triagearr.Hash][]triagearr.TorrentFile{
 		"h": {{Name: "ep01.mkv"}},
 	}}
-	d := newFakeDeleter("s")
+	d := newFakeDeleter("sonarr")
 	stat := func(_ string) (int64, int64, error) { return 0, 0, os.ErrNotExist }
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor(d), Stat: stat})
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d), Stat: stat})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 	require.Equal(t, []triagearr.Hash{"h"}, q.calls)
@@ -449,11 +454,11 @@ func TestActor_T35_EnoentProceeds(t *testing.T) {
 func TestActor_ActFalse_Skips(t *testing.T) {
 	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h", SizeBytes: 100}}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
-		"h": {{ArrName: "sonarr-readonly", FileID: 1}},
+		"h": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
 	})
 	q := &fakeQbit{}
 	// No deleter registered for "sonarr-readonly" → resolver returns false.
-	a := actor.New(actor.Options{Source: src, Qbit: q, Deleter: resolverFor()})
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor()})
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 	require.Empty(t, q.calls)

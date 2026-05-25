@@ -41,8 +41,7 @@ storage:
 # -----------------------------------------------------------------------------
 # *arr instances
 # -----------------------------------------------------------------------------
-# Each *arr type is a *list* of instances. Empty list = type disabled.
-# Each instance has its own enabled/poll/act switches.
+# One instance per type — the type key (sonarr, radarr, …) is the identity.
 # Defaults are conservative: nothing is enabled until you say so.
 #
 # SEED-ONLY (ADR-0022): this block seeds the arr_connections database table on
@@ -50,33 +49,30 @@ storage:
 # from the dashboard (Settings → *arr connections); edits here have no effect.
 arrs:
   sonarr:
-    - name: main
-      enabled: true
-      url: http://sonarr:8989
-      api_key: ${SONARR_API_KEY}
-      poll: true             # read state from this instance
-      act: false             # ❗ leave false until you've validated dry-run output
-      tags_exclude: [triagearr-keep]
-      categories_only: []
-    # Example of a second instance, disabled by default:
-    # - name: anime
-    #   enabled: false
-    #   url: http://sonarr-anime:8989
-    #   api_key: ${SONARR_ANIME_API_KEY}
+    enabled: true
+    url: http://sonarr:8989
+    api_key: ${SONARR_API_KEY}
+    poll: true             # read state from this instance
+    act: false             # ❗ leave false until you've validated dry-run output
+    tags_exclude: [triagearr-keep]
+    categories_only: []
 
   radarr:
-    - name: main
-      enabled: true
-      url: http://radarr:7878
-      api_key: ${RADARR_API_KEY}
-      poll: true
-      act: false
-      tags_exclude: [triagearr-keep]
+    enabled: true
+    url: http://radarr:7878
+    api_key: ${RADARR_API_KEY}
+    poll: true
+    act: false
+    tags_exclude: [triagearr-keep]
 
-  lidarr: []
-  readarr: []
-  whisparr_v2: []
-  whisparr_v3: []
+  lidarr:
+    enabled: false
+  readarr:
+    enabled: false
+  whisparr_v2:
+    enabled: false
+  whisparr_v3:
+    enabled: false
 
 # -----------------------------------------------------------------------------
 # qBittorrent (single instance in V1)

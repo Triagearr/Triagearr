@@ -66,7 +66,6 @@ func TestListMedia(t *testing.T) {
 	require.Equal(t, []string{"keep", "4k"}, items[0].Tags)
 	require.Equal(t, int64(2048), items[1].Size)
 	require.Equal(t, triagearr.ArrTypeSonarr, items[0].ArrType)
-	require.Equal(t, "main", items[0].ArrName)
 }
 
 func TestDeleteMediaFile_OK(t *testing.T) {

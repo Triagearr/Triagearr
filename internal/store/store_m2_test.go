@@ -33,15 +33,15 @@ func TestUpsertMediaFile_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, s.UpsertMediaFile(ctx, triagearr.MediaFile{
-		ArrName: "main", ArrType: triagearr.ArrTypeSonarr,
+		ArrType: triagearr.ArrTypeSonarr,
 		FileID: 42, MediaID: 7, Path: "/files/tv/Foo/E01.mkv", Size: 1000,
 	}))
 	require.NoError(t, s.UpsertMediaFile(ctx, triagearr.MediaFile{
-		ArrName: "main", ArrType: triagearr.ArrTypeSonarr,
+		ArrType: triagearr.ArrTypeSonarr,
 		FileID: 42, MediaID: 7, Path: "/files/tv/Foo/E01.mkv", Size: 2000,
 	}))
 
-	rows, err := s.ListMediaFilesByMedia(ctx, "main", triagearr.ArrTypeSonarr, 7)
+	rows, err := s.ListMediaFilesByMedia(ctx, triagearr.ArrTypeSonarr, 7)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, int64(2000), rows[0].Size)
@@ -255,7 +255,7 @@ func TestPruneStaleTorrents_KeepsArrImports(t *testing.T) {
 		now.Add(-30*24*time.Hour).Format(time.RFC3339Nano))
 	require.NoError(t, err)
 
-	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, triagearr.ImportRecord{
+	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, triagearr.ImportRecord{
 		FileID: 42, DownloadID: "stale", DroppedPath: "/dl/x", ImportedPath: "/files/tv/x.mkv",
 		Size: 100, HistoryID: 1, ImportedAt: now.Add(-30 * 24 * time.Hour),
 	}))
@@ -306,12 +306,12 @@ func TestArrImports_JoinFiltersOrphanedFileIDs(t *testing.T) {
 		DroppedPath:  "/files/torrents/pack/E02.mkv",
 		ImportedPath: "/files/media/E02.mkv", Size: 2000, ImportedAt: now,
 	}
-	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, rec1))
-	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, rec2))
+	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, rec1))
+	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, rec2))
 
 	// Only the first fileId still exists in media_files (the second was deleted/upgraded).
 	require.NoError(t, s.UpsertMediaFile(ctx, triagearr.MediaFile{
-		ArrName: "main", ArrType: triagearr.ArrTypeSonarr,
+		ArrType: triagearr.ArrTypeSonarr,
 		FileID: 10, MediaID: 7, Path: "/files/media/E01.mkv", Size: 1000,
 	}))
 
@@ -325,17 +325,17 @@ func TestArrImports_JoinFiltersOrphanedFileIDs(t *testing.T) {
 func TestMaxHistoryID_ReturnsZeroWhenEmpty(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	max, err := s.MaxHistoryID(ctx, "main", triagearr.ArrTypeSonarr)
+	max, err := s.MaxHistoryID(ctx, triagearr.ArrTypeSonarr)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), max)
 
-	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, triagearr.ImportRecord{
+	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, triagearr.ImportRecord{
 		HistoryID: 42, FileID: 1, DownloadID: "deadbeef", ImportedAt: time.Now().UTC(),
 	}))
-	require.NoError(t, s.UpsertArrImport(ctx, "main", triagearr.ArrTypeSonarr, triagearr.ImportRecord{
+	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, triagearr.ImportRecord{
 		HistoryID: 17, FileID: 2, DownloadID: "deadbeef", ImportedAt: time.Now().UTC(),
 	}))
-	max, err = s.MaxHistoryID(ctx, "main", triagearr.ArrTypeSonarr)
+	max, err = s.MaxHistoryID(ctx, triagearr.ArrTypeSonarr)
 	require.NoError(t, err)
 	require.Equal(t, int64(42), max)
 }

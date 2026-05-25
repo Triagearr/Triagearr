@@ -42,27 +42,25 @@ volume:
   path: /data
 arrs:
   sonarr:
-    - name: main
-      enabled: true
-      url: ${SONARR_URL:-http://sonarr:8989}
-      api_key: ${MY_KEY}
-      poll: true
+    enabled: true
+    url: ${SONARR_URL:-http://sonarr:8989}
+    api_key: ${MY_KEY}
+    poll: true
 `)
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
-	require.Equal(t, "secret-value", cfg.Arrs.Sonarr[0].APIKey)
-	require.Equal(t, "http://sonarr:8989", cfg.Arrs.Sonarr[0].URL)
+	require.Equal(t, "secret-value", cfg.Arrs.Sonarr.APIKey)
+	require.Equal(t, "http://sonarr:8989", cfg.Arrs.Sonarr.URL)
 }
 
 func TestLoad_RequiredEnvMissing(t *testing.T) {
 	path := writeConfig(t, `
 arrs:
   sonarr:
-    - name: main
-      enabled: true
-      url: http://sonarr:8989
-      api_key: ${DEFINITELY_NOT_SET_12345}
-      poll: true
+    enabled: true
+    url: http://sonarr:8989
+    api_key: ${DEFINITELY_NOT_SET_12345}
+    poll: true
 `)
 	_, err := config.Load(path)
 	require.Error(t, err)
@@ -76,28 +74,13 @@ func TestLoad_ValidatesMode(t *testing.T) {
 	require.Contains(t, err.Error(), "mode")
 }
 
-func TestLoad_DuplicateArrName(t *testing.T) {
-	path := writeConfig(t, `
-arrs:
-  sonarr:
-    - name: main
-      enabled: false
-    - name: main
-      enabled: false
-`)
-	_, err := config.Load(path)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "duplicate")
-}
-
 func TestLoad_MissingAPIKeyWhenEnabled(t *testing.T) {
 	path := writeConfig(t, `
 arrs:
   sonarr:
-    - name: main
-      enabled: true
-      url: http://sonarr:8989
-      poll: true
+    enabled: true
+    url: http://sonarr:8989
+    poll: true
 `)
 	_, err := config.Load(path)
 	require.Error(t, err)

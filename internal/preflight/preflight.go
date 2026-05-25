@@ -16,8 +16,9 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-// Qbit is the subset of the qBit client preflight needs (one ListTorrents call).
-type Qbit interface {
+// TorrentClient is the subset of the download client preflight needs (one
+// ListTorrents call to verify path visibility — ADR-0023).
+type TorrentClient interface {
 	ListTorrents(ctx context.Context) ([]triagearr.Torrent, error)
 }
 
@@ -37,7 +38,7 @@ const SampleSize = 5
 // namespace, otherwise the mount is missing outright. qBit save_paths are
 // probed up to SampleSize; the first unresolved path triggers a refuse-to-start
 // with a diagnostic naming both the path and what Triagearr expected to see.
-func Validate(ctx context.Context, qb Qbit, volumePath string, stat StatFn) error {
+func Validate(ctx context.Context, qb TorrentClient, volumePath string, stat StatFn) error {
 	if stat == nil {
 		stat = os.Stat
 	}

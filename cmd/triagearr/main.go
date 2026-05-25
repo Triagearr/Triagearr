@@ -305,7 +305,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 	// convention is violated (qBit save_paths don't resolve in our namespace).
 	// Skipped only when there's nothing to validate (qBit + volume both off).
 	if cfg.Volume.Path != "" || qb != nil {
-		var pqb preflight.Qbit
+		var pqb preflight.TorrentClient
 		if qb != nil {
 			pqb = qb
 		}
@@ -348,7 +348,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 	if qb != nil {
 		act = actor.New(actor.Options{
 			Source:             s,
-			Qbit:               qb,
+			Client:             qb,
 			Deleter:            registryDeleter(reg),
 			MaxDeletionsPerRun: cfg.Action.MaxDeletionsPerRun,
 			InterActionDelay:   cfg.Action.InterActionDelay,
@@ -490,7 +490,7 @@ func buildActor(cfg *config.Config, s *store.Store) (*actor.Actor, *qbit.Client,
 	}
 	act := actor.New(actor.Options{
 		Source:             s,
-		Qbit:               qb,
+		Client:             qb,
 		Deleter:            registryDeleter(reg),
 		MaxDeletionsPerRun: cfg.Action.MaxDeletionsPerRun,
 		InterActionDelay:   cfg.Action.InterActionDelay,
@@ -528,17 +528,19 @@ func theVolume(cfg *config.Config) decider.Volume {
 
 func arrURLMap(cfg *config.Config) map[string]string {
 	out := map[string]string{}
-	add := func(typ triagearr.ArrType, list []config.ArrInstanceConfig) {
-		for _, inst := range list {
-			out[pollers.URLKey(inst.Name, typ)] = inst.URL
-		}
+	for _, pair := range []struct {
+		typ  triagearr.ArrType
+		inst config.ArrInstanceConfig
+	}{
+		{triagearr.ArrTypeSonarr, cfg.Arrs.Sonarr},
+		{triagearr.ArrTypeRadarr, cfg.Arrs.Radarr},
+		{triagearr.ArrTypeLidarr, cfg.Arrs.Lidarr},
+		{triagearr.ArrTypeReadarr, cfg.Arrs.Readarr},
+		{triagearr.ArrTypeWhisparrV2, cfg.Arrs.WhisparrV2},
+		{triagearr.ArrTypeWhisparrV3, cfg.Arrs.WhisparrV3},
+	} {
+		out[pollers.URLKey(pair.typ)] = pair.inst.URL
 	}
-	add(triagearr.ArrTypeSonarr, cfg.Arrs.Sonarr)
-	add(triagearr.ArrTypeRadarr, cfg.Arrs.Radarr)
-	add(triagearr.ArrTypeLidarr, cfg.Arrs.Lidarr)
-	add(triagearr.ArrTypeReadarr, cfg.Arrs.Readarr)
-	add(triagearr.ArrTypeWhisparrV2, cfg.Arrs.WhisparrV2)
-	add(triagearr.ArrTypeWhisparrV3, cfg.Arrs.WhisparrV3)
 	return out
 }
 
@@ -672,7 +674,7 @@ func inspectArrsAction(ctx context.Context, cmd *cli.Command) error {
 			lastErr = *r.LastError
 		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Type, r.Name, r.URL, health, optTime(r.LastHealthCheck), lastErr,
+			r.Kind, r.Kind, r.URL, health, optTime(r.LastHealthCheck), lastErr,
 		)
 	}
 	return tw.Flush()
@@ -766,12 +768,11 @@ func inspectTrackersAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func inspectMediaAction(ctx context.Context, cmd *cli.Command) error {
-	if cmd.NArg() < 3 {
-		return errors.New("usage: triagearr inspect media <arr-type> <arr-name> <media-id>")
+	if cmd.NArg() < 2 {
+		return errors.New("usage: triagearr inspect media <arr-type> <media-id>")
 	}
 	arrType := triagearr.ArrType(cmd.Args().Get(0))
-	arrName := cmd.Args().Get(1)
-	mediaID, err := strconv.ParseInt(cmd.Args().Get(2), 10, 64)
+	mediaID, err := strconv.ParseInt(cmd.Args().Get(1), 10, 64)
 	if err != nil {
 		return fmt.Errorf("media-id: %w", err)
 	}
@@ -784,12 +785,12 @@ func inspectMediaAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer func() { _ = s.Close() }()
-	files, err := s.ListMediaFilesByMedia(ctx, arrName, arrType, triagearr.MediaID(mediaID))
+	files, err := s.ListMediaFilesByMedia(ctx, arrType, triagearr.MediaID(mediaID))
 	if err != nil {
 		return err
 	}
 	if len(files) == 0 {
-		fmt.Printf("no files stored for %s/%s/%d — the *arr poller may not have fanned out yet\n", arrType, arrName, mediaID)
+		fmt.Printf("no files stored for %s/%d — the *arr poller may not have fanned out yet\n", arrType, mediaID)
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -829,10 +830,10 @@ func inspectMappingAction(ctx context.Context, cmd *cli.Command) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ARR\tNAME\tFILE_ID\tSIZE\tLIVE_PATH\tDROPPED_PATH")
+	_, _ = fmt.Fprintln(tw, "ARR\tFILE_ID\tSIZE\tLIVE_PATH\tDROPPED_PATH")
 	for _, l := range links {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\n",
-			l.ArrType, l.ArrName, l.FileID, humanBytes(l.Size), l.LivePath, l.DroppedPath,
+		_, _ = fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n",
+			l.ArrType, l.FileID, humanBytes(l.Size), l.LivePath, l.DroppedPath,
 		)
 	}
 	return tw.Flush()
@@ -849,28 +850,26 @@ func inspectImportsAction(ctx context.Context, cmd *cli.Command) error {
 	}
 	defer func() { _ = s.Close() }()
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ARR\tNAME\tIMPORTS\tMAX_HISTORY_ID")
-	for _, group := range []struct {
-		typ   triagearr.ArrType
-		insts []config.ArrInstanceConfig
+	_, _ = fmt.Fprintln(tw, "ARR\tIMPORTS\tMAX_HISTORY_ID")
+	for _, pair := range []struct {
+		typ  triagearr.ArrType
+		inst config.ArrInstanceConfig
 	}{
 		{triagearr.ArrTypeSonarr, cfg.Arrs.Sonarr},
 		{triagearr.ArrTypeRadarr, cfg.Arrs.Radarr},
 	} {
-		for _, inst := range group.insts {
-			if !inst.Enabled {
-				continue
-			}
-			n, err := s.CountArrImports(ctx, inst.Name, group.typ)
-			if err != nil {
-				return err
-			}
-			max, err := s.MaxHistoryID(ctx, inst.Name, group.typ)
-			if err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%d\n", group.typ, inst.Name, n, max)
+		if !pair.inst.Enabled {
+			continue
 		}
+		n, err := s.CountArrImports(ctx, pair.typ)
+		if err != nil {
+			return err
+		}
+		max, err := s.MaxHistoryID(ctx, pair.typ)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\n", pair.typ, n, max)
 	}
 	return tw.Flush()
 }

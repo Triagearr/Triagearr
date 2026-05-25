@@ -35,6 +35,9 @@ type Source interface {
 	// are conservatively kept eligible — the Actor's T3.5 still re-checks
 	// atomically at action time.
 	MaxNlinkByHashes(ctx context.Context, hashes []triagearr.Hash) (map[triagearr.Hash]int64, error)
+	// HashesWithArrImports returns the set of hashes that have at least one
+	// arr_imports row. Drives the qbit-only nlink ceiling (Finding 6).
+	HashesWithArrImports(ctx context.Context) (map[triagearr.Hash]struct{}, error)
 }
 
 // MaxAllowedNlink is the per-file hardlink-count ceiling enforced at election
@@ -113,6 +116,10 @@ func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 	if err != nil {
 		return RunPlan{}, fmt.Errorf("decider: max nlink: %w", err)
 	}
+	arrLinked, err := d.src.HashesWithArrImports(ctx)
+	if err != nil {
+		return RunPlan{}, fmt.Errorf("decider: arr imports set: %w", err)
+	}
 
 	plan := RunPlan{Volume: v, FreePctAtFire: snap.FreePercent}
 	var rank int
@@ -125,7 +132,15 @@ func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 		if sp != volumePath && !strings.HasPrefix(sp, prefix) {
 			continue
 		}
-		if n, ok := maxNlink[triagearr.Hash(sc.Hash)]; ok && n > MaxAllowedNlink {
+		// For qbit-only torrents (no arr_imports) a successful fanoutArr is a
+		// no-op, so nlink will still be 2 after *arr deletes and T3.5 will veto
+		// the qBit delete. Apply a stricter ceiling of 1 for these candidates.
+		_, hasArrLink := arrLinked[triagearr.Hash(sc.Hash)]
+		ceiling := MaxAllowedNlink
+		if !hasArrLink {
+			ceiling = 1
+		}
+		if n, ok := maxNlink[triagearr.Hash(sc.Hash)]; ok && n > int64(ceiling) {
 			plan.FilteredCrossSeed++
 			continue
 		}

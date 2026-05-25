@@ -19,7 +19,7 @@ type TrackerStore interface {
 // and persists the result into torrent_trackers (ADR-0009). The cadence is
 // deliberately slow (default 6h) — tracker state changes at day-scale.
 type TrackerPoller struct {
-	Client   triagearr.QbitClient
+	Client   triagearr.TorrentClient
 	Store    TrackerStore
 	Interval time.Duration
 	// Notify, when non-nil, is signalled after each successful tick so the

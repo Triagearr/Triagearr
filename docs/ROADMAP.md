@@ -57,7 +57,7 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 ### Linking (API-only — ADR-0012, supersedes ADR-0010)
 
 - [x] `internal/linker` package
-- [x] `arr_imports` table: `(arr_name, arr_type, torrent_hash, file_id, imported_path, dropped_path)` per *arr `history` event
+- [x] `arr_imports` table: `(arr_type, file_id, download_id, imported_path, dropped_path)` per *arr `history` event
 - [x] Sonarr/Radarr clients implement `History(ctx, downloadId)` against `/api/v3/history?eventType=downloadFolderImported`
 - [x] Each *arr poll refreshes `arr_imports`; cascade-delete on torrent prune
 - [x] Linker exposes `ArrImports(hash) → [{instance, type, file_id, imported_path}]` for the Actor

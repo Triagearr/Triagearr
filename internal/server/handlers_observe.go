@@ -143,7 +143,6 @@ type trackerView struct {
 }
 
 type linkView struct {
-	ArrName      string `json:"arr_name"`
 	ArrType      string `json:"arr_type"`
 	FileID       int64  `json:"file_id"`
 	Size         int64  `json:"size"`
@@ -201,7 +200,7 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 			out.Links = make([]linkView, len(links))
 			for i, l := range links {
 				out.Links[i] = linkView{
-					ArrName: l.ArrName, ArrType: string(l.ArrType), FileID: l.FileID,
+					ArrType: string(l.ArrType), FileID: l.FileID,
 					Size: l.Size, LivePath: l.LivePath, DroppedPath: l.DroppedPath,
 					ImportedPath: l.ImportedPath,
 				}
@@ -398,7 +397,7 @@ func (s *Server) buildArrViews(ctx context.Context) ([]arrView, error) {
 	out := make([]arrView, len(rows))
 	for i, row := range rows {
 		v := arrView{
-			Name: row.Name, Type: row.Type, URL: row.URL,
+			Name: row.Kind, Type: row.Kind, URL: row.URL,
 			Healthy: row.Healthy, LastHealthCheck: row.LastHealthCheck,
 		}
 		if row.LastError != nil {
@@ -485,7 +484,7 @@ type auditView struct {
 	Timestamp time.Time `json:"ts"`
 	Step      string    `json:"step"`
 	Outcome   string    `json:"outcome"`
-	ArrName   string    `json:"arr_name,omitempty"`
+	ArrType   string    `json:"arr_type,omitempty"`
 	ArrFileID int64     `json:"arr_file_id,omitempty"`
 	Detail    string    `json:"detail,omitempty"`
 }
@@ -522,7 +521,7 @@ func (s *Server) handleGetAction(w http.ResponseWriter, r *http.Request) {
 		resp.Audit[i] = auditView{
 			ID: e.ID, Timestamp: e.Timestamp,
 			Step: string(e.Step), Outcome: string(e.Outcome),
-			ArrName: e.ArrName, ArrFileID: e.ArrFileID, Detail: e.Detail,
+			ArrType: e.ArrType, ArrFileID: e.ArrFileID, Detail: e.Detail,
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)

@@ -9,13 +9,11 @@ import (
 	"time"
 )
 
-// ArrConnection is one persisted *arr instance (ADR-0022). It is the source
-// of truth for the client registry — the YAML `arrs:` block only seeds this
-// table on first boot.
+// ArrConnection is one persisted *arr instance (ADR-0022). The kind (e.g.
+// "sonarr") is the sole identity — at most one row per kind is allowed.
 type ArrConnection struct {
 	ID             int64
 	Kind           string
-	Name           string
 	URL            string
 	APIKey         string
 	Enabled        bool
@@ -34,7 +32,6 @@ type ArrConnection struct {
 type arrConnectionRow struct {
 	ID             int64     `db:"id"`
 	Kind           string    `db:"kind"`
-	Name           string    `db:"name"`
 	URL            string    `db:"url"`
 	APIKey         string    `db:"api_key"`
 	Enabled        bool      `db:"enabled"`
@@ -57,7 +54,7 @@ func (r arrConnectionRow) toConnection() (ArrConnection, error) {
 		return ArrConnection{}, fmt.Errorf("arr_connection %d: categories_only: %w", r.ID, err)
 	}
 	return ArrConnection{
-		ID: r.ID, Kind: r.Kind, Name: r.Name, URL: r.URL, APIKey: r.APIKey,
+		ID: r.ID, Kind: r.Kind, URL: r.URL, APIKey: r.APIKey,
 		Enabled: r.Enabled, Poll: r.Poll, Act: r.Act,
 		TagsExclude: tags, CategoriesOnly: cats, TimeoutMS: r.TimeoutMS,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -89,15 +86,15 @@ func encodeStringList(v []string) (string, error) {
 	return string(b), nil
 }
 
-// ListArrConnections returns every connection, ordered by kind then name for
-// a stable UI listing.
+// ListArrConnections returns every connection, ordered by kind for a stable
+// UI listing.
 func (s *Store) ListArrConnections(ctx context.Context) ([]ArrConnection, error) {
 	var rows []arrConnectionRow
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT id, kind, name, url, api_key, enabled, poll, act,
+		SELECT id, kind, url, api_key, enabled, poll, act,
 		       tags_exclude, categories_only, timeout_ms, created_at, updated_at
 		FROM arr_connections
-		ORDER BY kind, name
+		ORDER BY kind
 	`); err != nil {
 		return nil, fmt.Errorf("listing arr_connections: %w", err)
 	}
@@ -112,20 +109,20 @@ func (s *Store) ListArrConnections(ctx context.Context) ([]ArrConnection, error)
 	return out, nil
 }
 
-// GetArrConnection returns one connection by id. sql.ErrNoRows when absent.
-func (s *Store) GetArrConnection(ctx context.Context, id int64) (ArrConnection, error) {
+// GetArrConnectionByKind returns one connection by kind. sql.ErrNoRows when absent.
+func (s *Store) GetArrConnectionByKind(ctx context.Context, kind string) (ArrConnection, error) {
 	var r arrConnectionRow
 	err := s.reader.GetContext(ctx, &r, `
-		SELECT id, kind, name, url, api_key, enabled, poll, act,
+		SELECT id, kind, url, api_key, enabled, poll, act,
 		       tags_exclude, categories_only, timeout_ms, created_at, updated_at
 		FROM arr_connections
-		WHERE id = ?
-	`, id)
+		WHERE kind = ?
+	`, kind)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ArrConnection{}, err
 		}
-		return ArrConnection{}, fmt.Errorf("getting arr_connection %d: %w", id, err)
+		return ArrConnection{}, fmt.Errorf("getting arr_connection %s: %w", kind, err)
 	}
 	return r.toConnection()
 }
@@ -140,78 +137,52 @@ func (s *Store) CountArrConnections(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// CreateArrConnection inserts a new connection and returns its assigned id.
-// The UNIQUE(kind, name) index rejects duplicates.
-func (s *Store) CreateArrConnection(ctx context.Context, c ArrConnection) (int64, error) {
+// UpsertArrConnection inserts or replaces the connection for c.Kind. The UNIQUE(kind)
+// constraint is satisfied by INSERT OR REPLACE; created_at is preserved on update
+// via the ON CONFLICT clause.
+func (s *Store) UpsertArrConnection(ctx context.Context, c ArrConnection) (ArrConnection, error) {
 	tags, err := encodeStringList(c.TagsExclude)
 	if err != nil {
-		return 0, err
+		return ArrConnection{}, err
 	}
 	cats, err := encodeStringList(c.CategoriesOnly)
 	if err != nil {
-		return 0, err
+		return ArrConnection{}, err
 	}
 	now := ts(time.Now().UTC())
-	res, err := s.writer.ExecContext(ctx, `
-		INSERT INTO arr_connections(kind, name, url, api_key, enabled, poll, act,
+	_, err = s.writer.ExecContext(ctx, `
+		INSERT INTO arr_connections(kind, url, api_key, enabled, poll, act,
 		                            tags_exclude, categories_only, timeout_ms,
 		                            created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, c.Kind, c.Name, c.URL, c.APIKey, c.Enabled, c.Poll, c.Act,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(kind) DO UPDATE SET
+			url             = excluded.url,
+			api_key         = excluded.api_key,
+			enabled         = excluded.enabled,
+			poll            = excluded.poll,
+			act             = excluded.act,
+			tags_exclude    = excluded.tags_exclude,
+			categories_only = excluded.categories_only,
+			timeout_ms      = excluded.timeout_ms,
+			updated_at      = excluded.updated_at
+	`, c.Kind, c.URL, c.APIKey, c.Enabled, c.Poll, c.Act,
 		tags, cats, c.TimeoutMS, now, now)
 	if err != nil {
-		return 0, fmt.Errorf("inserting arr_connection %s/%s: %w", c.Kind, c.Name, err)
+		return ArrConnection{}, fmt.Errorf("upserting arr_connection %s: %w", c.Kind, err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("reading inserted arr_connection id: %w", err)
-	}
-	return id, nil
+	return s.GetArrConnectionByKind(ctx, c.Kind)
 }
 
-// UpdateArrConnection overwrites every mutable column of an existing row.
-// created_at is preserved. Returns sql.ErrNoRows when id is unknown.
-func (s *Store) UpdateArrConnection(ctx context.Context, c ArrConnection) error {
-	tags, err := encodeStringList(c.TagsExclude)
+// DeleteArrConnectionByKind removes one row. Returns sql.ErrNoRows when kind
+// is unknown so the HTTP layer can answer 404.
+func (s *Store) DeleteArrConnectionByKind(ctx context.Context, kind string) error {
+	res, err := s.writer.ExecContext(ctx, `DELETE FROM arr_connections WHERE kind = ?`, kind)
 	if err != nil {
-		return err
-	}
-	cats, err := encodeStringList(c.CategoriesOnly)
-	if err != nil {
-		return err
-	}
-	res, err := s.writer.ExecContext(ctx, `
-		UPDATE arr_connections SET
-			kind = ?, name = ?, url = ?, api_key = ?,
-			enabled = ?, poll = ?, act = ?,
-			tags_exclude = ?, categories_only = ?, timeout_ms = ?,
-			updated_at = ?
-		WHERE id = ?
-	`, c.Kind, c.Name, c.URL, c.APIKey, c.Enabled, c.Poll, c.Act,
-		tags, cats, c.TimeoutMS, ts(time.Now().UTC()), c.ID)
-	if err != nil {
-		return fmt.Errorf("updating arr_connection %d: %w", c.ID, err)
+		return fmt.Errorf("deleting arr_connection %s: %w", kind, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("reading update result for arr_connection %d: %w", c.ID, err)
-	}
-	if n == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
-}
-
-// DeleteArrConnection removes one row. Returns sql.ErrNoRows when id is unknown
-// so the HTTP layer can answer 404.
-func (s *Store) DeleteArrConnection(ctx context.Context, id int64) error {
-	res, err := s.writer.ExecContext(ctx, `DELETE FROM arr_connections WHERE id = ?`, id)
-	if err != nil {
-		return fmt.Errorf("deleting arr_connection %d: %w", id, err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("reading delete result for arr_connection %d: %w", id, err)
+		return fmt.Errorf("reading delete result for arr_connection %s: %w", kind, err)
 	}
 	if n == 0 {
 		return sql.ErrNoRows
@@ -231,10 +202,10 @@ func (s *Store) SeedArrConnections(ctx context.Context, conns []ArrConnection) e
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.PreparexContext(ctx, `
-		INSERT INTO arr_connections(kind, name, url, api_key, enabled, poll, act,
+		INSERT INTO arr_connections(kind, url, api_key, enabled, poll, act,
 		                            tags_exclude, categories_only, timeout_ms,
 		                            created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare arr_connections seed insert: %w", err)
@@ -250,9 +221,9 @@ func (s *Store) SeedArrConnections(ctx context.Context, conns []ArrConnection) e
 		if err != nil {
 			return err
 		}
-		if _, err := stmt.ExecContext(ctx, c.Kind, c.Name, c.URL, c.APIKey,
+		if _, err := stmt.ExecContext(ctx, c.Kind, c.URL, c.APIKey,
 			c.Enabled, c.Poll, c.Act, tags, cats, c.TimeoutMS, now, now); err != nil {
-			return fmt.Errorf("seeding arr_connection %s/%s: %w", c.Kind, c.Name, err)
+			return fmt.Errorf("seeding arr_connection %s: %w", c.Kind, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

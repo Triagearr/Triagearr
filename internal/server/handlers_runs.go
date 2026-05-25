@@ -62,6 +62,10 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	vol := s.opts.Volume()
+	if vol.Path == "" {
+		writeError(w, http.StatusBadRequest, "no volume configured")
+		return
+	}
 	plan, err := s.opts.Decider.Plan(r.Context(), vol)
 	if err != nil {
 		writeInternal(w, err)

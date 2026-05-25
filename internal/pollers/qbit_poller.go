@@ -17,7 +17,7 @@ type QbitStore interface {
 
 // QbitPoller polls a qBittorrent instance and persists torrents + snapshots.
 type QbitPoller struct {
-	Client   triagearr.QbitClient
+	Client   triagearr.TorrentClient
 	Store    QbitStore
 	Interval time.Duration
 	// Notify, when non-nil, is signalled after each successful tick so the

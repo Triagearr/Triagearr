@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -45,40 +44,47 @@ func doArrConn(t *testing.T, h http.Handler, method, path, body string) *httptes
 	return w
 }
 
-func TestArrConnections_CreateListUpdateDelete(t *testing.T) {
+// upsertBody is a valid input for PUT /api/v1/arr-connections/{kind}.
+const upsertSonarrBody = `{"url":"http://sonarr:8989","api_key":"k1","enabled":true,"poll":true,"act":false,"timeout_seconds":30}`
+
+func TestArrConnections_UpsertListDelete(t *testing.T) {
 	h, _, reloadCalled := buildArrConnSrv(t)
 
-	create := `{"kind":"sonarr","name":"main","url":"http://sonarr:8989","api_key":"k1","enabled":true,"poll":true,"act":false,"timeout_seconds":30}`
-	w := doArrConn(t, h, http.MethodPost, "/api/v1/arr-connections", create)
-	require.Equal(t, http.StatusCreated, w.Code)
-	var created struct {
-		ID  int64 `json:"id"`
-		Act bool  `json:"act"`
+	// Create via PUT {kind}.
+	w := doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/sonarr", upsertSonarrBody)
+	require.Equal(t, http.StatusOK, w.Code)
+	var saved struct {
+		Kind string `json:"kind"`
+		Act  bool   `json:"act"`
 	}
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&created))
-	require.Positive(t, created.ID)
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&saved))
+	require.Equal(t, "sonarr", saved.Kind)
 	require.True(t, *reloadCalled)
 
+	// List.
 	w = doArrConn(t, h, http.MethodGet, "/api/v1/arr-connections", "")
 	require.Equal(t, http.StatusOK, w.Code)
 	var list struct {
 		Connections []struct {
-			ID  int64  `json:"id"`
-			URL string `json:"url"`
+			Kind string `json:"kind"`
+			URL  string `json:"url"`
 		} `json:"connections"`
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&list))
 	require.Len(t, list.Connections, 1)
+	require.Equal(t, "sonarr", list.Connections[0].Kind)
 
-	update := `{"kind":"sonarr","name":"main","url":"http://sonarr:9999","api_key":"k1","enabled":true,"poll":true,"act":true,"timeout_seconds":45}`
-	w = doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/"+itoa(created.ID), update)
+	// Update (upsert with new URL).
+	update := `{"url":"http://sonarr:9999","api_key":"k1","enabled":true,"poll":true,"act":true,"timeout_seconds":45}`
+	w = doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/sonarr", update)
 	require.Equal(t, http.StatusOK, w.Code)
 
 	w = doArrConn(t, h, http.MethodGet, "/api/v1/arr-connections", "")
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&list))
 	require.Equal(t, "http://sonarr:9999", list.Connections[0].URL)
 
-	w = doArrConn(t, h, http.MethodDelete, "/api/v1/arr-connections/"+itoa(created.ID), "")
+	// Delete.
+	w = doArrConn(t, h, http.MethodDelete, "/api/v1/arr-connections/sonarr", "")
 	require.Equal(t, http.StatusNoContent, w.Code)
 
 	w = doArrConn(t, h, http.MethodGet, "/api/v1/arr-connections", "")
@@ -86,32 +92,26 @@ func TestArrConnections_CreateListUpdateDelete(t *testing.T) {
 	require.Empty(t, list.Connections)
 }
 
-func TestArrConnections_RejectsDuplicate(t *testing.T) {
+func TestArrConnections_UpsertIsIdempotent(t *testing.T) {
 	h, _, _ := buildArrConnSrv(t)
-	body := `{"kind":"sonarr","name":"main","url":"http://x:8989","api_key":"k","enabled":true,"poll":true,"act":false,"timeout_seconds":30}`
-	require.Equal(t, http.StatusCreated, doArrConn(t, h, http.MethodPost, "/api/v1/arr-connections", body).Code)
-	require.Equal(t, http.StatusConflict, doArrConn(t, h, http.MethodPost, "/api/v1/arr-connections", body).Code)
+	// Two PUTs for the same kind must succeed (upsert semantics).
+	require.Equal(t, http.StatusOK, doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/sonarr", upsertSonarrBody).Code)
+	require.Equal(t, http.StatusOK, doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/sonarr", upsertSonarrBody).Code)
 }
 
 func TestArrConnections_RejectsInvalidInput(t *testing.T) {
 	h, _, _ := buildArrConnSrv(t)
 
-	badKind := `{"kind":"plex","name":"x","url":"http://x","api_key":"k","enabled":false}`
-	require.Equal(t, http.StatusBadRequest, doArrConn(t, h, http.MethodPost, "/api/v1/arr-connections", badKind).Code)
+	// Unknown kind → 400.
+	require.Equal(t, http.StatusBadRequest, doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/plex", upsertSonarrBody).Code)
 
-	noName := `{"kind":"sonarr","name":"  ","url":"http://x","api_key":"k","enabled":false}`
-	require.Equal(t, http.StatusBadRequest, doArrConn(t, h, http.MethodPost, "/api/v1/arr-connections", noName).Code)
-
-	enabledNoKey := `{"kind":"sonarr","name":"x","url":"http://x:8989","api_key":"","enabled":true}`
-	require.Equal(t, http.StatusBadRequest, doArrConn(t, h, http.MethodPost, "/api/v1/arr-connections", enabledNoKey).Code)
+	// Enabled but no api_key → 400.
+	noKey := `{"url":"http://sonarr:8989","api_key":"","enabled":true}`
+	require.Equal(t, http.StatusBadRequest, doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/sonarr", noKey).Code)
 }
 
-func TestArrConnections_UpdateUnknownID(t *testing.T) {
+func TestArrConnections_DeleteUnknownKind(t *testing.T) {
 	h, _, _ := buildArrConnSrv(t)
-	body := `{"kind":"sonarr","name":"x","url":"http://x:8989","api_key":"k","enabled":true,"poll":true,"act":false,"timeout_seconds":30}`
-	require.Equal(t, http.StatusNotFound, doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/4242", body).Code)
-}
-
-func itoa(n int64) string {
-	return strconv.FormatInt(n, 10)
+	// Deleting a kind that was never inserted → 404.
+	require.Equal(t, http.StatusNotFound, doArrConn(t, h, http.MethodDelete, "/api/v1/arr-connections/radarr", "").Code)
 }

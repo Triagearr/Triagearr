@@ -305,4 +305,4 @@ func (c *Client) Delete(ctx context.Context, h triagearr.Hash, opts triagearr.De
 	return fmt.Errorf("qbit: POST /torrents/delete: HTTP %d: %s", resp.StatusCode, string(body))
 }
 
-var _ triagearr.QbitClient = (*Client)(nil)
+var _ triagearr.TorrentClient = (*Client)(nil)

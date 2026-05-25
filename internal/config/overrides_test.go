@@ -18,12 +18,11 @@ storage:
   sqlite_path: /tmp/triagearr-test.db
 arrs:
   sonarr:
-    - name: main
-      enabled: true
-      url: http://sonarr:8989
-      api_key: test-key
-      poll: true
-      act: false
+    enabled: true
+    url: http://sonarr:8989
+    api_key: test-key
+    poll: true
+    act: false
 qbit:
   enabled: true
   url: http://qbit:8090
@@ -144,8 +143,8 @@ func TestIsEditableKey(t *testing.T) {
 	}
 	forbidden := []string{
 		"mode",
-		"arrs.sonarr.0.act",
-		"arrs.sonarr.0.api_key",
+		"arrs.sonarr.act",
+		"arrs.sonarr.api_key",
 		"qbit.password",
 		"http.bind",
 		"storage.sqlite_path",

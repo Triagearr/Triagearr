@@ -49,9 +49,9 @@ func (s *Store) FinishAction(ctx context.Context, id int64, status triagearr.Act
 
 // AppendAudit writes one audit row attached to an action.
 func (s *Store) AppendAudit(ctx context.Context, e triagearr.AuditEntry) error {
-	var arrName sql.NullString
-	if e.ArrName != "" {
-		arrName = sql.NullString{String: e.ArrName, Valid: true}
+	var arrType sql.NullString
+	if e.ArrType != "" {
+		arrType = sql.NullString{String: e.ArrType, Valid: true}
 	}
 	var arrFileID sql.NullInt64
 	if e.ArrFileID != 0 {
@@ -62,9 +62,9 @@ func (s *Store) AppendAudit(ctx context.Context, e triagearr.AuditEntry) error {
 		detail = sql.NullString{String: e.Detail, Valid: true}
 	}
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO audit_log(action_id, ts, step, arr_name, arr_file_id, outcome, detail)
+		INSERT INTO audit_log(action_id, ts, step, arr_type, arr_file_id, outcome, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, e.ActionID, ts(e.Timestamp), string(e.Step), arrName, arrFileID, string(e.Outcome), detail)
+	`, e.ActionID, ts(e.Timestamp), string(e.Step), arrType, arrFileID, string(e.Outcome), detail)
 	if err != nil {
 		return fmt.Errorf("appending audit row: %w", err)
 	}
@@ -134,7 +134,7 @@ type auditRow struct {
 	ActionID  int64          `db:"action_id"`
 	Timestamp time.Time      `db:"ts"`
 	Step      string         `db:"step"`
-	ArrName   sql.NullString `db:"arr_name"`
+	ArrType   sql.NullString `db:"arr_type"`
 	ArrFileID sql.NullInt64  `db:"arr_file_id"`
 	Outcome   string         `db:"outcome"`
 	Detail    sql.NullString `db:"detail"`
@@ -148,8 +148,8 @@ func (r auditRow) toEntry() triagearr.AuditEntry {
 		Step:      triagearr.AuditStep(r.Step),
 		Outcome:   triagearr.AuditOutcome(r.Outcome),
 	}
-	if r.ArrName.Valid {
-		e.ArrName = r.ArrName.String
+	if r.ArrType.Valid {
+		e.ArrType = r.ArrType.String
 	}
 	if r.ArrFileID.Valid {
 		e.ArrFileID = r.ArrFileID.Int64
@@ -164,7 +164,7 @@ func (r auditRow) toEntry() triagearr.AuditEntry {
 func (s *Store) ListAuditByAction(ctx context.Context, actionID int64) ([]triagearr.AuditEntry, error) {
 	var rows []auditRow
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT id, action_id, ts, step, arr_name, arr_file_id, outcome, detail
+		SELECT id, action_id, ts, step, arr_type, arr_file_id, outcome, detail
 		FROM audit_log WHERE action_id = ? ORDER BY id ASC
 	`, actionID); err != nil {
 		return nil, fmt.Errorf("listing audit for action %d: %w", actionID, err)

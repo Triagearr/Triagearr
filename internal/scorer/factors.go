@@ -246,14 +246,13 @@ func evaluateExclusions(t store.ScoringTorrent, linkedMedia []store.LinkedMedia,
 
 	arrIndex := indexArrTagsExclude(arrs)
 	for _, m := range linkedMedia {
-		key := m.ArrType + "/" + m.ArrName
-		excl := arrIndex[key]
+		excl := arrIndex[m.ArrType]
 		if len(excl) == 0 {
 			continue
 		}
 		for _, mt := range splitTags(m.Tags) {
 			if containsFold(excl, mt) {
-				reasons = append(reasons, "arr_tag:"+key+":"+mt)
+				reasons = append(reasons, "arr_tag:"+m.ArrType+":"+mt)
 			}
 		}
 	}
@@ -287,12 +286,9 @@ func containsFold(list []string, want string) bool {
 
 func indexArrTagsExclude(arrs config.ArrsConfig) map[string][]string {
 	out := map[string][]string{}
-	add := func(typ string, list []config.ArrInstanceConfig) {
-		for _, inst := range list {
-			if len(inst.TagsExclude) == 0 {
-				continue
-			}
-			out[typ+"/"+inst.Name] = inst.TagsExclude
+	add := func(typ string, inst config.ArrInstanceConfig) {
+		if len(inst.TagsExclude) > 0 {
+			out[typ] = inst.TagsExclude
 		}
 	}
 	add(string(triagearr.ArrTypeSonarr), arrs.Sonarr)

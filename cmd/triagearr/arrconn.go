@@ -11,7 +11,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-// arrKinds lists the *arr flavours in the order they are flattened/grouped.
+// arrKinds lists the *arr flavours in the order they are iterated.
 var arrKinds = []triagearr.ArrType{
 	triagearr.ArrTypeSonarr,
 	triagearr.ArrTypeRadarr,
@@ -49,22 +49,26 @@ func resolveArrConnections(ctx context.Context, s *store.Store, cfg *config.Conf
 	return nil
 }
 
-// flattenArrs collapses the typed ArrsConfig slices into a flat list tagged
-// with kind — the shape SeedArrConnections expects.
+// flattenArrs maps each ArrsConfig field to a store.ArrConnection. Zero-value
+// entries (no URL) are skipped — they represent unconfigured types.
 func flattenArrs(cfg *config.Config) []store.ArrConnection {
-	var out []store.ArrConnection
-	groups := map[triagearr.ArrType][]config.ArrInstanceConfig{
-		triagearr.ArrTypeSonarr:     cfg.Arrs.Sonarr,
-		triagearr.ArrTypeRadarr:     cfg.Arrs.Radarr,
-		triagearr.ArrTypeLidarr:     cfg.Arrs.Lidarr,
-		triagearr.ArrTypeReadarr:    cfg.Arrs.Readarr,
-		triagearr.ArrTypeWhisparrV2: cfg.Arrs.WhisparrV2,
-		triagearr.ArrTypeWhisparrV3: cfg.Arrs.WhisparrV3,
+	pairs := []struct {
+		kind triagearr.ArrType
+		inst config.ArrInstanceConfig
+	}{
+		{triagearr.ArrTypeSonarr, cfg.Arrs.Sonarr},
+		{triagearr.ArrTypeRadarr, cfg.Arrs.Radarr},
+		{triagearr.ArrTypeLidarr, cfg.Arrs.Lidarr},
+		{triagearr.ArrTypeReadarr, cfg.Arrs.Readarr},
+		{triagearr.ArrTypeWhisparrV2, cfg.Arrs.WhisparrV2},
+		{triagearr.ArrTypeWhisparrV3, cfg.Arrs.WhisparrV3},
 	}
-	for _, kind := range arrKinds {
-		for _, inst := range groups[kind] {
-			out = append(out, instanceToConnection(string(kind), inst))
+	var out []store.ArrConnection
+	for _, p := range pairs {
+		if p.inst.URL == "" && !p.inst.Enabled {
+			continue // zero-value / unconfigured
 		}
+		out = append(out, instanceToConnection(string(p.kind), p.inst))
 	}
 	return out
 }
@@ -77,19 +81,19 @@ func arrsConfigFromConnections(conns []store.ArrConnection) config.ArrsConfig {
 		inst := connectionToInstance(c)
 		switch triagearr.ArrType(c.Kind) {
 		case triagearr.ArrTypeSonarr:
-			ac.Sonarr = append(ac.Sonarr, inst)
+			ac.Sonarr = inst
 		case triagearr.ArrTypeRadarr:
-			ac.Radarr = append(ac.Radarr, inst)
+			ac.Radarr = inst
 		case triagearr.ArrTypeLidarr:
-			ac.Lidarr = append(ac.Lidarr, inst)
+			ac.Lidarr = inst
 		case triagearr.ArrTypeReadarr:
-			ac.Readarr = append(ac.Readarr, inst)
+			ac.Readarr = inst
 		case triagearr.ArrTypeWhisparrV2:
-			ac.WhisparrV2 = append(ac.WhisparrV2, inst)
+			ac.WhisparrV2 = inst
 		case triagearr.ArrTypeWhisparrV3:
-			ac.WhisparrV3 = append(ac.WhisparrV3, inst)
+			ac.WhisparrV3 = inst
 		default:
-			slog.Warn("ignoring arr_connection with unknown kind", "kind", c.Kind, "name", c.Name)
+			slog.Warn("ignoring arr_connection with unknown kind", "kind", c.Kind)
 		}
 	}
 	return ac
@@ -98,7 +102,6 @@ func arrsConfigFromConnections(conns []store.ArrConnection) config.ArrsConfig {
 func instanceToConnection(kind string, in config.ArrInstanceConfig) store.ArrConnection {
 	return store.ArrConnection{
 		Kind:           kind,
-		Name:           in.Name,
 		URL:            in.URL,
 		APIKey:         in.APIKey,
 		Enabled:        in.Enabled,
@@ -112,7 +115,6 @@ func instanceToConnection(kind string, in config.ArrInstanceConfig) store.ArrCon
 
 func connectionToInstance(c store.ArrConnection) config.ArrInstanceConfig {
 	return config.ArrInstanceConfig{
-		Name:           c.Name,
 		Enabled:        c.Enabled,
 		URL:            c.URL,
 		APIKey:         c.APIKey,

@@ -7,7 +7,7 @@
 # can ever leak to prod even if URLs were misconfigured.
 # =============================================================================
 
-mode: dry-run
+mode: live
 
 http:
   bind: "127.0.0.1:9494"
