@@ -126,6 +126,8 @@ func torrentOrderByExtended(sortBy, order string, joinedScore bool) (string, err
 	switch strings.ToLower(sortBy) {
 	case "", "name":
 		return "t.name " + orderDir(order, "ASC"), nil
+	case "category":
+		return "t.category " + orderDir(order, "ASC") + ", t.name ASC", nil
 	case "seeders":
 		return "s.seeders " + orderDir(order, "DESC") + " NULLS LAST, t.name ASC", nil
 	case "ratio":
@@ -140,7 +142,7 @@ func torrentOrderByExtended(sortBy, order string, joinedScore bool) (string, err
 		}
 		return "sc.score " + orderDir(order, "DESC") + " NULLS LAST, t.name ASC", nil
 	default:
-		return "", fmt.Errorf("unknown sort key %q (want: name|seeders|ratio|size|last_seen|score)", sortBy)
+		return "", fmt.Errorf("unknown sort key %q (want: name|category|seeders|ratio|size|last_seen|score)", sortBy)
 	}
 }
 
@@ -162,6 +164,7 @@ func (s *Store) GetTorrent(ctx context.Context, hash triagearr.Hash) (TorrentDet
 	err := s.reader.GetContext(ctx, &row, `
 		SELECT t.hash, t.name, t.category, t.save_path, t.size,
 		       t.added_on, t.completion_on, t.private, t.tags, t.last_seen,
+		       t.protected, t.protected_at,
 		       s.ratio AS ratio, s.uploaded AS uploaded, s.seeders AS seeders,
 		       s.leechers AS leechers, s.state AS state, s.ts AS snap_ts
 		FROM torrents t
@@ -191,6 +194,8 @@ type TorrentDetailRow struct {
 	Private      bool       `db:"private"`
 	Tags         string     `db:"tags"`
 	LastSeen     time.Time  `db:"last_seen"`
+	Protected    bool       `db:"protected"`
+	ProtectedAt  *time.Time `db:"protected_at"`
 	Ratio        *float64   `db:"ratio"`
 	Uploaded     *int64     `db:"uploaded"`
 	Seeders      *int       `db:"seeders"`
