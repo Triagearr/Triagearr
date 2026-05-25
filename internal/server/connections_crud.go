@@ -20,7 +20,7 @@ type connectionCRUD[Conn any, Input any, DTO any, TestReq any] struct {
 
 	knownKind          func(string) bool
 	knownKindMsg       string
-	implementedKind    func(string) bool      // nil when every known kind is implemented
+	implementedKind    func(string) bool // nil when every known kind is implemented
 	implementedKindMsg func(string) string
 
 	list         func(context.Context) ([]Conn, error)

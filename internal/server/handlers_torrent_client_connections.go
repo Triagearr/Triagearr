@@ -101,7 +101,7 @@ func torrentClientInputToConnection(kind string, in torrentClientConnectionInput
 
 func (s *Server) torrentClientConnCRUD() *connectionCRUD[store.TorrentClientConnection, torrentClientConnectionInput, torrentClientConnectionDTO, torrentClientConnectionTestRequest] {
 	return &connectionCRUD[store.TorrentClientConnection, torrentClientConnectionInput, torrentClientConnectionDTO, torrentClientConnectionTestRequest]{
-		label:        "torrent client connection",
+		label:           "torrent client connection",
 		knownKind:       torrentregistry.KnownKind,
 		knownKindMsg:    torrentClientKnownKindMsg,
 		implementedKind: torrentregistry.ImplementedKind,

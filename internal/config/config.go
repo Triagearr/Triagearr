@@ -298,31 +298,31 @@ type VacuumConfig struct {
 
 // Defaults applied when a field is left zero by the user.
 const (
-	defaultBind               = "127.0.0.1:9494"
-	defaultRunsPerMinute      = 60
-	defaultAuthPerMinute      = 30
-	defaultSQLitePath         = "/config/triagearr.db"
+	defaultBind                 = "127.0.0.1:9494"
+	defaultRunsPerMinute        = 60
+	defaultAuthPerMinute        = 30
+	defaultSQLitePath           = "/config/triagearr.db"
 	defaultArrTimeout           = 30 * time.Second
 	defaultTorrentClientTimeout = 30 * time.Second
-	defaultQbitInterval       = 30 * time.Minute
-	defaultArrInterval        = time.Hour
-	defaultArrFileMinInterval = 200 * time.Millisecond // ≈ 5 req/s
-	defaultTrackerInterval    = 6 * time.Hour
-	defaultDiskInterval       = 5 * time.Minute
-	defaultDownsampleCron     = "0 3 * * *"
-	defaultRetentionRaw       = 7 * 24 * time.Hour
-	defaultRetentionDaily     = 365 * 24 * time.Hour
-	defaultRetentionTorrents  = 7 * 24 * time.Hour
-	defaultVacuumMinReclaimMB = int64(50)
-	defaultHnRWindowDays      = 14
-	defaultRareThreshold      = 3
-	defaultTrackerDeadGrace   = 7 * 24 * time.Hour
-	defaultWeightRatioObl     = 50.0
-	defaultWeightVelocityInv  = 30.0
-	defaultWeightAgeDays      = 0.1
-	defaultWeightSeedersLow   = -1000.0
-	defaultWeightSwarmBonus   = 5.0
-	defaultWeightTrackerDead  = 40.0
+	defaultQbitInterval         = 30 * time.Minute
+	defaultArrInterval          = time.Hour
+	defaultArrFileMinInterval   = 200 * time.Millisecond // ≈ 5 req/s
+	defaultTrackerInterval      = 6 * time.Hour
+	defaultDiskInterval         = 5 * time.Minute
+	defaultDownsampleCron       = "0 3 * * *"
+	defaultRetentionRaw         = 7 * 24 * time.Hour
+	defaultRetentionDaily       = 365 * 24 * time.Hour
+	defaultRetentionTorrents    = 7 * 24 * time.Hour
+	defaultVacuumMinReclaimMB   = int64(50)
+	defaultHnRWindowDays        = 14
+	defaultRareThreshold        = 3
+	defaultTrackerDeadGrace     = 7 * 24 * time.Hour
+	defaultWeightRatioObl       = 50.0
+	defaultWeightVelocityInv    = 30.0
+	defaultWeightAgeDays        = 0.1
+	defaultWeightSeedersLow     = -1000.0
+	defaultWeightSwarmBonus     = 5.0
+	defaultWeightTrackerDead    = 40.0
 
 	defaultMaxDeletionsPerRun = 10
 	defaultInterActionDelay   = 2 * time.Second
