@@ -204,6 +204,27 @@ func (s *Store) ListTorrentHashes(ctx context.Context) ([]triagearr.Hash, error)
 	return out, nil
 }
 
+// HashesWithoutTrackers returns torrent hashes that have no row in
+// torrent_trackers yet. Drives the tracker poller's event-driven catchup mode:
+// after qBit ingestion, any freshly-seen hash is fetched immediately instead
+// of waiting for the next 6h periodic sweep.
+func (s *Store) HashesWithoutTrackers(ctx context.Context) ([]triagearr.Hash, error) {
+	var raw []string
+	if err := s.reader.SelectContext(ctx, &raw, `
+		SELECT t.hash
+		FROM torrents t
+		LEFT JOIN torrent_trackers tt ON tt.torrent_hash = t.hash
+		WHERE tt.torrent_hash IS NULL
+		ORDER BY t.hash`); err != nil {
+		return nil, fmt.Errorf("listing hashes without trackers: %w", err)
+	}
+	out := make([]triagearr.Hash, len(raw))
+	for i, h := range raw {
+		out[i] = triagearr.Hash(h)
+	}
+	return out, nil
+}
+
 // TorrentSavePath returns the persisted save_path for a single torrent hash.
 // Used by the Actor's T3.5 step to build absolute paths from the per-file
 // qBit names. Returns the sql.ErrNoRows wrapped error when unknown.

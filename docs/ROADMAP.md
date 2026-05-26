@@ -12,15 +12,15 @@ A repo skeleton that builds, tests, releases. No app logic yet.
 
 ### Acceptance criteria
 
-- [ ] `go.mod` initialized with Go 1.26 toolchain
-- [ ] Directory structure matches `docs/ARCHITECTURE.md` § Repo structure
-- [ ] `cmd/triagearr/main.go` prints `triagearr vX.Y.Z` and exits
-- [ ] `Dockerfile` builds a < 30 MB multi-stage image
-- [ ] `goreleaser` config produces multi-arch binaries (amd64, arm64) and pushes to GHCR
-- [ ] GitHub Actions workflows: `test`, `lint`, `release` (tag-triggered)
-- [ ] `golangci-lint` configured with strict ruleset
-- [ ] `LICENSE`, `README`, `CONTRIBUTING`, `CHANGELOG` in place
-- [ ] All docs in `docs/` written (you are reading the result of this)
+- [x] `go.mod` initialized with Go 1.26 toolchain
+- [x] Directory structure matches `docs/ARCHITECTURE.md` § Repo structure
+- [x] `cmd/triagearr/main.go` prints `triagearr vX.Y.Z` and exits
+- [x] `Dockerfile` builds a < 30 MB multi-stage image
+- [x] `goreleaser` config produces multi-arch binaries (amd64, arm64) and pushes to GHCR
+- [x] GitHub Actions workflows: `test`, `lint`, `release` (tag-triggered)
+- [x] `golangci-lint` configured with strict ruleset
+- [x] `LICENSE`, `README`, `CONTRIBUTING`, `CHANGELOG` in place
+- [x] All docs in `docs/` written (you are reading the result of this)
 
 ## M1 — Observation only
 
@@ -32,19 +32,19 @@ The app polls everything, persists snapshots, and exposes a basic CLI to inspect
 
 ### Acceptance criteria
 
-- [ ] `internal/store` with SQLite migrations runner, embedded SQL files
-- [ ] `internal/clients/qbit` client implementing `QbitClient` interface
-- [ ] `internal/clients/sonarr` client implementing `ArrInstance`
-- [ ] `internal/clients/radarr` client implementing `ArrInstance`
-- [ ] `internal/clients/lidarr` stub (interface satisfied, marked TODO)
-- [ ] `internal/clients/readarr` stub
-- [ ] `internal/clients/whisparr` stubs (v2 + v3)
-- [ ] `internal/pollers` orchestrating the configured pollers on intervals
-- [ ] Disk poller using `golang.org/x/sys/unix.Statfs_t`
-- [ ] CLI: `triagearr serve` runs the daemon; `triagearr inspect torrents` lists current snapshots
-- [ ] CLI: `triagearr inspect arrs` shows configured instances + health
-- [ ] Structured `slog` logs in JSON when stdout is not a TTY, text otherwise
-- [ ] Tests: ≥60% coverage on `store` and per-client packages
+- [x] `internal/store` with SQLite migrations runner, embedded SQL files
+- [x] `internal/clients/qbit` client implementing `QbitClient` interface
+- [x] `internal/clients/sonarr` client implementing `ArrInstance`
+- [x] `internal/clients/radarr` client implementing `ArrInstance`
+- [x] `internal/clients/lidarr` stub (interface satisfied, marked TODO)
+- [x] `internal/clients/readarr` stub
+- [x] `internal/clients/whisparr` stubs (v2 + v3)
+- [x] `internal/pollers` orchestrating the configured pollers on intervals
+- [x] Disk poller using `golang.org/x/sys/unix.Statfs_t`
+- [x] CLI: `triagearr serve` runs the daemon; `triagearr inspect torrents` lists current snapshots
+- [x] CLI: `triagearr inspect arrs` shows configured instances + health
+- [x] Structured `slog` logs in JSON when stdout is not a TTY, text otherwise
+- [x] Tests: ≥60% coverage on `store` and per-client packages
 
 ### Deliverable
 
@@ -66,51 +66,51 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 
 ### Tracker capture (ADR-0009)
 
-- [ ] Schema migration `0002`: add `torrent_trackers` table, add `media_files` table, add `completion_on` column to `torrents`
-- [ ] qBit client: `ListTrackers(ctx, hash)` against `/api/v2/torrents/trackers`
-- [ ] qBit client: capture `completion_on` in `ListTorrents` (one-field extension)
-- [ ] New `tracker` poller (default `tracker_interval: 6h`); fan-out one call per torrent
-- [ ] Persist parsed `tracker_host` alongside raw `tracker_url`
-- [ ] CLI: `triagearr inspect trackers <hash>` prints current tracker statuses
+- [x] Schema migration `0002`: add `torrent_trackers` table, add `media_files` table, add `completion_on` column to `torrents` (squashed into baseline `0001_init.sql`)
+- [x] qBit client: `ListTrackers(ctx, hash)` against `/api/v2/torrents/trackers`
+- [x] qBit client: capture `completion_on` in `ListTorrents` (one-field extension)
+- [x] New `tracker` poller (default `tracker_interval: 6h`); fan-out one call per torrent
+- [x] Persist parsed `tracker_host` alongside raw `tracker_url`
+- [x] CLI: `triagearr inspect trackers <hash>` prints current tracker statuses
 
 ### *arr per-file capture (prerequisite for linker + M5 Actor)
 
-- [ ] Sonarr client: `ListEpisodeFiles(ctx, seriesID)` against `/api/v3/episodefile?seriesId={id}`
-- [ ] Radarr client: `ListMovieFiles(ctx, movieID)` against `/api/v3/moviefile?movieId={id}`
-- [ ] Extend `arr` poller to fan out file calls per media item (rate-limited; default 5 req/s burst)
-- [ ] Persist `{file_id, path, size}` per file into `media_files` — `file_id` is reused by M5 Actor for granular `DELETE`
-- [ ] CLI: `triagearr inspect media <id>` includes the file list with sizes and ages
+- [x] Sonarr client: `ListEpisodeFiles(ctx, seriesID)` against `/api/v3/episodefile?seriesId={id}`
+- [x] Radarr client: `ListMovieFiles(ctx, movieID)` against `/api/v3/moviefile?movieId={id}`
+- [x] Extend `arr` poller to fan out file calls per media item (rate-limited; default 5 req/s burst)
+- [x] Persist `{file_id, path, size}` per file into `media_files` — `file_id` is reused by M5 Actor for granular `DELETE`
+- [x] CLI: `triagearr inspect media <id>` includes the file list with sizes and ages
 
 ### Storage maintenance (prerequisite for M3 scorer)
 
-- [ ] `snapshots_daily` table (downsampled aggregates: avg/min/max per torrent per day)
-- [ ] Daily downsampler job: `snapshots_raw` (>D-2) → `snapshots_daily`
-- [ ] Retention enforcement: drop `snapshots_raw` past `retention.snapshots_raw`, `snapshots_daily` past `retention.snapshots_daily`
-- [ ] Periodic `VACUUM` gated by `vacuum.enabled` + `vacuum.min_reclaim_mb`
-- [ ] Cron-driven via `polling.downsample_cron`, executed by the existing pollers manager
-- [ ] Tests with synthetic time-series spanning the retention window
+- [x] `snapshots_daily` table (downsampled aggregates: avg/min/max per torrent per day)
+- [x] Daily downsampler job: `snapshots_raw` (>D-2) → `snapshots_daily`
+- [x] Retention enforcement: drop `snapshots_raw` past `retention.snapshots_raw`, `snapshots_daily` past `retention.snapshots_daily`
+- [x] Periodic `VACUUM` gated by `vacuum.enabled` + `vacuum.min_reclaim_mb`
+- [x] Cron-driven via `polling.downsample_cron`, executed by the existing pollers manager
+- [x] Tests with synthetic time-series spanning the retention window
 
 ## M3 — Scoring engine
 
 **Estimated**: 1 weekend · **Tag**: `v0.4.0`
 
-- [ ] `internal/scorer` implementing `Scorer` interface
-- [ ] All factors from `docs/SCORING.md` implemented
-- [ ] Score persistence in `scores` table with per-factor breakdown
-- [ ] CLI: `triagearr score --explain <hash>` outputs the breakdown
-- [ ] Exclusion logic (categories, tags, monitored status)
-- [ ] Tests with synthetic data covering each factor + edge cases
+- [x] `internal/scorer` implementing `Scorer` interface
+- [x] All factors from `docs/SCORING.md` implemented
+- [x] Score persistence in `scores` table with per-factor breakdown
+- [x] CLI: `triagearr score --explain <hash>` outputs the breakdown
+- [x] Exclusion logic (categories, tags, monitored status)
+- [x] Tests with synthetic data covering each factor + edge cases
 
 ## M4 — Triggers
 
 **Estimated**: 4-6 h · **Tag**: `v0.5.0`
 
-- [ ] Internal cron scheduler
-- [ ] Disk-pressure watcher fires on threshold cross
-- [ ] `POST /api/v1/runs` (dry-run only at this stage) wired up
-- [ ] Decider selects candidates based on scores + target free percent
-- [ ] CLI: `triagearr run --now --dry-run` triggers a one-shot decision
-- [ ] `SIGHUP` hot-reloads the config without restarting the daemon (re-validates, rebuilds the registry, re-arms intervals)
+- [x] Internal cron scheduler
+- [x] Disk-pressure watcher fires on threshold cross
+- [x] `POST /api/v1/runs` (dry-run only at this stage) wired up
+- [x] Decider selects candidates based on scores + target free percent
+- [x] CLI: `triagearr run --now --dry-run` triggers a one-shot decision
+- [x] `SIGHUP` hot-reloads the config without restarting the daemon (re-validates, rebuilds the registry, re-arms intervals)
 
 ## M5 — Actor (destructive)
 
@@ -191,13 +191,15 @@ executed — manual HTTP/CLI runs stay silent. One event, not four.
 
 **Estimated**: 1 weekend · **Tag**: `v1.0.0`
 
-- [ ] Mount-convention boot validation (ADR-0023): sample qBit `save_path` + *arr import paths, `stat()` them in Triagearr's namespace, refuse to start with a diagnostic when the layout violates the TRaSH single-shared-mount convention
+- [x] Mount-convention boot validation (ADR-0023): sample qBit `save_path` + *arr import paths, `stat()` them in Triagearr's namespace, refuse to start with a diagnostic when the layout violates the TRaSH single-shared-mount convention
+- [x] Tracker poller hybrid (event + periodic): qBit poller signals on `trackerCatchup` after each tick; tracker poller catches up `HashesWithoutTrackers` (2s debounce) instead of waiting for the next 6h sweep. Periodic sweep kept for alive→dead transitions (Factor 7).
+- [ ] Optional `public_url` per connection (arr + torrent client): the internal URL keeps serving API calls, but deep links in the UI (today: `arr_url` returned by `GET /api/v1/torrents/{hash}`) prefer `public_url` when set so users land on `https://sonarr.example.com/series/...` instead of `http://gluetun:8989/...`. Also requires switching `arrBaseURL` from `Config.Arrs.*.URL` to the DB-owned `arr_connections` row (ADR-0022 alignment — currently still reads the YAML seed).
 - [ ] Test coverage ≥70% on `scorer`, `linker`, `decider`, `actor`
 - [ ] `govulncheck` clean (and added to CI `test` workflow, not just release)
 - [ ] Goreleaser produces signed artifacts (cosign)
 - [ ] SBOM generation via `syft` in the goreleaser pipeline (CycloneDX + SPDX)
 - [ ] SLSA build provenance attestation via `actions/attest-build-provenance`
-- [ ] Container image: distroless or `scratch` base, runs as non-root (`USER 65532:65532`), read-only root filesystem
+- [x] Container image: distroless or `scratch` base, runs as non-root (`USER 65532:65532`), read-only root filesystem
 - [ ] `SECURITY.md` at repo root: supported versions, disclosure policy, contact
 - [ ] Renovate (or Dependabot) configured for weekly dep bumps, grouped by ecosystem
 - [ ] Documentation reviewed for accuracy against final code

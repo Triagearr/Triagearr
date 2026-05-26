@@ -29,6 +29,33 @@ func TestReplaceTrackers_RemovesStale(t *testing.T) {
 	require.Equal(t, "b", rows[0].Host)
 }
 
+func TestHashesWithoutTrackers(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	for _, h := range []triagearr.Hash{"with", "without", "alsowithout"} {
+		require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+			Hash: h, Name: string(h), AddedOn: now,
+		}))
+	}
+	require.NoError(t, s.ReplaceTrackers(ctx, "with", []triagearr.TrackerInfo{
+		{URL: "https://t/announce", Host: "t", Status: triagearr.TrackerWorking},
+	}))
+
+	hashes, err := s.HashesWithoutTrackers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []triagearr.Hash{"alsowithout", "without"}, hashes)
+
+	// After backfilling, the list shrinks.
+	require.NoError(t, s.ReplaceTrackers(ctx, "without", []triagearr.TrackerInfo{
+		{URL: "https://u/announce", Host: "u", Status: triagearr.TrackerWorking},
+	}))
+	hashes, err = s.HashesWithoutTrackers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []triagearr.Hash{"alsowithout"}, hashes)
+}
+
 func TestUpsertMediaFile_RoundTrip(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

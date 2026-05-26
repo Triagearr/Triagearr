@@ -23,6 +23,10 @@ type QbitPoller struct {
 	// Notify, when non-nil, is signalled after each successful tick so the
 	// scorer can re-score against the freshly persisted torrents.
 	Notify chan<- struct{}
+	// TrackerCatchup, when non-nil, is signalled after each successful tick
+	// so the tracker poller fetches trackers for freshly-seen hashes without
+	// waiting for its 6h periodic sweep.
+	TrackerCatchup chan<- struct{}
 }
 
 // Name implements Poller.
@@ -30,7 +34,9 @@ func (p *QbitPoller) Name() string { return "qbit" }
 
 // Run blocks until ctx is cancelled.
 func (p *QbitPoller) Run(ctx context.Context) error {
-	return TickLoop(ctx, p.Name(), p.Interval, p.tick, p.Notify)
+	// Notify is delivered by tick() so we can fan out to multiple subscribers
+	// (scorer + tracker catchup) without spawning a router goroutine.
+	return TickLoop(ctx, p.Name(), p.Interval, p.tick, nil)
 }
 
 func (p *QbitPoller) tick(ctx context.Context) error {
@@ -59,5 +65,17 @@ func (p *QbitPoller) tick(ctx context.Context) error {
 		}
 	}
 	slog.Info("qbit tick complete", "torrents", len(torrents))
+	notifyNonBlocking(p.Notify)
+	notifyNonBlocking(p.TrackerCatchup)
 	return nil
+}
+
+func notifyNonBlocking(c chan<- struct{}) {
+	if c == nil {
+		return
+	}
+	select {
+	case c <- struct{}{}:
+	default:
+	}
 }

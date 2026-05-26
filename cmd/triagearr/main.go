@@ -264,6 +264,10 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 	// pollers (qbit/tracker/arr) to the scorer Loop. Buffered at 1 so a burst
 	// of poller ticks coalesces and senders never block.
 	scoreSignal := make(chan struct{}, 1)
+	// trackerCatchup signals the TrackerPoller to fetch trackers for
+	// freshly-seen hashes immediately (event-driven catchup) instead of
+	// waiting for the next 6h periodic sweep.
+	trackerCatchup := make(chan struct{}, 1)
 
 	treg, err := torrentregistry.BuildFromConfig(cfg)
 	if err != nil {
@@ -276,8 +280,8 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 		// for now (their fields are typed against it).
 		if qc, isQbit := active.(*qbit.Client); isQbit {
 			qb = qc
-			ps = append(ps, &pollers.QbitPoller{Client: qb, Store: s, Interval: cfg.Polling.QbitInterval, Notify: scoreSignal})
-			ps = append(ps, &pollers.TrackerPoller{Client: qb, Store: s, Interval: cfg.Polling.TrackerInterval, Notify: scoreSignal})
+			ps = append(ps, &pollers.QbitPoller{Client: qb, Store: s, Interval: cfg.Polling.QbitInterval, Notify: scoreSignal, TrackerCatchup: trackerCatchup})
+			ps = append(ps, &pollers.TrackerPoller{Client: qb, Store: s, Interval: cfg.Polling.TrackerInterval, Signal: trackerCatchup, Notify: scoreSignal})
 		}
 	}
 
