@@ -12,7 +12,7 @@ import (
 
 func sampleConn() store.ArrConnection {
 	return store.ArrConnection{
-		Kind: "sonarr", URL: "http://sonarr:8989", APIKey: "k1",
+		Kind: "sonarr", URL: "http://sonarr:8989", PublicURL: "https://sonarr.example.com", APIKey: "k1",
 		Enabled: true, Poll: true, Act: false,
 		TagsExclude: []string{"keep"}, CategoriesOnly: []string{"tv"},
 		TimeoutMS: 30000,
@@ -27,6 +27,7 @@ func TestArrConnections_UpsertAndGet(t *testing.T) {
 	require.NoError(t, err)
 	require.Positive(t, saved.ID)
 	require.Equal(t, "sonarr", saved.Kind)
+	require.Equal(t, "https://sonarr.example.com", saved.PublicURL)
 	require.Equal(t, []string{"keep"}, saved.TagsExclude)
 	require.Equal(t, []string{"tv"}, saved.CategoriesOnly)
 	require.True(t, saved.Enabled)
@@ -35,11 +36,13 @@ func TestArrConnections_UpsertAndGet(t *testing.T) {
 	// Update via second upsert.
 	updated := sampleConn()
 	updated.URL = "http://sonarr:9999"
+	updated.PublicURL = ""
 	updated.Act = true
 	updated.TagsExclude = nil
 	after, err := s.UpsertArrConnection(ctx, updated)
 	require.NoError(t, err)
 	require.Equal(t, "http://sonarr:9999", after.URL)
+	require.Empty(t, after.PublicURL)
 	require.True(t, after.Act)
 	require.Empty(t, after.TagsExclude)
 

@@ -173,6 +173,7 @@ func (c *ArrsConfig) SetByKind(kind string, inst ArrInstanceConfig) bool {
 type ArrInstanceConfig struct {
 	Enabled        bool          `koanf:"enabled"`
 	URL            string        `koanf:"url"`
+	PublicURL      string        `koanf:"public_url"`
 	APIKey         string        `koanf:"api_key"`
 	Poll           bool          `koanf:"poll"`
 	Act            bool          `koanf:"act"`
@@ -229,6 +230,7 @@ func (c *TorrentClientsConfig) SetByKind(kind string, inst TorrentClientInstance
 type TorrentClientInstanceConfig struct {
 	Enabled         bool          `koanf:"enabled"`
 	URL             string        `koanf:"url"`
+	PublicURL       string        `koanf:"public_url"`
 	Username        string        `koanf:"username"`
 	Password        string        `koanf:"password"`
 	CategoryExclude []string      `koanf:"category_exclude"`

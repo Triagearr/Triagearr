@@ -19,6 +19,7 @@ type arrConnectionDTO struct {
 	ID             int64    `json:"id"`
 	Kind           string   `json:"kind"`
 	URL            string   `json:"url"`
+	PublicURL      string   `json:"public_url"`
 	APIKey         string   `json:"api_key"`
 	Enabled        bool     `json:"enabled"`
 	Poll           bool     `json:"poll"`
@@ -31,6 +32,7 @@ type arrConnectionDTO struct {
 // arrConnectionInput is the writable subset accepted by PUT.
 type arrConnectionInput struct {
 	URL            string   `json:"url"`
+	PublicURL      string   `json:"public_url"`
 	APIKey         string   `json:"api_key"`
 	Enabled        bool     `json:"enabled"`
 	Poll           bool     `json:"poll"`
@@ -58,7 +60,7 @@ const arrKnownKindMsg = "kind must be one of sonarr, radarr, lidarr, readarr, wh
 
 func arrConnectionToDTO(c store.ArrConnection) arrConnectionDTO {
 	return arrConnectionDTO{
-		ID: c.ID, Kind: c.Kind, URL: c.URL, APIKey: c.APIKey,
+		ID: c.ID, Kind: c.Kind, URL: c.URL, PublicURL: c.PublicURL, APIKey: c.APIKey,
 		Enabled: c.Enabled, Poll: c.Poll, Act: c.Act,
 		TagsExclude: c.TagsExclude, CategoriesOnly: c.CategoriesOnly,
 		TimeoutSeconds: int(c.TimeoutMS / 1000),
@@ -78,6 +80,12 @@ func validateArrConnInput(in arrConnectionInput) (string, bool) {
 	if in.TimeoutSeconds < 0 {
 		return "timeout_seconds must be zero or positive", false
 	}
+	if in.PublicURL != "" {
+		u, err := url.Parse(in.PublicURL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return "public_url must be an absolute http(s) URL when set", false
+		}
+	}
 	return "", true
 }
 
@@ -89,6 +97,7 @@ func arrInputToConnection(kind string, in arrConnectionInput) store.ArrConnectio
 	return store.ArrConnection{
 		Kind:           kind,
 		URL:            strings.TrimRight(in.URL, "/"),
+		PublicURL:      strings.TrimRight(in.PublicURL, "/"),
 		APIKey:         in.APIKey,
 		Enabled:        in.Enabled,
 		Poll:           in.Poll,

@@ -14,6 +14,7 @@ type ArrConnection struct {
 	ID             int64
 	Kind           string
 	URL            string
+	PublicURL      string
 	APIKey         string
 	Enabled        bool
 	Poll           bool
@@ -32,6 +33,7 @@ type arrConnectionRow struct {
 	ID             int64     `db:"id"`
 	Kind           string    `db:"kind"`
 	URL            string    `db:"url"`
+	PublicURL      string    `db:"public_url"`
 	APIKey         string    `db:"api_key"`
 	Enabled        bool      `db:"enabled"`
 	Poll           bool      `db:"poll"`
@@ -53,7 +55,7 @@ func (r arrConnectionRow) toConnection() (ArrConnection, error) {
 		return ArrConnection{}, fmt.Errorf("arr_connection %d: categories_only: %w", r.ID, err)
 	}
 	return ArrConnection{
-		ID: r.ID, Kind: r.Kind, URL: r.URL, APIKey: r.APIKey,
+		ID: r.ID, Kind: r.Kind, URL: r.URL, PublicURL: r.PublicURL, APIKey: r.APIKey,
 		Enabled: r.Enabled, Poll: r.Poll, Act: r.Act,
 		TagsExclude: tags, CategoriesOnly: cats, TimeoutMS: r.TimeoutMS,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -65,7 +67,7 @@ func (r arrConnectionRow) toConnection() (ArrConnection, error) {
 func (s *Store) ListArrConnections(ctx context.Context) ([]ArrConnection, error) {
 	var rows []arrConnectionRow
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT id, kind, url, api_key, enabled, poll, act,
+		SELECT id, kind, url, public_url, api_key, enabled, poll, act,
 		       tags_exclude, categories_only, timeout_ms, created_at, updated_at
 		FROM arr_connections
 		ORDER BY kind
@@ -87,7 +89,7 @@ func (s *Store) ListArrConnections(ctx context.Context) ([]ArrConnection, error)
 func (s *Store) GetArrConnectionByKind(ctx context.Context, kind string) (ArrConnection, error) {
 	var r arrConnectionRow
 	err := s.reader.GetContext(ctx, &r, `
-		SELECT id, kind, url, api_key, enabled, poll, act,
+		SELECT id, kind, url, public_url, api_key, enabled, poll, act,
 		       tags_exclude, categories_only, timeout_ms, created_at, updated_at
 		FROM arr_connections
 		WHERE kind = ?
@@ -125,12 +127,13 @@ func (s *Store) UpsertArrConnection(ctx context.Context, c ArrConnection) (ArrCo
 	}
 	now := ts(time.Now().UTC())
 	_, err = s.writer.ExecContext(ctx, `
-		INSERT INTO arr_connections(kind, url, api_key, enabled, poll, act,
+		INSERT INTO arr_connections(kind, url, public_url, api_key, enabled, poll, act,
 		                            tags_exclude, categories_only, timeout_ms,
 		                            created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(kind) DO UPDATE SET
 			url             = excluded.url,
+			public_url      = excluded.public_url,
 			api_key         = excluded.api_key,
 			enabled         = excluded.enabled,
 			poll            = excluded.poll,
@@ -139,7 +142,7 @@ func (s *Store) UpsertArrConnection(ctx context.Context, c ArrConnection) (ArrCo
 			categories_only = excluded.categories_only,
 			timeout_ms      = excluded.timeout_ms,
 			updated_at      = excluded.updated_at
-	`, c.Kind, c.URL, c.APIKey, c.Enabled, c.Poll, c.Act,
+	`, c.Kind, c.URL, c.PublicURL, c.APIKey, c.Enabled, c.Poll, c.Act,
 		tags, cats, c.TimeoutMS, now, now)
 	if err != nil {
 		return ArrConnection{}, fmt.Errorf("upserting arr_connection %s: %w", c.Kind, err)
@@ -176,10 +179,10 @@ func (s *Store) SeedArrConnections(ctx context.Context, conns []ArrConnection) e
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.PreparexContext(ctx, `
-		INSERT INTO arr_connections(kind, url, api_key, enabled, poll, act,
+		INSERT INTO arr_connections(kind, url, public_url, api_key, enabled, poll, act,
 		                            tags_exclude, categories_only, timeout_ms,
 		                            created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare arr_connections seed insert: %w", err)
@@ -195,7 +198,7 @@ func (s *Store) SeedArrConnections(ctx context.Context, conns []ArrConnection) e
 		if err != nil {
 			return err
 		}
-		if _, err := stmt.ExecContext(ctx, c.Kind, c.URL, c.APIKey,
+		if _, err := stmt.ExecContext(ctx, c.Kind, c.URL, c.PublicURL, c.APIKey,
 			c.Enabled, c.Poll, c.Act, tags, cats, c.TimeoutMS, now, now); err != nil {
 			return fmt.Errorf("seeding arr_connection %s: %w", c.Kind, err)
 		}

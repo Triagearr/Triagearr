@@ -52,6 +52,7 @@ func arrInstanceToConnection(kind string, in config.ArrInstanceConfig) store.Arr
 	return store.ArrConnection{
 		Kind:           kind,
 		URL:            in.URL,
+		PublicURL:      in.PublicURL,
 		APIKey:         in.APIKey,
 		Enabled:        in.Enabled,
 		Poll:           in.Poll,
@@ -66,6 +67,7 @@ func arrConnectionToInstance(c store.ArrConnection) config.ArrInstanceConfig {
 	return config.ArrInstanceConfig{
 		Enabled:        c.Enabled,
 		URL:            c.URL,
+		PublicURL:      c.PublicURL,
 		APIKey:         c.APIKey,
 		Poll:           c.Poll,
 		Act:            c.Act,

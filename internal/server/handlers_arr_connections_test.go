@@ -115,3 +115,33 @@ func TestArrConnections_DeleteUnknownKind(t *testing.T) {
 	// Deleting a kind that was never inserted → 404.
 	require.Equal(t, http.StatusNotFound, doArrConn(t, h, http.MethodDelete, "/api/v1/arr-connections/radarr", "").Code)
 }
+
+func TestArrConnections_PublicURL(t *testing.T) {
+	h, _, _ := buildArrConnSrv(t)
+
+	// Empty public_url is accepted and round-trips as "".
+	require.Equal(t, http.StatusOK, doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/sonarr", upsertSonarrBody).Code)
+
+	w := doArrConn(t, h, http.MethodGet, "/api/v1/arr-connections", "")
+	var list struct {
+		Connections []struct {
+			Kind      string `json:"kind"`
+			URL       string `json:"url"`
+			PublicURL string `json:"public_url"`
+		} `json:"connections"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&list))
+	require.Len(t, list.Connections, 1)
+	require.Empty(t, list.Connections[0].PublicURL)
+
+	// Non-empty public_url persists and trailing slash is trimmed.
+	body := `{"url":"http://sonarr:8989","public_url":"https://sonarr.example.com/","api_key":"k1","enabled":true,"poll":true,"act":false,"timeout_seconds":30}`
+	require.Equal(t, http.StatusOK, doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/sonarr", body).Code)
+	w = doArrConn(t, h, http.MethodGet, "/api/v1/arr-connections", "")
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&list))
+	require.Equal(t, "https://sonarr.example.com", list.Connections[0].PublicURL)
+
+	// Invalid public_url (no scheme/host) is rejected.
+	bad := `{"url":"http://sonarr:8989","public_url":"not a url","api_key":"k1","enabled":true,"poll":true,"act":false,"timeout_seconds":30}`
+	require.Equal(t, http.StatusBadRequest, doArrConn(t, h, http.MethodPut, "/api/v1/arr-connections/sonarr", bad).Code)
+}

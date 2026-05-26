@@ -206,7 +206,7 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 			for i, l := range links {
 				out.Links[i] = linkView{
 					ArrType:      string(l.ArrType),
-					ArrURL:       s.arrBaseURL(l.ArrType),
+					ArrURL:       s.arrBaseURL(r.Context(), l.ArrType),
 					TitleSlug:    l.TitleSlug,
 					FileID:       l.FileID,
 					Size:         l.Size,
@@ -672,29 +672,23 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.opts.Version)
 }
 
-// arrBaseURL returns the configured base URL for the given arr type, stripped of
-// any trailing slash. Returns an empty string when the config is not wired or
-// the arr type is unknown.
-func (s *Server) arrBaseURL(t triagearr.ArrType) string {
-	if s.opts.Config == nil {
+// arrBaseURL returns the browser-facing base URL for the given arr type, used
+// to build deep links in the dashboard. It reads the DB-owned arr_connections
+// row (ADR-0022) and prefers public_url when set, falling back to the internal
+// url (consumed by API clients). Empty when the kind is unknown or the row is
+// absent.
+func (s *Server) arrBaseURL(ctx context.Context, t triagearr.ArrType) string {
+	if s.opts.Store == nil {
 		return ""
 	}
-	switch t {
-	case triagearr.ArrTypeSonarr:
-		return strings.TrimRight(s.opts.Config.Arrs.Sonarr.URL, "/")
-	case triagearr.ArrTypeRadarr:
-		return strings.TrimRight(s.opts.Config.Arrs.Radarr.URL, "/")
-	case triagearr.ArrTypeLidarr:
-		return strings.TrimRight(s.opts.Config.Arrs.Lidarr.URL, "/")
-	case triagearr.ArrTypeReadarr:
-		return strings.TrimRight(s.opts.Config.Arrs.Readarr.URL, "/")
-	case triagearr.ArrTypeWhisparrV2:
-		return strings.TrimRight(s.opts.Config.Arrs.WhisparrV2.URL, "/")
-	case triagearr.ArrTypeWhisparrV3:
-		return strings.TrimRight(s.opts.Config.Arrs.WhisparrV3.URL, "/")
-	default:
+	conn, err := s.opts.Store.GetArrConnectionByKind(ctx, string(t))
+	if err != nil {
 		return ""
 	}
+	if conn.PublicURL != "" {
+		return strings.TrimRight(conn.PublicURL, "/")
+	}
+	return strings.TrimRight(conn.URL, "/")
 }
 
 func intParam(q url.Values, key string, def, min, max int) int {

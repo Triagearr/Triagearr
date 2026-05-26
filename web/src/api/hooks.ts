@@ -345,6 +345,7 @@ export function useTestNotification() {
 export type ArrConnectionInput = {
   kind: string;
   url: string;
+  public_url: string;
   api_key: string;
   enabled: boolean;
   poll: boolean;
@@ -454,6 +455,7 @@ export const useTestArrConnection = arrConnHooks.useTest;
 export type TorrentClientConnectionInput = {
   kind: string;
   url: string;
+  public_url: string;
   username: string;
   password: string;
   enabled: boolean;

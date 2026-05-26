@@ -20,6 +20,7 @@ type torrentClientConnectionDTO struct {
 	ID              int64    `json:"id"`
 	Kind            string   `json:"kind"`
 	URL             string   `json:"url"`
+	PublicURL       string   `json:"public_url"`
 	Username        string   `json:"username"`
 	Password        string   `json:"password"`
 	Enabled         bool     `json:"enabled"`
@@ -32,6 +33,7 @@ type torrentClientConnectionDTO struct {
 // torrentClientConnectionInput is the writable subset accepted by PUT.
 type torrentClientConnectionInput struct {
 	URL             string   `json:"url"`
+	PublicURL       string   `json:"public_url"`
 	Username        string   `json:"username"`
 	Password        string   `json:"password"`
 	Enabled         bool     `json:"enabled"`
@@ -58,7 +60,7 @@ const torrentClientKnownKindMsg = "kind must be one of qbittorrent, transmission
 
 func torrentClientConnectionToDTO(c store.TorrentClientConnection) torrentClientConnectionDTO {
 	return torrentClientConnectionDTO{
-		ID: c.ID, Kind: c.Kind, URL: c.URL,
+		ID: c.ID, Kind: c.Kind, URL: c.URL, PublicURL: c.PublicURL,
 		Username: c.Username, Password: c.Password,
 		Enabled:         c.Enabled,
 		CategoryExclude: c.CategoryExclude,
@@ -78,6 +80,12 @@ func validateTorrentClientConnInput(in torrentClientConnectionInput) (string, bo
 	if in.TimeoutSeconds < 0 {
 		return "timeout_seconds must be zero or positive", false
 	}
+	if in.PublicURL != "" {
+		u, err := url.Parse(in.PublicURL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return "public_url must be an absolute http(s) URL when set", false
+		}
+	}
 	return "", true
 }
 
@@ -89,6 +97,7 @@ func torrentClientInputToConnection(kind string, in torrentClientConnectionInput
 	return store.TorrentClientConnection{
 		Kind:            kind,
 		URL:             strings.TrimRight(in.URL, "/"),
+		PublicURL:       strings.TrimRight(in.PublicURL, "/"),
 		Username:        in.Username,
 		Password:        in.Password,
 		Enabled:         in.Enabled,

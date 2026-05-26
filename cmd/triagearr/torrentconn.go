@@ -56,6 +56,7 @@ func torrentInstanceToConnection(kind string, in config.TorrentClientInstanceCon
 	return store.TorrentClientConnection{
 		Kind:            kind,
 		URL:             in.URL,
+		PublicURL:       in.PublicURL,
 		Username:        in.Username,
 		Password:        in.Password,
 		Enabled:         in.Enabled,
@@ -70,6 +71,7 @@ func torrentConnectionToInstance(c store.TorrentClientConnection) config.Torrent
 	return config.TorrentClientInstanceConfig{
 		Enabled:         c.Enabled,
 		URL:             c.URL,
+		PublicURL:       c.PublicURL,
 		Username:        c.Username,
 		Password:        c.Password,
 		CategoryExclude: c.CategoryExclude,

@@ -117,6 +117,7 @@ function KindTile({
 
 type Form = {
   url: string;
+  public_url: string;
   username: string;
   password: string;
   enabled: boolean;
@@ -128,6 +129,7 @@ type Form = {
 
 const emptyForm = (): Form => ({
   url: "",
+  public_url: "",
   username: "",
   password: "",
   enabled: true,
@@ -139,6 +141,7 @@ const emptyForm = (): Form => ({
 
 const connectionToForm = (c: TorrentClientConnectionT): Form => ({
   url: c.url,
+  public_url: c.public_url,
   username: c.username,
   password: c.password,
   enabled: c.enabled,
@@ -151,6 +154,7 @@ const connectionToForm = (c: TorrentClientConnectionT): Form => ({
 const formToInput = (kind: string, f: Form): TorrentClientConnectionInput => ({
   kind,
   url: f.url.trim(),
+  public_url: f.public_url.trim(),
   username: f.username,
   password: f.password,
   enabled: f.enabled,
@@ -187,6 +191,16 @@ function clientValidate(f: Form): string | null {
     }
   }
   if (f.timeout_seconds < 0) return "Timeout must be zero or positive.";
+  if (f.public_url.trim()) {
+    try {
+      const u = new URL(f.public_url.trim());
+      if (!u.host || (u.protocol !== "http:" && u.protocol !== "https:")) {
+        return "Public URL must be an absolute http(s) URL.";
+      }
+    } catch {
+      return "Public URL is not valid.";
+    }
+  }
   return null;
 }
 
@@ -239,6 +253,10 @@ function ConnectionDrawer({
           <FieldRow label="URL">
             <Input value={form.url} placeholder={meta.urlPlaceholder}
               onChange={(e) => set("url", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Public URL" hint="optional, used for clickable links in this UI">
+            <Input value={form.public_url} placeholder={`https://${meta.value}.example.com`}
+              onChange={(e) => set("public_url", e.target.value)} />
           </FieldRow>
           <FieldRow label="Username">
             <Input value={form.username} placeholder="admin"

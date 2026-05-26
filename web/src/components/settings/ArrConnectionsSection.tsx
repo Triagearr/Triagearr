@@ -144,6 +144,7 @@ function KindTile({
 
 type Form = {
   url: string;
+  public_url: string;
   api_key: string;
   enabled: boolean;
   poll: boolean;
@@ -155,6 +156,7 @@ type Form = {
 
 const emptyForm = (meta: KindMeta): Form => ({
   url: "",
+  public_url: "",
   api_key: "",
   enabled: true,
   poll: true,
@@ -166,6 +168,7 @@ const emptyForm = (meta: KindMeta): Form => ({
 
 const connectionToForm = (c: ArrConnectionT): Form => ({
   url: c.url,
+  public_url: c.public_url,
   api_key: c.api_key,
   enabled: c.enabled,
   poll: c.poll,
@@ -178,6 +181,7 @@ const connectionToForm = (c: ArrConnectionT): Form => ({
 const formToInput = (kind: string, f: Form): ArrConnectionInput => ({
   kind,
   url: f.url.trim(),
+  public_url: f.public_url.trim(),
   api_key: f.api_key,
   enabled: f.enabled,
   poll: f.poll,
@@ -208,6 +212,16 @@ function clientValidate(f: Form): string | null {
     if (!f.api_key) return "API key is required when the connection is enabled.";
   }
   if (f.timeout_seconds < 0) return "Timeout must be zero or positive.";
+  if (f.public_url.trim()) {
+    try {
+      const u = new URL(f.public_url.trim());
+      if (!u.host || (u.protocol !== "http:" && u.protocol !== "https:")) {
+        return "Public URL must be an absolute http(s) URL.";
+      }
+    } catch {
+      return "Public URL is not valid.";
+    }
+  }
   return null;
 }
 
@@ -278,6 +292,10 @@ function ConnectionDrawer({
           <FieldRow label="URL">
             <Input value={form.url} placeholder={meta.urlPlaceholder}
               onChange={(e) => set("url", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Public URL" hint="optional, used for clickable links in this UI">
+            <Input value={form.public_url} placeholder={`https://${meta.value}.example.com`}
+              onChange={(e) => set("public_url", e.target.value)} />
           </FieldRow>
           <FieldRow label="API key">
             <Input type="password" value={form.api_key} placeholder="••••••••"

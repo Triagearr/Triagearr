@@ -320,6 +320,7 @@ CREATE TABLE arr_connections (
     id              INTEGER   PRIMARY KEY AUTOINCREMENT,
     kind            TEXT      NOT NULL UNIQUE,        -- sonarr|radarr|lidarr|readarr|whisparr_v2|whisparr_v3
     url             TEXT      NOT NULL,
+    public_url      TEXT      NOT NULL DEFAULT '',    -- optional browser-facing URL; falls back to url when empty
     api_key         TEXT      NOT NULL,
     enabled         INTEGER   NOT NULL DEFAULT 1,
     poll            INTEGER   NOT NULL DEFAULT 1,
@@ -338,6 +339,7 @@ CREATE TABLE torrent_client_connections (
     id                INTEGER   PRIMARY KEY AUTOINCREMENT,
     kind              TEXT      NOT NULL UNIQUE,       -- qbittorrent | transmission | deluge | rtorrent
     url               TEXT      NOT NULL,
+    public_url        TEXT      NOT NULL DEFAULT '',   -- optional browser-facing URL; falls back to url when empty
     username          TEXT      NOT NULL DEFAULT '',
     password          TEXT      NOT NULL DEFAULT '',
     enabled           INTEGER   NOT NULL DEFAULT 1,

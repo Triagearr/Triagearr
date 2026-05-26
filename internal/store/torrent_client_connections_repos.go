@@ -16,6 +16,7 @@ type TorrentClientConnection struct {
 	ID              int64
 	Kind            string
 	URL             string
+	PublicURL       string
 	Username        string
 	Password        string
 	Enabled         bool
@@ -34,6 +35,7 @@ type torrentClientConnectionRow struct {
 	ID              int64     `db:"id"`
 	Kind            string    `db:"kind"`
 	URL             string    `db:"url"`
+	PublicURL       string    `db:"public_url"`
 	Username        string    `db:"username"`
 	Password        string    `db:"password"`
 	Enabled         bool      `db:"enabled"`
@@ -55,7 +57,7 @@ func (r torrentClientConnectionRow) toConnection() (TorrentClientConnection, err
 		return TorrentClientConnection{}, fmt.Errorf("torrent_client_connection %d: tags_exclude: %w", r.ID, err)
 	}
 	return TorrentClientConnection{
-		ID: r.ID, Kind: r.Kind, URL: r.URL,
+		ID: r.ID, Kind: r.Kind, URL: r.URL, PublicURL: r.PublicURL,
 		Username: r.Username, Password: r.Password,
 		Enabled:         r.Enabled,
 		CategoryExclude: cats, TagsExclude: tags,
@@ -70,7 +72,7 @@ func (r torrentClientConnectionRow) toConnection() (TorrentClientConnection, err
 func (s *Store) ListTorrentClientConnections(ctx context.Context) ([]TorrentClientConnection, error) {
 	var rows []torrentClientConnectionRow
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT id, kind, url, username, password, enabled,
+		SELECT id, kind, url, public_url, username, password, enabled,
 		       category_exclude, tags_exclude, delete_with_files,
 		       timeout_ms, created_at, updated_at
 		FROM torrent_client_connections
@@ -94,7 +96,7 @@ func (s *Store) ListTorrentClientConnections(ctx context.Context) ([]TorrentClie
 func (s *Store) GetTorrentClientConnectionByKind(ctx context.Context, kind string) (TorrentClientConnection, error) {
 	var r torrentClientConnectionRow
 	err := s.reader.GetContext(ctx, &r, `
-		SELECT id, kind, url, username, password, enabled,
+		SELECT id, kind, url, public_url, username, password, enabled,
 		       category_exclude, tags_exclude, delete_with_files,
 		       timeout_ms, created_at, updated_at
 		FROM torrent_client_connections
@@ -133,13 +135,14 @@ func (s *Store) UpsertTorrentClientConnection(ctx context.Context, c TorrentClie
 	}
 	now := ts(time.Now().UTC())
 	_, err = s.writer.ExecContext(ctx, `
-		INSERT INTO torrent_client_connections(kind, url, username, password, enabled,
+		INSERT INTO torrent_client_connections(kind, url, public_url, username, password, enabled,
 		                                       category_exclude, tags_exclude,
 		                                       delete_with_files, timeout_ms,
 		                                       created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(kind) DO UPDATE SET
 			url               = excluded.url,
+			public_url        = excluded.public_url,
 			username          = excluded.username,
 			password          = excluded.password,
 			enabled           = excluded.enabled,
@@ -148,7 +151,7 @@ func (s *Store) UpsertTorrentClientConnection(ctx context.Context, c TorrentClie
 			delete_with_files = excluded.delete_with_files,
 			timeout_ms        = excluded.timeout_ms,
 			updated_at        = excluded.updated_at
-	`, c.Kind, c.URL, c.Username, c.Password, c.Enabled,
+	`, c.Kind, c.URL, c.PublicURL, c.Username, c.Password, c.Enabled,
 		cats, tags, c.DeleteWithFiles, c.TimeoutMS, now, now)
 	if err != nil {
 		return TorrentClientConnection{}, fmt.Errorf("upserting torrent_client_connection %s: %w", c.Kind, err)
@@ -186,11 +189,11 @@ func (s *Store) SeedTorrentClientConnections(ctx context.Context, conns []Torren
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.PreparexContext(ctx, `
-		INSERT INTO torrent_client_connections(kind, url, username, password, enabled,
+		INSERT INTO torrent_client_connections(kind, url, public_url, username, password, enabled,
 		                                       category_exclude, tags_exclude,
 		                                       delete_with_files, timeout_ms,
 		                                       created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare torrent_client_connections seed insert: %w", err)
@@ -206,7 +209,7 @@ func (s *Store) SeedTorrentClientConnections(ctx context.Context, conns []Torren
 		if err != nil {
 			return err
 		}
-		if _, err := stmt.ExecContext(ctx, c.Kind, c.URL, c.Username, c.Password,
+		if _, err := stmt.ExecContext(ctx, c.Kind, c.URL, c.PublicURL, c.Username, c.Password,
 			c.Enabled, cats, tags, c.DeleteWithFiles, c.TimeoutMS, now, now); err != nil {
 			return fmt.Errorf("seeding torrent_client_connection %s: %w", c.Kind, err)
 		}
