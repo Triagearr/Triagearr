@@ -133,6 +133,23 @@ func seedStart(t store.ScoringTorrent) time.Time {
 	return t.AddedOn
 }
 
+// evalFactors runs the seven factors in their canonical order. It is the single
+// source of truth for which factors exist and how they are wired — both the
+// live scorer (scoreWithPrefetched) and the config simulator (Simulate) go
+// through here so the two can never drift.
+func evalFactors(t store.ScoringTorrent, snaps store.SnapshotStats, globalAvg float64, trackers []trackerView, cfg config.ScoringConfig, policy effectivePolicy, alive bool, now time.Time) []Factor {
+	w := cfg.Weights
+	return []Factor{
+		factorRatioObligation(t, snaps.LatestRatio, policy, alive, now, w.RatioObligationMet),
+		factorVelocityInv(snaps.VelocityBytesPerDay, globalAvg, w.UploadVelocityInv),
+		factorAge(t, now, w.AgeDays),
+		factorSeedersGuard(snaps.SeedersAvg7d, policy.RareThreshold, alive, w.SeedersLowGuard),
+		factorSwarmBonus(snaps.SeedersAvg7d, w.SwarmHealthBonus),
+		factorHnRVeto(t, alive, cfg.HnRWindowDays, now),
+		factorTrackerDead(trackers, now, cfg.TrackerDeadGrace, w.TrackerDeadBonus),
+	}
+}
+
 // -----------------------------------------------------------------------------
 // Factor implementations — pure functions over already-fetched inputs.
 // -----------------------------------------------------------------------------

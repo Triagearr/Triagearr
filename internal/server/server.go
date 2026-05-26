@@ -139,6 +139,7 @@ func New(opts Options) *Server {
 	mux.HandleFunc("POST /api/v1/notifications/test", s.security(s.auth(s.handleTestNotification)))
 	mux.HandleFunc("GET /api/v1/scoring/defaults", s.security(s.auth(s.handleGetScoringDefaults)))
 	mux.HandleFunc("PUT /api/v1/scoring/defaults", s.security(s.auth(s.handlePutScoringDefaults)))
+	mux.HandleFunc("POST /api/v1/scoring/simulate", s.security(s.auth(s.handleSimulateScoring)))
 	mux.HandleFunc("GET /api/v1/scoring/tracker-policies", s.security(s.auth(s.handleListTrackerPolicies)))
 	mux.HandleFunc("PUT /api/v1/scoring/tracker-policies/{host}", s.security(s.auth(s.handlePutTrackerPolicy)))
 	mux.HandleFunc("DELETE /api/v1/scoring/tracker-policies/{host}", s.security(s.auth(s.handleDeleteTrackerPolicy)))

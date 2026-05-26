@@ -282,6 +282,7 @@ export const ScoringWeights = z.object({
   age_days: z.number().optional(),
   seeders_low_guard: z.number().optional(),
   swarm_health_bonus: z.number().optional(),
+  tracker_dead_bonus: z.number().optional(),
 });
 export const ScoringSettings = z.object({
   weights: ScoringWeights.optional(),
@@ -390,6 +391,36 @@ export const TrackerPolicy = z.object({
   enabled: z.boolean(),
 });
 export type TrackerPolicyT = z.infer<typeof TrackerPolicy>;
+
+// --- Scoring simulator (config preview) ----------------------------------
+// One archetype's verdict from POST /api/v1/scoring/simulate. The breakdown
+// mirrors the live scorer's shape so the simulator and the real scores view
+// render identically.
+
+export const SimFactor = z.object({
+  name: z.string(),
+  value: z.number(),
+  weight: z.number(),
+  contribution: z.number(),
+  gate: z.string().optional(),
+});
+export const SimBreakdown = z.object({
+  torrent_hash: z.string(),
+  score: z.number(),
+  private: z.boolean(),
+  any_tracker_alive: z.boolean(),
+  excluded: z.boolean().optional(),
+  factors: z.array(SimFactor),
+  computed_at: z.string(),
+});
+export const ScoringSimResult = z.object({
+  name: z.string(),
+  description: z.string(),
+  breakdown: SimBreakdown,
+});
+export const ScoringSimResultList = z.array(ScoringSimResult);
+export type ScoringSimResultT = z.infer<typeof ScoringSimResult>;
+export type SimFactorT = z.infer<typeof SimFactor>;
 
 export const TrackerHostStat = z.object({
   tracker_host: z.string(),

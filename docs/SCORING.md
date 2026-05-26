@@ -313,6 +313,21 @@ The UI renders this as a horizontal bar chart with positive/negative contributio
 
 The V1 release ships with conservative defaults. The `triagearr score --explain` CLI command lets you simulate scoring against your real library without making any change.
 
+## Settings simulator
+
+The **Settings → Scoring** page renders a live impact preview alongside the weight
+and threshold fields. It scores a fixed set of synthetic *archetype* torrents —
+each crafted to exercise one facet of the model (public well-seeded, private
+in-HnR-window, rare content, dead-tracker library, …) — against the config the
+operator is currently editing, including unsaved edits. The list re-ranks and each
+archetype's factor waterfall re-draws as a weight or threshold changes, so the
+effect of a knob is visible before saving.
+
+It is backed by `POST /api/v1/scoring/simulate`, which replays the real factor
+functions (`scorer.Simulate`) over the archetype fixtures. The simulator and the
+live scorer share a single `evalFactors` path, so the preview can never drift from
+production scoring. The endpoint is read-only — it never touches the `scores` table.
+
 ## What is *not* in scoring (yet)
 
 - **Watch history from Plex/Tautulli/Jellystat**. This is intentionally Maintainerr's job, and we don't want to duplicate it. V2 may add an *optional* "if Maintainerr has marked this for deletion, +X bonus" factor that uses Maintainerr's collections as a soft signal.

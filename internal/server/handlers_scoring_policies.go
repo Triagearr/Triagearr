@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/Triagearr/Triagearr/internal/config"
+	"github.com/Triagearr/Triagearr/internal/scorer"
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
@@ -161,6 +163,78 @@ func (s *Server) handleDeleteTrackerPolicy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// simWeightsDTO mirrors config.ScoringWeights on the wire.
+type simWeightsDTO struct {
+	RatioObligationMet float64 `json:"ratio_obligation_met"`
+	UploadVelocityInv  float64 `json:"upload_velocity_inv"`
+	AgeDays            float64 `json:"age_days"`
+	SeedersLowGuard    float64 `json:"seeders_low_guard"`
+	SwarmHealthBonus   float64 `json:"swarm_health_bonus"`
+	TrackerDeadBonus   float64 `json:"tracker_dead_bonus"`
+}
+
+// simulateRequestDTO is the body of POST /api/v1/scoring/simulate. Every group
+// is optional: an absent group falls back to the daemon's current effective
+// config, so the UI can send only the fields the operator is editing. The
+// tracker-dead grace is not editable on the scoring page, so it is always taken
+// from the live config.
+type simulateRequestDTO struct {
+	Weights       *simWeightsDTO      `json:"weights"`
+	HnRWindowDays *int                `json:"hnr_window_days"`
+	Defaults      *scoringDefaultsDTO `json:"defaults"`
+}
+
+// handleSimulateScoring scores the built-in archetypes against the proposed
+// config and returns one breakdown per archetype. It is read-only and never
+// touches the scores table — it exists purely so the settings UI can show the
+// impact of a weight/threshold change before it is saved.
+func (s *Server) handleSimulateScoring(w http.ResponseWriter, r *http.Request) {
+	var body simulateRequestDTO
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+
+	var cur config.ScoringConfig
+	if s.opts.Config != nil {
+		cur = s.opts.Config.Scoring
+	}
+
+	curDefaults, err := s.opts.Store.GetScoringDefaults(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "loading scoring defaults: "+err.Error())
+		return
+	}
+
+	in := scorer.SimInput{
+		Weights:          cur.Weights,
+		HnRWindowDays:    cur.HnRWindowDays,
+		TrackerDeadGrace: cur.TrackerDeadGrace,
+		Defaults:         curDefaults,
+	}
+	if body.Weights != nil {
+		in.Weights = config.ScoringWeights{
+			RatioObligationMet: body.Weights.RatioObligationMet,
+			UploadVelocityInv:  body.Weights.UploadVelocityInv,
+			AgeDays:            body.Weights.AgeDays,
+			SeedersLowGuard:    body.Weights.SeedersLowGuard,
+			SwarmHealthBonus:   body.Weights.SwarmHealthBonus,
+			TrackerDeadBonus:   body.Weights.TrackerDeadBonus,
+		}
+	}
+	if body.HnRWindowDays != nil {
+		in.HnRWindowDays = *body.HnRWindowDays
+	}
+	if body.Defaults != nil {
+		in.Defaults = triagearr.ScoringDefaults{
+			MinRatio:      body.Defaults.MinRatio,
+			MinSeedDays:   body.Defaults.MinSeedDays,
+			RareThreshold: body.Defaults.RareThreshold,
+		}
+	}
+
+	writeJSON(w, http.StatusOK, scorer.Simulate(in))
 }
 
 // validateDefaults guards against obviously broken values. The UI rejects

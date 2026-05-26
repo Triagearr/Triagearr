@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { m } from "@/paraglide/messages";
 
 // Pending holds the user's in-flight edits for the current section keyed by
@@ -174,15 +175,40 @@ export type FieldProps = {
   overridden: boolean;
   dirty: boolean;
   onRevert: () => void;
+  // compact narrows the input to a few characters' worth of width — for short
+  // numeric fields (weights, thresholds) that don't need a full-width box.
+  compact?: boolean;
+  // tooltip, when set, shows a short hover explanation on the label and hints
+  // at it with a dotted underline + help cursor.
+  tooltip?: string;
 };
 
 export function Field(p: FieldProps) {
+  const cols = p.compact ? "grid-cols-[11rem_5rem_1fr]" : "grid-cols-[12rem_1fr_auto]";
+  const labelEl = (
+    <label
+      className={`text-muted-foreground font-mono text-xs ${p.tooltip ? "cursor-help underline decoration-dotted decoration-muted-foreground/60 underline-offset-2" : ""}`}
+      title={p.tooltip ? undefined : p.keyName}
+    >
+      {p.label}
+    </label>
+  );
   return (
-    <div className="grid grid-cols-[12rem_1fr_auto] items-center gap-2 text-sm">
+    <div className={`grid ${cols} items-center gap-2 text-sm`}>
       <div className="flex flex-col gap-0.5">
-        <label className="text-muted-foreground font-mono text-xs" title={p.keyName}>
-          {p.label}
-        </label>
+        {p.tooltip ? (
+          <Tooltip
+            content={
+              <span style={{ whiteSpace: "normal", display: "block", lineHeight: 1.35 }}>
+                {p.tooltip}
+              </span>
+            }
+          >
+            {labelEl}
+          </Tooltip>
+        ) : (
+          labelEl
+        )}
         {p.description && (
           <span className="text-[10px] leading-tight text-muted-foreground/60">{p.description}</span>
         )}

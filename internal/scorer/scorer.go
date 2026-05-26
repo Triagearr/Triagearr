@@ -276,16 +276,7 @@ func (s *Scorer) scoreWithPrefetched(t store.ScoringTorrent, snaps store.Snapsho
 	alive := anyTrackerAlive(trackers)
 	policy := trackerPolicyFor(trackers, defaults, policyByHost)
 
-	w := s.cfg.Weights
-	factors := []Factor{
-		factorRatioObligation(t, snaps.LatestRatio, policy, alive, now, w.RatioObligationMet),
-		factorVelocityInv(snaps.VelocityBytesPerDay, globalAvg, w.UploadVelocityInv),
-		factorAge(t, now, w.AgeDays),
-		factorSeedersGuard(snaps.SeedersAvg7d, policy.RareThreshold, alive, w.SeedersLowGuard),
-		factorSwarmBonus(snaps.SeedersAvg7d, w.SwarmHealthBonus),
-		factorHnRVeto(t, alive, s.cfg.HnRWindowDays, now),
-		factorTrackerDead(trackers, now, s.cfg.TrackerDeadGrace, w.TrackerDeadBonus),
-	}
+	factors := evalFactors(t, snaps, globalAvg, trackers, s.cfg, policy, alive, now)
 
 	var total float64
 	for _, f := range factors {

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { z } from "zod";
 import { apiFetch, apiFetchVoid } from "./client";
 import {
@@ -18,6 +18,7 @@ import {
   RunResponse,
   ScoreList,
   ScoringDefaults,
+  ScoringSimResultList,
   TrackerPolicy,
   TrackerHostStatList,
   SessionStatus,
@@ -513,6 +514,38 @@ export function useTrackerPolicies() {
   return useQuery({
     queryKey: queryKeys.trackerPolicies,
     queryFn: () => apiFetch("/api/v1/scoring/tracker-policies", TrackerHostStatList),
+  });
+}
+
+// --- Scoring simulator (config preview) ----------------------------------
+
+export type ScoringSimInput = {
+  weights: {
+    ratio_obligation_met: number;
+    upload_velocity_inv: number;
+    age_days: number;
+    seeders_low_guard: number;
+    swarm_health_bonus: number;
+    tracker_dead_bonus: number;
+  };
+  hnr_window_days: number;
+  defaults: { min_ratio: number; min_seed_days: number; rare_threshold: number };
+};
+
+// useScoringSimulation scores the built-in archetypes against the supplied
+// (proposed) config. Read-only: it never persists. keepPreviousData keeps the
+// last result on screen while a fresh request is in flight so the live preview
+// does not flash empty as the operator drags a value. Debounce the `input`
+// upstream to avoid a request per keystroke.
+export function useScoringSimulation(input: ScoringSimInput) {
+  return useQuery({
+    queryKey: ["scoring", "simulate", input] as const,
+    queryFn: () =>
+      apiFetch("/api/v1/scoring/simulate", ScoringSimResultList, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    placeholderData: keepPreviousData,
   });
 }
 

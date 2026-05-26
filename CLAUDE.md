@@ -23,6 +23,7 @@ Go 1.26+ · urfave/cli/v3 · koanf/v2 · modernc.org/sqlite · chi/v5 · log/slo
 - tests: table-driven, real subjects (`t.TempDir()`, `httptest`), light on mocks
 - comments: WHY only, never WHAT; no PR/issue refs in code
 - frontend (`web/`): use **bun**, not npm — `bun install`, `bun run lint`, `bun run build`, `bun run dev`
+- i18n (paraglide/inlang): **no hardcoded user-facing strings** — every visible label/text goes through `m.*` and must be added to **all four** locale files (`web/messages/{en,fr,de,es}.json`) in the same change. Don't ship translatable copy as text in Go/API payloads (it bypasses i18n); keep such strings in the frontend message files.
 
 ## Non-negotiable safety rules
 
