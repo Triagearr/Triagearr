@@ -133,6 +133,11 @@
   "settings_polling_title": "Intervalos de sondeo",
   "settings_polling_description": "Con qué frecuencia se ejecuta cada sondeador. Acepta duraciones de Go como 30s, 5m, 1h.",
   "settings_polling_placeholder": "p. ej. 30s, 5m, 1h",
+  "settings_polling_tip_torrent_client_interval": "Frecuencia con la que se consulta al cliente torrent la lista de torrents y sus estadísticas.",
+  "settings_polling_tip_arr_interval": "Frecuencia con la que se consultan las apps *arr para las correspondencias medio ↔ descarga.",
+  "settings_polling_tip_arr_file_min_interval": "Intervalo mínimo entre búsquedas *arr por archivo, para no saturar las API *arr.",
+  "settings_polling_tip_tracker_interval": "Frecuencia de actualización del estado de los trackers (vivo/muerto) de cada torrent.",
+  "settings_polling_tip_disk_interval": "Frecuencia de muestreo del espacio libre en disco para evaluar la presión de disco.",
 
   "settings_scoring_title": "Puntuación",
   "settings_scoring_description": "Ajusta el algoritmo DeleteScore. El veto de ventana HnR (-10000) está codificado y no es editable aquí.",

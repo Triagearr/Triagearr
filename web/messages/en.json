@@ -133,6 +133,11 @@
   "settings_polling_title": "Polling intervals",
   "settings_polling_description": "How often each poller runs. Accepts Go durations like 30s, 5m, 1h.",
   "settings_polling_placeholder": "e.g. 30s, 5m, 1h",
+  "settings_polling_tip_torrent_client_interval": "How often to poll the torrent client for the current torrent list and stats.",
+  "settings_polling_tip_arr_interval": "How often to poll the *arr apps for media ↔ download mappings.",
+  "settings_polling_tip_arr_file_min_interval": "Minimum gap between per-file *arr lookups, to avoid hammering the *arr APIs.",
+  "settings_polling_tip_tracker_interval": "How often to refresh each torrent's tracker status (alive/dead).",
+  "settings_polling_tip_disk_interval": "How often to sample free disk space to evaluate disk pressure.",
 
   "settings_scoring_title": "Scoring",
   "settings_scoring_description": "Tunes the DeleteScore algorithm. The HnR-window veto (-10000) is hard-coded and not editable here.",

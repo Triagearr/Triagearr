@@ -133,6 +133,11 @@
   "settings_polling_title": "Abfrageintervalle",
   "settings_polling_description": "Wie oft jeder Poller läuft. Akzeptiert Go-Dauern wie 30s, 5m, 1h.",
   "settings_polling_placeholder": "z. B. 30s, 5m, 1h",
+  "settings_polling_tip_torrent_client_interval": "Wie oft der Torrent-Client nach Torrent-Liste und Statistiken abgefragt wird.",
+  "settings_polling_tip_arr_interval": "Wie oft die *arr-Apps nach Medien-↔-Download-Zuordnungen abgefragt werden.",
+  "settings_polling_tip_arr_file_min_interval": "Mindestabstand zwischen *arr-Abfragen pro Datei, um die *arr-APIs nicht zu überlasten.",
+  "settings_polling_tip_tracker_interval": "Wie oft der Tracker-Status (lebt/tot) jedes Torrents aktualisiert wird.",
+  "settings_polling_tip_disk_interval": "Wie oft der freie Speicherplatz zur Bewertung des Speicherdrucks gemessen wird.",
 
   "settings_scoring_title": "Scoring",
   "settings_scoring_description": "Stellt den DeleteScore-Algorithmus ein. Das HnR-Fenster-Veto (-10000) ist fest codiert und hier nicht bearbeitbar.",
