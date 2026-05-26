@@ -12,8 +12,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/Table";
 import { m } from "@/paraglide/messages";
+
+// TipLabel renders label text and, when a tip is given, wraps it in a hover
+// tooltip hinted by a dotted underline + help cursor. Shared by the defaults
+// form and the per-tracker editor so both explain the same knobs identically.
+function TipLabel({ text, tip, className }: { text: string; tip?: string; className?: string }) {
+  const el = (
+    <span
+      className={`${className ?? ""} ${tip ? "cursor-help underline decoration-dotted decoration-muted-foreground/60 underline-offset-2" : ""}`}
+    >
+      {text}
+    </span>
+  );
+  if (!tip) return el;
+  return (
+    <Tooltip
+      content={
+        <span style={{ whiteSpace: "normal", display: "block", lineHeight: 1.35 }}>{tip}</span>
+      }
+    >
+      {el}
+    </Tooltip>
+  );
+}
 
 // DefaultsForm edits the singleton scoring_defaults row (ADR-0026). These
 // values apply to every torrent whose tracker has no override.
@@ -40,17 +64,20 @@ function DefaultsForm() {
       <div className="grid grid-cols-3 gap-3">
         <NumberField
           label={m.settings_tracker_min_ratio()}
+          tooltip={m.settings_tracker_tip_min_ratio()}
           value={draft.min_ratio}
           step={0.1}
           onChange={(v) => setDraft({ ...draft, min_ratio: v })}
         />
         <NumberField
           label={m.settings_tracker_min_seed_days()}
+          tooltip={m.settings_tracker_tip_min_seed_days()}
           value={draft.min_seed_days}
           onChange={(v) => setDraft({ ...draft, min_seed_days: v })}
         />
         <NumberField
           label={m.settings_tracker_rare_threshold()}
+          tooltip={m.settings_tracker_tip_rare_threshold()}
           value={draft.rare_threshold}
           onChange={(v) => setDraft({ ...draft, rare_threshold: v })}
         />
@@ -77,18 +104,22 @@ function DefaultsForm() {
 
 function NumberField({
   label,
+  tooltip,
   value,
   step,
   onChange,
 }: {
   label: string;
+  tooltip?: string;
   value: number;
   step?: number;
   onChange: (n: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs text-muted-foreground">{label}</label>
+      <label className="text-xs text-muted-foreground">
+        <TipLabel text={label} tip={tooltip} />
+      </label>
       <Input
         type="number"
         step={step ?? 1}
@@ -252,20 +283,32 @@ function PolicyEditor({
 }) {
   return (
     <div className="grid grid-cols-[auto_5rem_auto_5rem_auto_5rem_auto] items-center gap-1 text-xs">
-      <label className="text-muted-foreground">{m.settings_tracker_editor_ratio()}</label>
+      <TipLabel
+        text={m.settings_tracker_editor_ratio()}
+        tip={m.settings_tracker_tip_min_ratio()}
+        className="text-muted-foreground"
+      />
       <Input
         type="number"
         step={0.1}
         value={draft.min_ratio}
         onChange={(e) => setDraft({ ...draft, min_ratio: Number(e.target.value) || 0 })}
       />
-      <label className="text-muted-foreground">{m.settings_tracker_editor_seed()}</label>
+      <TipLabel
+        text={m.settings_tracker_editor_seed()}
+        tip={m.settings_tracker_tip_min_seed_days()}
+        className="text-muted-foreground"
+      />
       <Input
         type="number"
         value={draft.min_seed_days}
         onChange={(e) => setDraft({ ...draft, min_seed_days: Number(e.target.value) || 0 })}
       />
-      <label className="text-muted-foreground">{m.settings_tracker_editor_rare()}</label>
+      <TipLabel
+        text={m.settings_tracker_editor_rare()}
+        tip={m.settings_tracker_tip_rare_threshold()}
+        className="text-muted-foreground"
+      />
       <Input
         type="number"
         placeholder={m.settings_tracker_editor_default()}
@@ -283,7 +326,11 @@ function PolicyEditor({
           checked={draft.enabled}
           onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
         />
-        <span className="text-muted-foreground">{m.settings_tracker_editor_enabled()}</span>
+        <TipLabel
+          text={m.settings_tracker_editor_enabled()}
+          tip={m.settings_tracker_tip_enabled()}
+          className="text-muted-foreground"
+        />
       </label>
     </div>
   );
