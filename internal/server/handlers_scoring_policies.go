@@ -1,0 +1,198 @@
+package server
+
+import (
+	"database/sql"
+	"errors"
+	"net/http"
+
+	"github.com/Triagearr/Triagearr/internal/store"
+	"github.com/Triagearr/Triagearr/internal/triagearr"
+)
+
+// scoringDefaultsDTO is the body of GET/PUT /api/v1/scoring/defaults. The
+// fields mirror triagearr.ScoringDefaults with explicit json tags so the
+// wire format does not depend on Go field-name casing.
+type scoringDefaultsDTO struct {
+	MinRatio      float64 `json:"min_ratio"`
+	MinSeedDays   int     `json:"min_seed_days"`
+	RareThreshold int     `json:"rare_threshold"`
+}
+
+// trackerPolicyDTO is one row in the per-tracker policy list. RareThreshold
+// is a pointer to preserve the "inherit default" semantics — null means the
+// tracker uses the global default for rare_threshold.
+type trackerPolicyDTO struct {
+	TrackerHost   string  `json:"tracker_host"`
+	MinRatio      float64 `json:"min_ratio"`
+	MinSeedDays   int     `json:"min_seed_days"`
+	RareThreshold *int    `json:"rare_threshold"`
+	Enabled       bool    `json:"enabled"`
+}
+
+// trackerHostStatDTO enriches one entry of the policy list with operational
+// signals from torrent_trackers (count of torrents using this host, whether
+// any tracker is currently alive). Used by the UI to badge dead trackers and
+// surface "configure this one next".
+type trackerHostStatDTO struct {
+	TrackerHost  string            `json:"tracker_host"`
+	TorrentCount int               `json:"torrent_count"`
+	AnyAlive     bool              `json:"any_alive"`
+	AllDead      bool              `json:"all_dead"`
+	Policy       *trackerPolicyDTO `json:"policy,omitempty"`
+}
+
+func defaultsToDTO(d triagearr.ScoringDefaults) scoringDefaultsDTO {
+	return scoringDefaultsDTO{
+		MinRatio:      d.MinRatio,
+		MinSeedDays:   d.MinSeedDays,
+		RareThreshold: d.RareThreshold,
+	}
+}
+
+func policyToDTO(p triagearr.TrackerPolicy) trackerPolicyDTO {
+	return trackerPolicyDTO{
+		TrackerHost:   p.TrackerHost,
+		MinRatio:      p.MinRatio,
+		MinSeedDays:   p.MinSeedDays,
+		RareThreshold: p.RareThreshold,
+		Enabled:       p.Enabled,
+	}
+}
+
+func statToDTO(s store.TrackerHostStat) trackerHostStatDTO {
+	out := trackerHostStatDTO{
+		TrackerHost:  s.Host,
+		TorrentCount: s.TorrentCount,
+		AnyAlive:     s.AnyAlive,
+		AllDead:      s.AllDead,
+	}
+	if s.Policy != nil {
+		p := policyToDTO(*s.Policy)
+		out.Policy = &p
+	}
+	return out
+}
+
+func (s *Server) handleGetScoringDefaults(w http.ResponseWriter, r *http.Request) {
+	d, err := s.opts.Store.GetScoringDefaults(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "loading scoring defaults: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, defaultsToDTO(d))
+}
+
+func (s *Server) handlePutScoringDefaults(w http.ResponseWriter, r *http.Request) {
+	var body scoringDefaultsDTO
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	if err := validateDefaults(body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.opts.Store.SetScoringDefaults(r.Context(), triagearr.ScoringDefaults{
+		MinRatio:      body.MinRatio,
+		MinSeedDays:   body.MinSeedDays,
+		RareThreshold: body.RareThreshold,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "updating scoring defaults: "+err.Error())
+		return
+	}
+	// No daemon reload — the next ScoreAll pass picks the new values up from
+	// the DB on its own. Trigger a score-only rescore so the UI sees fresh
+	// verdicts within one polling tick instead of waiting for the next pass.
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListTrackerPolicies(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.opts.Store.ListTrackerHostStats(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "listing tracker_policies: "+err.Error())
+		return
+	}
+	out := make([]trackerHostStatDTO, 0, len(stats))
+	for _, st := range stats {
+		out = append(out, statToDTO(st))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handlePutTrackerPolicy(w http.ResponseWriter, r *http.Request) {
+	host := r.PathValue("host")
+	if host == "" {
+		writeError(w, http.StatusBadRequest, "host required")
+		return
+	}
+	var body trackerPolicyDTO
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	if err := validatePolicy(body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	saved, err := s.opts.Store.UpsertTrackerPolicy(r.Context(), triagearr.TrackerPolicy{
+		TrackerHost:   host,
+		MinRatio:      body.MinRatio,
+		MinSeedDays:   body.MinSeedDays,
+		RareThreshold: body.RareThreshold,
+		Enabled:       body.Enabled,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "upserting tracker_policy: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, policyToDTO(saved))
+}
+
+func (s *Server) handleDeleteTrackerPolicy(w http.ResponseWriter, r *http.Request) {
+	host := r.PathValue("host")
+	if host == "" {
+		writeError(w, http.StatusBadRequest, "host required")
+		return
+	}
+	if err := s.opts.Store.DeleteTrackerPolicy(r.Context(), host); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "no policy configured for this tracker")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "deleting tracker_policy: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateDefaults guards against obviously broken values. The UI rejects
+// these client-side too but the API is the source of truth.
+func validateDefaults(d scoringDefaultsDTO) error {
+	if d.MinRatio < 0 {
+		return errBadField("min_ratio must be >= 0")
+	}
+	if d.MinSeedDays < 0 {
+		return errBadField("min_seed_days must be >= 0")
+	}
+	if d.RareThreshold < 0 {
+		return errBadField("rare_threshold must be >= 0")
+	}
+	return nil
+}
+
+func validatePolicy(p trackerPolicyDTO) error {
+	if p.MinRatio < 0 {
+		return errBadField("min_ratio must be >= 0")
+	}
+	if p.MinSeedDays < 0 {
+		return errBadField("min_seed_days must be >= 0")
+	}
+	if p.RareThreshold != nil && *p.RareThreshold < 0 {
+		return errBadField("rare_threshold must be >= 0 when set")
+	}
+	return nil
+}
+
+type badFieldError string
+
+func (e badFieldError) Error() string { return string(e) }
+
+func errBadField(msg string) error { return badFieldError(msg) }

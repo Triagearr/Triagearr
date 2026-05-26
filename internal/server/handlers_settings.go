@@ -55,9 +55,8 @@ type telegramDTO struct {
 }
 
 type scoringDTO struct {
-	HnRWindowDays        int        `json:"hnr_window_days"`
-	RareContentThreshold int        `json:"rare_content_threshold"`
-	Weights              weightsDTO `json:"weights"`
+	HnRWindowDays int        `json:"hnr_window_days"`
+	Weights       weightsDTO `json:"weights"`
 }
 
 type weightsDTO struct {
@@ -93,8 +92,7 @@ type diskPressureDTO struct {
 
 func scoringToDTO(s config.ScoringConfig) scoringDTO {
 	return scoringDTO{
-		HnRWindowDays:        s.HnRWindowDays,
-		RareContentThreshold: s.RareContentThreshold,
+		HnRWindowDays: s.HnRWindowDays,
 		Weights: weightsDTO{
 			RatioObligationMet: s.Weights.RatioObligationMet,
 			UploadVelocityInv:  s.Weights.UploadVelocityInv,

@@ -172,9 +172,6 @@ func applyScoringDefaults(s *ScoringConfig) {
 	if s.HnRWindowDays == 0 {
 		s.HnRWindowDays = defaultHnRWindowDays
 	}
-	if s.RareContentThreshold == 0 {
-		s.RareContentThreshold = defaultRareThreshold
-	}
 	if s.TrackerDeadGrace == 0 {
 		s.TrackerDeadGrace = defaultTrackerDeadGrace
 	}

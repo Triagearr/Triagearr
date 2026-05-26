@@ -18,26 +18,37 @@ func ptr(t time.Time) *time.Time { return &t }
 
 func TestFactor_RatioObligation(t *testing.T) {
 	const w = 50.0
-	policy := config.TrackerPolicy{MinSeedDays: 7, MinRatio: 1.0}
+	policy := effectivePolicy{MinSeedDays: 7, MinRatio: 1.0, RareThreshold: 3}
 
 	cases := []struct {
 		name   string
 		t      store.ScoringTorrent
 		ratio  float64
-		policy config.TrackerPolicy
+		policy effectivePolicy
+		alive  bool
 		want   Factor
 	}{
 		{
 			name:  "public_gates_to_zero",
 			t:     store.ScoringTorrent{Hash: "h", Private: false, AddedOn: fixedNow.Add(-30 * 24 * time.Hour)},
 			ratio: 5.0,
+			alive: true,
 			want:  Factor{Name: FactorRatioObligation, Weight: w, Gate: GatePublic},
+		},
+		{
+			name:   "private_all_trackers_dead_degraded",
+			t:      store.ScoringTorrent{Hash: "h", Private: true, AddedOn: fixedNow.Add(-30 * 24 * time.Hour)},
+			ratio:  5.0,
+			policy: policy,
+			alive:  false,
+			want:   Factor{Name: FactorRatioObligation, Weight: w, Gate: GateAllDead},
 		},
 		{
 			name:   "private_obligation_met",
 			t:      store.ScoringTorrent{Hash: "h", Private: true, AddedOn: fixedNow.Add(-30 * 24 * time.Hour)},
 			ratio:  1.5,
 			policy: policy,
+			alive:  true,
 			want:   Factor{Name: FactorRatioObligation, Value: 1.0, Weight: w, Contribution: w},
 		},
 		{
@@ -45,6 +56,7 @@ func TestFactor_RatioObligation(t *testing.T) {
 			t:      store.ScoringTorrent{Hash: "h", Private: true, AddedOn: fixedNow.Add(-30 * 24 * time.Hour)},
 			ratio:  0.5,
 			policy: policy,
+			alive:  true,
 			want:   Factor{Name: FactorRatioObligation, Weight: w},
 		},
 		{
@@ -52,6 +64,7 @@ func TestFactor_RatioObligation(t *testing.T) {
 			t:      store.ScoringTorrent{Hash: "h", Private: true, AddedOn: fixedNow.Add(-3 * 24 * time.Hour)},
 			ratio:  2.0,
 			policy: policy,
+			alive:  true,
 			want:   Factor{Name: FactorRatioObligation, Weight: w},
 		},
 		{
@@ -59,12 +72,13 @@ func TestFactor_RatioObligation(t *testing.T) {
 			t:      store.ScoringTorrent{Hash: "h", Private: true, AddedOn: fixedNow.Add(-30 * 24 * time.Hour), CompletionOn: ptr(fixedNow.Add(-3 * 24 * time.Hour))},
 			ratio:  2.0,
 			policy: policy,
+			alive:  true,
 			want:   Factor{Name: FactorRatioObligation, Weight: w},
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := factorRatioObligation(c.t, c.ratio, c.policy, fixedNow, w)
+			got := factorRatioObligation(c.t, c.ratio, c.policy, c.alive, fixedNow, w)
 			require.Equal(t, c.want, got)
 		})
 	}
@@ -193,17 +207,39 @@ func TestAnyTrackerAlive(t *testing.T) {
 func TestTrackerPolicyFor_StrictestWins(t *testing.T) {
 	threshold5 := 5
 	threshold2 := 2
-	cfg := config.ScoringConfig{
-		PerTracker: map[string]config.TrackerPolicy{
-			"a": {MinSeedDays: 7, MinRatio: 1.0, RareThreshold: &threshold5},
-			"b": {MinSeedDays: 14, MinRatio: 0.5, RareThreshold: &threshold2},
-		},
+	defaults := triagearr.ScoringDefaults{MinRatio: 1.0, MinSeedDays: 30, RareThreshold: 3}
+	overrides := map[string]triagearr.TrackerPolicy{
+		"a": {TrackerHost: "a", MinSeedDays: 7, MinRatio: 1.0, RareThreshold: &threshold5, Enabled: true},
+		"b": {TrackerHost: "b", MinSeedDays: 14, MinRatio: 0.5, RareThreshold: &threshold2, Enabled: true},
 	}
-	got := trackerPolicyFor([]trackerView{{Host: "a"}, {Host: "b"}}, cfg)
+	got := trackerPolicyFor([]trackerView{{Host: "a"}, {Host: "b"}}, defaults, overrides)
 	require.Equal(t, 14, got.MinSeedDays)
 	require.Equal(t, 1.0, got.MinRatio)
-	require.NotNil(t, got.RareThreshold)
-	require.Equal(t, 2, *got.RareThreshold, "min(rare_threshold) is strictest")
+	require.Equal(t, 2, got.RareThreshold, "min(rare_threshold) is strictest")
+}
+
+func TestTrackerPolicyFor_DefaultsForUnconfiguredHost(t *testing.T) {
+	defaults := triagearr.ScoringDefaults{MinRatio: 1.0, MinSeedDays: 30, RareThreshold: 3}
+	got := trackerPolicyFor([]trackerView{{Host: "unknown.example"}}, defaults, nil)
+	require.Equal(t, 30, got.MinSeedDays, "unconfigured host must fall back to the conservative default, not 0")
+	require.Equal(t, 1.0, got.MinRatio)
+	require.Equal(t, 3, got.RareThreshold)
+}
+
+func TestTrackerPolicyFor_DisabledOverrideFallsBackToDefaults(t *testing.T) {
+	threshold5 := 5
+	defaults := triagearr.ScoringDefaults{MinRatio: 1.0, MinSeedDays: 30, RareThreshold: 3}
+	overrides := map[string]triagearr.TrackerPolicy{
+		// A disabled row should be ignored — the scorer load step already
+		// filters disabled policies out before they reach trackerPolicyFor, so
+		// here the map is empty. This test guards trackerPolicyFor's behavior
+		// when the map happens to be empty for the host.
+		"other": {TrackerHost: "other", MinSeedDays: 7, MinRatio: 2.0, RareThreshold: &threshold5, Enabled: true},
+	}
+	got := trackerPolicyFor([]trackerView{{Host: "ygg.example"}}, defaults, overrides)
+	require.Equal(t, 30, got.MinSeedDays)
+	require.Equal(t, 1.0, got.MinRatio)
+	require.Equal(t, 3, got.RareThreshold)
 }
 
 func TestEvaluateExclusions(t *testing.T) {

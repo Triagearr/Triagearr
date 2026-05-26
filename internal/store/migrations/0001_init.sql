@@ -171,6 +171,33 @@ CREATE TABLE disk_pressure (
 -- Scoring
 ------------------------------------------------------------------------------
 
+-- Per-tracker policy + global defaults (ADR-0026). Replaces the YAML
+-- scoring.per_tracker block. The defaults row is forced singleton (id=1) and
+-- seeded with conservative values so an unconfigured private tracker does
+-- *not* auto-pass Factor 1's ratio/seed obligation.
+CREATE TABLE scoring_defaults (
+    id             INTEGER   PRIMARY KEY CHECK (id = 1),
+    min_ratio      REAL      NOT NULL DEFAULT 1.0,
+    min_seed_days  INTEGER   NOT NULL DEFAULT 30,
+    rare_threshold INTEGER   NOT NULL DEFAULT 3,
+    updated_at     TIMESTAMP NOT NULL
+);
+INSERT INTO scoring_defaults(id, min_ratio, min_seed_days, rare_threshold, updated_at)
+VALUES (1, 1.0, 30, 3, CURRENT_TIMESTAMP);
+
+-- tracker_host is the natural key (matches torrent_trackers.tracker_host).
+-- enabled=0 makes the lookup ignore the row and fall through to defaults —
+-- handy to "temporarily silence" a configured tracker without losing its
+-- values (e.g. while the tracker is dead).
+CREATE TABLE tracker_policies (
+    tracker_host   TEXT      PRIMARY KEY,
+    min_ratio      REAL      NOT NULL,
+    min_seed_days  INTEGER   NOT NULL,
+    rare_threshold INTEGER,
+    enabled        INTEGER   NOT NULL DEFAULT 1,
+    updated_at     TIMESTAMP NOT NULL
+) WITHOUT ROWID;
+
 -- The partial index serves the Decider's hot path: eligible candidates ranked
 -- by score. factors_json is the breakdown read whole by the explain path.
 CREATE TABLE scores (

@@ -44,7 +44,6 @@ scoring:
     age_days: 0.1
     seeders_low_guard: -1000
     swarm_health_bonus: 5
-  rare_content_threshold: 3
   hnr_window_days: 14
 polling:
   qbit_interval: 30m

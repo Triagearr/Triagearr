@@ -71,40 +71,57 @@ func allTrackersDeadSustained(trackers []trackerView, now time.Time, grace time.
 	return true
 }
 
-// trackerPolicyFor returns the per-tracker overrides for a torrent. When the
-// torrent has multiple trackers, the strictest policy wins:
-// max(min_seed_days), max(min_ratio), min(rare_threshold). This matches what
-// a cautious user would expect: meet the toughest demand to be safe.
-func trackerPolicyFor(trackers []trackerView, cfg config.ScoringConfig) config.TrackerPolicy {
-	out := config.TrackerPolicy{}
+// effectivePolicy is the per-torrent resolved policy after defaults +
+// per-tracker overrides have been merged. Always fully populated — callers
+// never deal with nil RareThreshold.
+type effectivePolicy struct {
+	MinRatio      float64
+	MinSeedDays   int
+	RareThreshold int
+}
+
+// trackerPolicyFor returns the effective policy for a torrent's trackers.
+// When the torrent has multiple trackers, the strictest policy wins:
+// max(min_seed_days), max(min_ratio), min(rare_threshold). Missing or
+// disabled tracker_policies rows fall back to the supplied defaults, so an
+// unconfigured tracker does not silently auto-pass Factor 1 (ADR-0026).
+func trackerPolicyFor(trackers []trackerView, defaults triagearr.ScoringDefaults, overrides map[string]triagearr.TrackerPolicy) effectivePolicy {
+	if len(trackers) == 0 {
+		return effectivePolicy{
+			MinRatio:      defaults.MinRatio,
+			MinSeedDays:   defaults.MinSeedDays,
+			RareThreshold: defaults.RareThreshold,
+		}
+	}
+	var out effectivePolicy
 	for _, t := range trackers {
-		p, ok := cfg.PerTracker[t.Host]
-		if !ok {
-			continue
-		}
-		if p.MinSeedDays > out.MinSeedDays {
-			out.MinSeedDays = p.MinSeedDays
-		}
-		if p.MinRatio > out.MinRatio {
-			out.MinRatio = p.MinRatio
-		}
-		if p.RareThreshold != nil {
-			if out.RareThreshold == nil || *p.RareThreshold < *out.RareThreshold {
-				v := *p.RareThreshold
-				out.RareThreshold = &v
+		var perTracker effectivePolicy
+		if p, ok := overrides[t.Host]; ok && p.Enabled {
+			perTracker.MinRatio = p.MinRatio
+			perTracker.MinSeedDays = p.MinSeedDays
+			if p.RareThreshold != nil {
+				perTracker.RareThreshold = *p.RareThreshold
+			} else {
+				perTracker.RareThreshold = defaults.RareThreshold
 			}
+		} else {
+			perTracker = effectivePolicy{
+				MinRatio:      defaults.MinRatio,
+				MinSeedDays:   defaults.MinSeedDays,
+				RareThreshold: defaults.RareThreshold,
+			}
+		}
+		if perTracker.MinSeedDays > out.MinSeedDays {
+			out.MinSeedDays = perTracker.MinSeedDays
+		}
+		if perTracker.MinRatio > out.MinRatio {
+			out.MinRatio = perTracker.MinRatio
+		}
+		if out.RareThreshold == 0 || perTracker.RareThreshold < out.RareThreshold {
+			out.RareThreshold = perTracker.RareThreshold
 		}
 	}
 	return out
-}
-
-// effectiveRareThreshold falls back to the global default when no per-tracker
-// override claims a stricter value.
-func effectiveRareThreshold(policy config.TrackerPolicy, cfg config.ScoringConfig) int {
-	if policy.RareThreshold != nil {
-		return *policy.RareThreshold
-	}
-	return cfg.RareContentThreshold
 }
 
 // seedStart returns CompletionOn when set, falling back to AddedOn. Used by
@@ -120,11 +137,19 @@ func seedStart(t store.ScoringTorrent) time.Time {
 // Factor implementations — pure functions over already-fetched inputs.
 // -----------------------------------------------------------------------------
 
-// factorRatioObligation: gated on private=true. SCORING.md §Factor 1.
-func factorRatioObligation(t store.ScoringTorrent, ratio float64, policy config.TrackerPolicy, now time.Time, w float64) Factor {
+// factorRatioObligation: gated on private=true AND any_tracker_alive.
+// SCORING.md §Factor 1.
+func factorRatioObligation(t store.ScoringTorrent, ratio float64, policy effectivePolicy, anyAlive bool, now time.Time, w float64) Factor {
 	f := Factor{Name: FactorRatioObligation, Weight: w}
 	if !t.Private {
 		f.Gate = GatePublic
+		return f
+	}
+	if !anyAlive {
+		// Dead-tracker degradation: no live counterparty means the obligation
+		// is moot — neither reward nor penalty applies. Symmetric with the HnR
+		// veto's GateAllDead handling (Factor 6) and the seeders guard (Factor 4).
+		f.Gate = GateAllDead
 		return f
 	}
 	seedDays := now.Sub(seedStart(t)).Hours() / 24.0

@@ -70,12 +70,13 @@ type ActionConfig struct {
 
 // ScoringConfig drives the M3 scorer. Weights come from SCORING.md;
 // HnR window weight is hard-coded (-10000) per the safety contract.
+//
+// Per-tracker policy and the rare-content default were moved out of YAML
+// into the database (ADR-0026): see tracker_policies + scoring_defaults.
 type ScoringConfig struct {
-	HnRWindowDays        int                      `koanf:"hnr_window_days"`
-	RareContentThreshold int                      `koanf:"rare_content_threshold"`
-	TrackerDeadGrace     time.Duration            `koanf:"tracker_dead_grace"`
-	Weights              ScoringWeights           `koanf:"weights"`
-	PerTracker           map[string]TrackerPolicy `koanf:"per_tracker"`
+	HnRWindowDays    int            `koanf:"hnr_window_days"`
+	TrackerDeadGrace time.Duration  `koanf:"tracker_dead_grace"`
+	Weights          ScoringWeights `koanf:"weights"`
 }
 
 // ScoringWeights holds the tunable per-factor weights.
@@ -86,14 +87,6 @@ type ScoringWeights struct {
 	SeedersLowGuard    float64 `koanf:"seeders_low_guard"`
 	SwarmHealthBonus   float64 `koanf:"swarm_health_bonus"`
 	TrackerDeadBonus   float64 `koanf:"tracker_dead_bonus"`
-}
-
-// TrackerPolicy overrides the global scoring rules for one tracker_host.
-// A nil RareThreshold falls back to ScoringConfig.RareContentThreshold.
-type TrackerPolicy struct {
-	MinSeedDays   int     `koanf:"min_seed_days"`
-	MinRatio      float64 `koanf:"min_ratio"`
-	RareThreshold *int    `koanf:"rare_threshold"`
 }
 
 // HTTPConfig configures the HTTP API. The API key is NOT a config field:
@@ -315,7 +308,6 @@ const (
 	defaultRetentionTorrents    = 7 * 24 * time.Hour
 	defaultVacuumMinReclaimMB   = int64(50)
 	defaultHnRWindowDays        = 14
-	defaultRareThreshold        = 3
 	defaultTrackerDeadGrace     = 7 * 24 * time.Hour
 	defaultWeightRatioObl       = 50.0
 	defaultWeightVelocityInv    = 30.0

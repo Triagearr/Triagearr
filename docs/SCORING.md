@@ -21,7 +21,8 @@ For every torrent, the scorer reads:
 | `snapshots_daily` (last 365d) | aggregates | long-term trends |
 | `media` (joined via `arr_imports` per ADR-0012) | tags, *arr type, monitor status | exclusion filters |
 | `arr_connections` (ADR-0022) | per-kind tags_exclude, categories_only | exclusion filters |
-| `scoring.per_tracker` config | min_seed_days, min_ratio, rare_threshold | tracker-specific rules (keyed on tracker_host) |
+| `tracker_policies` table (ADR-0026) | min_seed_days, min_ratio, rare_threshold | per-tracker overrides (keyed on tracker_host) |
+| `scoring_defaults` table (ADR-0026) | min_ratio, min_seed_days, rare_threshold | conservative fallback when a tracker has no override |
 | filesystem | torrent age (added_on / completion_on), last_activity_on | core math |
 
 ## The formula
@@ -37,13 +38,17 @@ where each factor = weight × value, computed as follows:
 ```
 if NOT torrent.private:
     value = 0            (public trackers have no enforceable ratio obligation)
+elif NOT any_tracker_alive:
+    value = 0            (no live counterparty — obligation is moot)
 else:
-    value  = 1.0 if (ratio ≥ min_ratio_for_tracker) AND (seed_days ≥ min_seed_days_for_tracker)
+    value  = 1.0 if (ratio ≥ effective_min_ratio) AND (seed_days ≥ effective_min_seed_days)
            = 0.0 otherwise
 weight = scoring.weights.ratio_obligation_met   (default +50)
 ```
 
-Boolean, **gated on `private:true`**. Public trackers don't enforce ratio (no account, no penalty), so satisfying or not satisfying a ratio on a public torrent has no economic meaning — this factor contributes 0. For private torrents, either we've met the tracker's stated requirements or we haven't. When unmet, this factor contributes 0 (not a penalty — penalty comes from other factors).
+Boolean, with two gates: **`private:true`** and **`any_tracker_alive`**. Public trackers don't enforce ratio (no account, no penalty), so the factor is inert on them. Symmetrically, when every tracker on a private torrent reports `status=4 (not_working)` the obligation has no counterparty to enforce it — the factor degrades to 0 (same logic as Factor 6's HnR degradation). For live-tracker private torrents, either we've met the tracker's stated requirements or we haven't. When unmet, this factor contributes 0 (not a penalty — penalty comes from other factors).
+
+**Effective policy** (ADR-0026). `effective_min_ratio` and `effective_min_seed_days` come from the `tracker_policies` table when an enabled row exists for the torrent's tracker host; otherwise they fall back to the `scoring_defaults` singleton (default `min_ratio = 1.0`, `min_seed_days = 30` — deliberately conservative so that an unconfigured tracker does *not* hand out the +50 for free). When a torrent has multiple trackers, the strictest-wins rule applies (max ratio, max seed_days). Policies are edited from the UI (Settings → Scoring), never from YAML.
 
 ### Factor 2 — Upload velocity (inverse)
 
@@ -132,13 +137,19 @@ A torrent whose every tracker has been unreachable for at least `tracker_dead_gr
 
 ### Factor 8 — Exclusion overrides
 
-If the torrent matches any of:
-- `qbit.category_exclude` category
-- `qbit.tags_exclude` tag
-- Linked media has `arrs.*.tags_exclude` *arr tag
-- *arr media `monitored: false` AND user enabled "skip unmonitored"
+A torrent is marked excluded if it matches any of:
 
-Then the torrent is **filtered out before scoring** — it doesn't appear in candidates at all. No score is computed.
+| Source | Reason tag |
+|---|---|
+| `torrents.protected = 1` (UI per-torrent toggle, survives qBit re-sync) | `triagearr_protected` |
+| `qbit.category_exclude` category | `qbit_category:<cat>` |
+| `qbit.tags_exclude` tag | `qbit_tag:<tag>` |
+| Linked media has `arrs.<kind>.tags_exclude` *arr tag | `arr_tag:<tag>` |
+| *arr media `monitored: false` AND user enabled "skip unmonitored" | `arr_unmonitored` |
+
+The scorer **still computes all factors** for excluded torrents (so the UI can surface "this would score +60 but is protected"). Exclusion is enforced by the Decider, which drops these torrents from the candidate set before action. No deletion can target an excluded torrent.
+
+The `triagearr_protected` flag is a user-driven, per-torrent override stored in `torrents.protected` / `torrents.protected_at`. It is deliberately preserved across qBit re-syncs (the UPSERT excludes the `protected*` columns) so the UI toggle is sticky.
 
 ## Worked example
 
@@ -212,7 +223,7 @@ Same torrent as C, but the private tracker has been offline for 30+ days. `any_t
 
 | Factor | Value | Weight | Contribution |
 |---|---|---|---|
-| Ratio obligation met | 0 (no live counterparty to honor) | +50 | 0 |
+| Ratio obligation met | 0 (gate: not any_tracker_alive) | +50 | 0 |
 | Velocity inverse | 1.0 (no uploads — dead swarm) | +30 | **+30** |
 | Age | 120 | +0.1 | +12 |
 | Rare guard | 0 (gate: not any_tracker_alive) | n/a | **0** |
@@ -295,8 +306,8 @@ The UI renders this as a horizontal bar chart with positive/negative contributio
 
 ## Tuning advice
 
-- **Too aggressive (deletes good seeds)?** Increase `rare_content_threshold`, increase `seeders_low_guard` magnitude.
-- **Too conservative (never deletes anything)?** Decrease `upload_velocity_inv` weight; check if HnR window is excessively long; check tracker `min_seed_days` config.
+- **Too aggressive (deletes good seeds)?** Increase the global `rare_threshold` in `scoring_defaults` (or per-tracker), increase `seeders_low_guard` magnitude.
+- **Too conservative (never deletes anything)?** Decrease `upload_velocity_inv` weight; check if HnR window is excessively long; check the per-tracker `min_seed_days` and `min_ratio` in `tracker_policies` (or the conservative defaults — 1.0 / 30 days — may be biting on freshly-grabbed torrents).
 - **Want age to matter more?** Bump `age_days` weight to 0.5 or 1.0.
 - **Want to favor older content harshly?** Add an exponential age factor in V2 (`age_days_exp` with default 0, optional).
 

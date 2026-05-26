@@ -67,7 +67,11 @@ func (s *Scorer) ScoreOne(ctx context.Context, hash triagearr.Hash) (Breakdown, 
 	if err != nil {
 		return Breakdown{}, err
 	}
-	b, err := s.scoreInputs(ctx, t, snaps, globalAvg)
+	defaults, policyByHost, err := s.loadScoringPolicies(ctx)
+	if err != nil {
+		return Breakdown{}, err
+	}
+	b, err := s.scoreInputs(ctx, t, snaps, globalAvg, defaults, policyByHost)
 	if err != nil {
 		return Breakdown{}, err
 	}
@@ -75,6 +79,30 @@ func (s *Scorer) ScoreOne(ctx context.Context, hash triagearr.Hash) (Breakdown, 
 		return b, err
 	}
 	return b, nil
+}
+
+// loadScoringPolicies fetches the singleton defaults and the per-tracker
+// override rows once per scoring pass. The returned map is keyed by
+// tracker_host and contains only enabled rows — the lookup in
+// trackerPolicyFor treats a missing host as "fall back to defaults" so
+// disabled rows are filtered out at load time, not at lookup time.
+func (s *Scorer) loadScoringPolicies(ctx context.Context) (triagearr.ScoringDefaults, map[string]triagearr.TrackerPolicy, error) {
+	defaults, err := s.store.GetScoringDefaults(ctx)
+	if err != nil {
+		return triagearr.ScoringDefaults{}, nil, fmt.Errorf("loading scoring defaults: %w", err)
+	}
+	policies, err := s.store.ListTrackerPolicies(ctx)
+	if err != nil {
+		return triagearr.ScoringDefaults{}, nil, fmt.Errorf("loading tracker policies: %w", err)
+	}
+	by := make(map[string]triagearr.TrackerPolicy, len(policies))
+	for _, p := range policies {
+		if !p.Enabled {
+			continue
+		}
+		by[p.TrackerHost] = p
+	}
+	return defaults, by, nil
 }
 
 // ScoreAllStats summarises one ScoreAll pass for the loop logger.
@@ -125,6 +153,10 @@ func (s *Scorer) ScoreAll(ctx context.Context) (ScoreAllStats, error) {
 	if err != nil {
 		return stats, fmt.Errorf("prefetch linked media: %w", err)
 	}
+	defaults, policyByHost, err := s.loadScoringPolicies(ctx)
+	if err != nil {
+		return stats, err
+	}
 
 	// Pass 2: evaluate factors against the cached stats.
 	for _, t := range torrents {
@@ -136,7 +168,7 @@ func (s *Scorer) ScoreAll(ctx context.Context) (ScoreAllStats, error) {
 			// Pass-1 error already counted; skip rather than double-count.
 			continue
 		}
-		b, err := s.scoreWithPrefetched(t, sn, globalAvg, trackersByHash[t.Hash], linkedByHash[t.Hash])
+		b, err := s.scoreWithPrefetched(t, sn, globalAvg, trackersByHash[t.Hash], linkedByHash[t.Hash], defaults, policyByHost)
 		if err != nil {
 			slog.Warn("scoring torrent failed", "hash", t.Hash, "err", err)
 			stats.Errors++
@@ -222,7 +254,7 @@ func globalAvgFromStats(by map[string]store.SnapshotStats) float64 {
 // them per torrent — the caller is responsible for loading them once. This
 // fetches trackers + linked media individually; ScoreAll prefers
 // scoreWithPrefetched to avoid the per-torrent round-trip.
-func (s *Scorer) scoreInputs(ctx context.Context, t store.ScoringTorrent, snaps store.SnapshotStats, globalAvg float64) (Breakdown, error) {
+func (s *Scorer) scoreInputs(ctx context.Context, t store.ScoringTorrent, snaps store.SnapshotStats, globalAvg float64, defaults triagearr.ScoringDefaults, policyByHost map[string]triagearr.TrackerPolicy) (Breakdown, error) {
 	trackerRows, err := s.store.ListTrackers(ctx, triagearr.Hash(t.Hash))
 	if err != nil {
 		return Breakdown{}, fmt.Errorf("loading trackers: %w", err)
@@ -231,25 +263,25 @@ func (s *Scorer) scoreInputs(ctx context.Context, t store.ScoringTorrent, snaps 
 	if err != nil {
 		return Breakdown{}, fmt.Errorf("loading linked media: %w", err)
 	}
-	return s.scoreWithPrefetched(t, snaps, globalAvg, trackerRows, linked)
+	return s.scoreWithPrefetched(t, snaps, globalAvg, trackerRows, linked, defaults, policyByHost)
 }
 
 // scoreWithPrefetched is the pure factor-evaluation path used by ScoreAll
-// once trackers + linked media have been bulk-loaded.
-func (s *Scorer) scoreWithPrefetched(t store.ScoringTorrent, snaps store.SnapshotStats, globalAvg float64, trackerRows []store.TrackerRow, linked []store.LinkedMedia) (Breakdown, error) {
+// once trackers + linked media have been bulk-loaded. defaults and policyByHost
+// are loaded once per pass and shared across torrents.
+func (s *Scorer) scoreWithPrefetched(t store.ScoringTorrent, snaps store.SnapshotStats, globalAvg float64, trackerRows []store.TrackerRow, linked []store.LinkedMedia, defaults triagearr.ScoringDefaults, policyByHost map[string]triagearr.TrackerPolicy) (Breakdown, error) {
 	now := s.now()
 	trackers := trackerViewsFromRows(trackerRows)
 
 	alive := anyTrackerAlive(trackers)
-	policy := trackerPolicyFor(trackers, s.cfg)
-	rareThreshold := effectiveRareThreshold(policy, s.cfg)
+	policy := trackerPolicyFor(trackers, defaults, policyByHost)
 
 	w := s.cfg.Weights
 	factors := []Factor{
-		factorRatioObligation(t, snaps.LatestRatio, policy, now, w.RatioObligationMet),
+		factorRatioObligation(t, snaps.LatestRatio, policy, alive, now, w.RatioObligationMet),
 		factorVelocityInv(snaps.VelocityBytesPerDay, globalAvg, w.UploadVelocityInv),
 		factorAge(t, now, w.AgeDays),
-		factorSeedersGuard(snaps.SeedersAvg7d, rareThreshold, alive, w.SeedersLowGuard),
+		factorSeedersGuard(snaps.SeedersAvg7d, policy.RareThreshold, alive, w.SeedersLowGuard),
 		factorSwarmBonus(snaps.SeedersAvg7d, w.SwarmHealthBonus),
 		factorHnRVeto(t, alive, s.cfg.HnRWindowDays, now),
 		factorTrackerDead(trackers, now, s.cfg.TrackerDeadGrace, w.TrackerDeadBonus),

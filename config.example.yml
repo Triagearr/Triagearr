@@ -147,19 +147,13 @@ scoring:
     swarm_health_bonus:    +5
     # hnr_window is a hard non-configurable veto (-10000), see SCORING.md
 
-  rare_content_threshold: 3        # global default (per-tracker can override)
   hnr_window_days: 14              # never act within this window of torrent added
 
-  per_tracker:
-    # Replace with your actual tracker hostnames.
-    "your-private-tracker.example.org":
-      min_seed_days: 30
-      min_ratio: 1.0
-      rare_threshold: 5            # private trackers: more conservative
-    "public-tracker.example":
-      min_seed_days: 0
-      min_ratio: 0.0
-      rare_threshold: 0
+  # Per-tracker policy + the rare-content default now live in the database
+  # (ADR-0026) and are edited from the dashboard (Settings → Scoring). The
+  # YAML `per_tracker` / `rare_content_threshold` blocks are removed; the
+  # defaults are seeded on first boot with conservative values:
+  #   min_ratio = 1.0, min_seed_days = 30, rare_threshold = 3.
 
 # -----------------------------------------------------------------------------
 # Triggers

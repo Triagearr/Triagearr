@@ -285,7 +285,6 @@ export const ScoringWeights = z.object({
 });
 export const ScoringSettings = z.object({
   weights: ScoringWeights.optional(),
-  rare_content_threshold: z.number().optional(),
   hnr_window_days: z.number().optional(),
 });
 export const PollingSettings = z.object({
@@ -371,3 +370,32 @@ export const TorrentClientConnectionList = z.object({
   connections: z.array(TorrentClientConnection).nullable(),
 });
 export type TorrentClientConnectionT = z.infer<typeof TorrentClientConnection>;
+
+// --- Scoring defaults + tracker policies (ADR-0026) ----------------------
+
+export const ScoringDefaults = z.object({
+  min_ratio: z.number(),
+  min_seed_days: z.number(),
+  rare_threshold: z.number(),
+});
+export type ScoringDefaultsT = z.infer<typeof ScoringDefaults>;
+
+export const TrackerPolicy = z.object({
+  tracker_host: z.string(),
+  min_ratio: z.number(),
+  min_seed_days: z.number(),
+  rare_threshold: z.number().nullable(),
+  enabled: z.boolean(),
+});
+export type TrackerPolicyT = z.infer<typeof TrackerPolicy>;
+
+export const TrackerHostStat = z.object({
+  tracker_host: z.string(),
+  torrent_count: z.number(),
+  any_alive: z.boolean(),
+  all_dead: z.boolean(),
+  policy: TrackerPolicy.nullable().optional(),
+});
+export type TrackerHostStatT = z.infer<typeof TrackerHostStat>;
+
+export const TrackerHostStatList = z.array(TrackerHostStat);

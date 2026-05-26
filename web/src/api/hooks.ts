@@ -17,6 +17,9 @@ import {
   RunList,
   RunResponse,
   ScoreList,
+  ScoringDefaults,
+  TrackerPolicy,
+  TrackerHostStatList,
   SessionStatus,
   SimpleStatus,
   Summary,
@@ -47,6 +50,8 @@ export const queryKeys = {
   arrs: ["arrs"] as const,
   arrConnections: ["arr-connections"] as const,
   torrentClientConnections: ["torrent-client-connections"] as const,
+  scoringDefaults: ["scoring", "defaults"] as const,
+  trackerPolicies: ["scoring", "tracker-policies"] as const,
   config: ["config"] as const,
   settings: ["settings"] as const,
 };
@@ -476,6 +481,74 @@ export const useCreateTorrentClientConnection = torrentConnHooks.useCreate;
 export const useUpdateTorrentClientConnection = torrentConnHooks.useUpdate;
 export const useDeleteTorrentClientConnection = torrentConnHooks.useDelete;
 export const useTestTorrentClientConnection = torrentConnHooks.useTest;
+
+// --- Scoring defaults + tracker policies (ADR-0026) ----------------------
+
+export function useScoringDefaults() {
+  return useQuery({
+    queryKey: queryKeys.scoringDefaults,
+    queryFn: () => apiFetch("/api/v1/scoring/defaults", ScoringDefaults),
+  });
+}
+
+export function useUpdateScoringDefaults() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: z.infer<typeof ScoringDefaults>) =>
+      apiFetchVoid("/api/v1/scoring/defaults", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.scoringDefaults });
+      qc.invalidateQueries({ queryKey: queryKeys.trackerPolicies });
+      qc.invalidateQueries({ queryKey: queryKeys.scores });
+    },
+  });
+}
+
+export function useTrackerPolicies() {
+  return useQuery({
+    queryKey: queryKeys.trackerPolicies,
+    queryFn: () => apiFetch("/api/v1/scoring/tracker-policies", TrackerHostStatList),
+  });
+}
+
+export type TrackerPolicyInput = {
+  min_ratio: number;
+  min_seed_days: number;
+  rare_threshold: number | null;
+  enabled: boolean;
+};
+
+export function useUpsertTrackerPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ host, input }: { host: string; input: TrackerPolicyInput }) =>
+      apiFetch(`/api/v1/scoring/tracker-policies/${encodeURIComponent(host)}`, TrackerPolicy, {
+        method: "PUT",
+        body: JSON.stringify({ tracker_host: host, ...input }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.trackerPolicies });
+      qc.invalidateQueries({ queryKey: queryKeys.scores });
+    },
+  });
+}
+
+export function useDeleteTrackerPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (host: string) =>
+      apiFetchVoid(`/api/v1/scoring/tracker-policies/${encodeURIComponent(host)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.trackerPolicies });
+      qc.invalidateQueries({ queryKey: queryKeys.scores });
+    },
+  });
+}
 
 export function useTriggerRun() {
   const qc = useQueryClient();

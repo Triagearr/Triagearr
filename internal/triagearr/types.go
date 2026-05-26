@@ -142,8 +142,8 @@ func (s TrackerStatus) String() string {
 }
 
 // TrackerInfo is one tracker attached to a torrent. The host is parsed from
-// the URL to match `scoring.per_tracker` policy keys; the scorer (M3) reads
-// the parsed host, not the raw URL.
+// the URL to match the `tracker_policies` table (ADR-0026); the scorer (M3)
+// reads the parsed host, not the raw URL.
 type TrackerInfo struct {
 	URL    string
 	Host   string
@@ -178,6 +178,34 @@ type DiskUsage struct {
 	UsedBytes   uint64
 	FreeBytes   uint64
 	FreePercent float64
+}
+
+// ScoringDefaults is the singleton fallback policy applied when a torrent's
+// tracker has no override row in TrackerPolicy. Conservative by design: an
+// unconfigured private tracker must satisfy a meaningful ratio + seed-time
+// obligation before Factor 1 credits the +50 (ADR-0026).
+type ScoringDefaults struct {
+	MinRatio      float64
+	MinSeedDays   int
+	RareThreshold int
+	UpdatedAt     time.Time
+}
+
+// TrackerPolicy is one per-tracker_host override for Factor 1's ratio
+// obligation and Factor 4's rare-content threshold. Stored in the
+// tracker_policies table (ADR-0026), edited from the UI. Disabled rows are
+// ignored at lookup time and the ScoringDefaults apply instead.
+//
+// RareThreshold is nullable in the DB: nil means "inherit the default", a
+// concrete value means "this tracker's swarm health is judged against this
+// number instead of the default".
+type TrackerPolicy struct {
+	TrackerHost   string
+	MinRatio      float64
+	MinSeedDays   int
+	RareThreshold *int
+	Enabled       bool
+	UpdatedAt     time.Time
 }
 
 // TorrentClient abstracts the download client (qBittorrent today; Deluge,
