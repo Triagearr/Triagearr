@@ -2,3 +2,5 @@ node_modules
 dist/assets
 .vite
 *.local
+src/paraglide
+project.inlang/cache

@@ -4,6 +4,7 @@ import { useDeferredValue, useState } from "react";
 import { useTorrentCategories, useTorrents } from "@/api/hooks";
 import { TorrentDrawer } from "@/components/TorrentDrawer";
 import { humanBytes, relativeTime, shortHash } from "@/lib/format";
+import { m } from "@/paraglide/messages";
 
 type TorrentsSearch = { detail?: string };
 type Order = "asc" | "desc";
@@ -84,16 +85,16 @@ function TorrentsPage() {
     <div style={{ display: "contents" }}>
       {/* Topbar */}
       <div className="topbar">
-        <div className="topbar-title">Torrents</div>
+        <div className="topbar-title">{m.torrents_title()}</div>
         <div className="topbar-sub">
-          {list.data ? `${total.toLocaleString()} total · showing ${shown}` : "Loading…"}
+          {list.data ? m.torrents_total_showing({ total: total.toLocaleString(), shown }) : m.common_loading()}
         </div>
         <div className="topbar-right">
           <button className="btn btn-sm" onClick={() => list.refetch()}>
-            <RefreshCw size={12} /> Re-score
+            <RefreshCw size={12} /> {m.torrents_rescore()}
           </button>
           <button className="btn btn-sm">
-            <Download size={12} /> Export CSV
+            <Download size={12} /> {m.torrents_export_csv()}
           </button>
         </div>
       </div>
@@ -107,7 +108,7 @@ function TorrentsPage() {
             <input
               className="ds-input"
               style={{ paddingLeft: 28, fontSize: 12 }}
-              placeholder="Search name or hash…"
+              placeholder={m.torrents_search_placeholder()}
               value={q}
               onChange={(e) => { setQ(e.target.value); setOffset(0); }}
             />
@@ -118,21 +119,21 @@ function TorrentsPage() {
             value={category}
             onChange={(e) => { setCategory(e.target.value); setOffset(0); }}
           >
-            <option value="">all categories</option>
+            <option value="">{m.torrents_all_categories()}</option>
             {cats.data?.categories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
           <label className="filter-checkbox">
             <input type="checkbox" checked={privateOnly} onChange={(e) => { setPrivateOnly(e.target.checked); setOffset(0); }} />
-            private only
+            {m.torrents_private_only()}
           </label>
           <label className="filter-checkbox">
             <input type="checkbox" checked={excludedOnly} onChange={(e) => { setExcludedOnly(e.target.checked); setOffset(0); }} />
-            excluded only
+            {m.torrents_excluded_only()}
           </label>
           <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--fg-3)" }}>
-            <kbd>/</kbd> search · <kbd>↵</kbd> open
+            <kbd>/</kbd> {m.torrents_kbd_search()} · <kbd>↵</kbd> {m.torrents_kbd_open()}
           </span>
         </div>
 
@@ -141,14 +142,14 @@ function TorrentsPage() {
           <table className="tbl">
             <thead>
               <tr>
-                <th style={{ minWidth: 260 }}>Name</th>
-                {sortTh("category", "Category", { width: 130 })}
-                {sortTh("size", "Size", { width: 90, textAlign: "right" })}
-                {sortTh("ratio", "Ratio", { width: 70, textAlign: "right" })}
-                {sortTh("seeders", "Seeders", { width: 70, textAlign: "right" })}
-                {sortTh("score", "Reap score", { width: 120, textAlign: "right" })}
-                <th style={{ width: 100 }}>State</th>
-                {sortTh("last_seen", "Last seen", { width: 90 })}
+                <th style={{ minWidth: 260 }}>{m.torrents_th_name()}</th>
+                {sortTh("category", m.torrents_th_category(), { width: 130 })}
+                {sortTh("size", m.torrents_th_size(), { width: 90, textAlign: "right" })}
+                {sortTh("ratio", m.torrents_th_ratio(), { width: 70, textAlign: "right" })}
+                {sortTh("seeders", m.torrents_th_seeders(), { width: 70, textAlign: "right" })}
+                {sortTh("score", m.torrents_th_reap_score(), { width: 120, textAlign: "right" })}
+                <th style={{ width: 100 }}>{m.torrents_th_state()}</th>
+                {sortTh("last_seen", m.torrents_th_last_seen(), { width: 90 })}
               </tr>
             </thead>
             <tbody>
@@ -162,12 +163,12 @@ function TorrentsPage() {
                     <div className="name-text">{t.name}</div>
                     <div className="name-meta">
                       {t.private
-                        ? <span className="badge"><Lock size={9} /> private</span>
-                        : <span className="badge"><Unlock size={9} /> public</span>
+                        ? <span className="badge"><Lock size={9} /> {m.torrents_badge_private()}</span>
+                        : <span className="badge"><Unlock size={9} /> {m.torrents_badge_public()}</span>
                       }
-                      {t.excluded && <span className="badge badge-warn">excluded</span>}
+                      {t.excluded && <span className="badge badge-warn">{m.torrents_badge_excluded()}</span>}
                       {t.any_tracker_alive === false && (
-                        <span className="badge badge-danger">tracker dead</span>
+                        <span className="badge badge-danger">{m.torrents_badge_tracker_dead()}</span>
                       )}
                       <span style={{ opacity: 0.6 }}>{shortHash(t.hash, 10)}</span>
                     </div>
@@ -197,7 +198,7 @@ function TorrentsPage() {
               {list.data?.torrents.length === 0 && (
                 <tr>
                   <td colSpan={8} style={{ textAlign: "center", padding: 32, color: "var(--fg-3)" }}>
-                    No torrents match these filters.
+                    {m.torrents_empty()}
                   </td>
                 </tr>
               )}
@@ -214,13 +215,13 @@ function TorrentsPage() {
           <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{total.toLocaleString()}</span>
           <div style={{ flex: 1 }} />
           <button className="btn btn-sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>
-            ← Prev
+            ← {m.torrents_prev()}
           </button>
           <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", minWidth: 60, textAlign: "center", fontSize: 11.5 }}>
             {page} / {totalPages}
           </span>
           <button className="btn btn-sm" disabled={!list.data || offset + limit >= total} onClick={() => setOffset(offset + limit)}>
-            Next →
+            {m.torrents_next()} →
           </button>
         </div>
       </div>

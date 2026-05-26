@@ -6,6 +6,7 @@ import { ArrLogo } from "@/components/ArrLogo";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { Sparkline } from "@/components/Sparkline";
 import { humanBytes, relativeTime } from "@/lib/format";
+import { m } from "@/paraglide/messages";
 
 function arrDeepLink(arrType: string, arrUrl: string, titleSlug: string): string {
   if (!arrUrl) return "";
@@ -42,10 +43,10 @@ export function TorrentDrawer({ hash, onClose }: Props) {
         <div className="drawer-head" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 11, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".05em" }}>
-              Torrent
+              {m.comp_drawer_torrent()}
             </span>
             <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={onClose}>
-              <X size={12} /> Close
+              <X size={12} /> {m.common_close()}
             </button>
           </div>
           {t ? (
@@ -55,13 +56,13 @@ export function TorrentDrawer({ hash, onClose }: Props) {
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {t.private
-                  ? <span className="badge"><Lock size={9} /> private</span>
-                  : <span className="badge"><Unlock size={9} /> public</span>
+                  ? <span className="badge"><Lock size={9} /> {m.comp_drawer_private()}</span>
+                  : <span className="badge"><Unlock size={9} /> {m.comp_drawer_public()}</span>
                 }
-                {t.protected && <span className="badge badge-warn"><Shield size={9} /> protected</span>}
-                {t.score?.excluded && <span className="badge badge-warn">excluded</span>}
+                {t.protected && <span className="badge badge-warn"><Shield size={9} /> {m.comp_drawer_protected()}</span>}
+                {t.score?.excluded && <span className="badge badge-warn">{m.comp_drawer_excluded()}</span>}
                 {t.score && !t.score.any_tracker_alive && (
-                  <span className="badge badge-danger">tracker dead</span>
+                  <span className="badge badge-danger">{m.comp_drawer_tracker_dead()}</span>
                 )}
                 <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 10.5, color: "var(--fg-3)" }}>
                   {t.hash}
@@ -70,7 +71,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
             </>
           ) : (
             <div style={{ color: "var(--fg-3)", fontSize: 12 }}>
-              {torrent.isLoading ? "Loading…" : "Failed to load."}
+              {torrent.isLoading ? m.common_loading() : m.comp_drawer_failed_to_load()}
             </div>
           )}
         </div>
@@ -81,13 +82,13 @@ export function TorrentDrawer({ hash, onClose }: Props) {
             <div className="drawer-section" style={{ marginTop: 0 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, background: "var(--border)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
                 {[
-                  ["Size",    humanBytes(t.size)],
-                  ["Ratio",   t.latest?.ratio != null ? t.latest.ratio.toFixed(3) : "—"],
-                  ["Seeders", t.latest?.seeders != null ? String(t.latest.seeders) : "—"],
-                  ["Reap",    score != null ? score.toFixed(2) : "—"],
-                ].map(([k, v]) => (
+                  ["Size",    m.comp_drawer_stat_size(),    humanBytes(t.size)],
+                  ["Ratio",   m.comp_drawer_stat_ratio(),   t.latest?.ratio != null ? t.latest.ratio.toFixed(3) : "—"],
+                  ["Seeders", m.comp_drawer_stat_seeders(), t.latest?.seeders != null ? String(t.latest.seeders) : "—"],
+                  ["Reap",    m.comp_drawer_stat_reap(),    score != null ? score.toFixed(2) : "—"],
+                ].map(([k, label, v]) => (
                   <div key={k} style={{ background: "var(--card)", padding: "8px 10px" }}>
-                    <div style={{ fontSize: 10, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".05em" }}>{k}</div>
+                    <div style={{ fontSize: 10, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".05em" }}>{label}</div>
                     <div style={{
                       fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 14, marginTop: 2,
                       color: k === "Reap" ? (tier === "high" ? "var(--red-2)" : tier === "med" ? "var(--amber-2)" : "var(--green-2)") : "inherit",
@@ -99,18 +100,18 @@ export function TorrentDrawer({ hash, onClose }: Props) {
 
             {/* Score breakdown */}
             <div className="drawer-section">
-              <div className="drawer-section-title">Score breakdown</div>
+              <div className="drawer-section-title">{m.comp_drawer_score_breakdown()}</div>
               {t.score
                 ? <ScoreBreakdown factors={t.score.factors} total={t.score.score} />
-                : <div style={{ color: "var(--fg-3)", fontSize: 12 }}>No score persisted yet.</div>
+                : <div style={{ color: "var(--fg-3)", fontSize: 12 }}>{m.comp_drawer_no_score()}</div>
               }
             </div>
 
             {/* Trackers */}
             <div className="drawer-section">
-              <div className="drawer-section-title">Trackers</div>
+              <div className="drawer-section-title">{m.comp_drawer_trackers()}</div>
               {t.trackers.length === 0 ? (
-                <div style={{ color: "var(--fg-3)", fontSize: 12 }}>No trackers stored yet.</div>
+                <div style={{ color: "var(--fg-3)", fontSize: 12 }}>{m.comp_drawer_no_trackers()}</div>
               ) : (
                 <table className="tbl" style={{ background: "var(--card-2)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
                   <tbody>
@@ -134,10 +135,10 @@ export function TorrentDrawer({ hash, onClose }: Props) {
 
             {/* *arr links */}
             <div className="drawer-section">
-              <div className="drawer-section-title">*arr links ({t.links.length})</div>
+              <div className="drawer-section-title">{m.comp_drawer_arr_links({ count: t.links.length })}</div>
               {t.links.length === 0 ? (
                 <div style={{ color: "var(--fg-3)", fontSize: 12 }}>
-                  Orphan — no *arr instance imported this torrent.
+                  {m.comp_drawer_orphan()}
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -178,14 +179,14 @@ export function TorrentDrawer({ hash, onClose }: Props) {
             {/* Sparkline */}
             {ratioSeries.length > 1 && (
               <div className="drawer-section">
-                <div className="drawer-section-title">Ratio · last 30 days</div>
+                <div className="drawer-section-title">{m.comp_drawer_ratio_30d()}</div>
                 <div style={{ background: "var(--card-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "10px 12px" }}>
                   <div style={{ color: tier === "high" ? "var(--red-2)" : "var(--primary)" }}>
                     <Sparkline data={ratioSeries}  />
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "var(--fg-3)", fontFamily: "'Geist Mono',ui-monospace,monospace" }}>
-                    <span>30d ago</span>
-                    <span>today · {t.latest?.ratio?.toFixed(3) ?? "—"}</span>
+                    <span>{m.comp_drawer_30d_ago()}</span>
+                    <span>{m.comp_drawer_today({ ratio: t.latest?.ratio?.toFixed(3) ?? "—" })}</span>
                   </div>
                 </div>
               </div>
@@ -199,7 +200,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
                 className="btn btn-sm"
                 style={{ textDecoration: "none" }}
               >
-                Open full page <ArrowUpRight size={11} />
+                {m.comp_drawer_open_full_page()} <ArrowUpRight size={11} />
               </Link>
               <button
                 className={`btn btn-sm ${t.protected ? "btn-ghost" : "btn-primary"}`}
@@ -207,11 +208,11 @@ export function TorrentDrawer({ hash, onClose }: Props) {
                 onClick={() => setProtected.mutate({ hash: t.hash, protected: !t.protected })}
                 title={
                   t.protected
-                    ? "Remove the protection: this torrent becomes a normal cleanup candidate again."
-                    : "Protect this torrent from cleanup. Reversible at any time."
+                    ? m.comp_drawer_unprotect_title()
+                    : m.comp_drawer_protect_title()
                 }
               >
-                {t.protected ? <><ShieldOff size={11} /> Unprotect</> : <><Shield size={11} /> Protect</>}
+                {t.protected ? <><ShieldOff size={11} /> {m.comp_drawer_unprotect()}</> : <><Shield size={11} /> {m.comp_drawer_protect()}</>}
               </button>
             </div>
           </div>

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useSettings } from "@/api/hooks";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { m } from "@/paraglide/messages";
 
 // ── Recursive JSON renderer with override highlighting + hover tooltip ─────
 //
@@ -91,11 +92,11 @@ function JsonValue({ value, overridden, baseline, path = "", indent = 0 }: JsonV
                 content={
                   baselineVal !== undefined
                     ? <>
-                        <span style={{ color: "oklch(0.55 0.17 75)", fontSize: "0.65rem" }}>YAML baseline</span>
+                        <span style={{ color: "oklch(0.55 0.17 75)", fontSize: "0.65rem" }}>{m.settings_debug_yaml_baseline()}</span>
                         {"\n"}
                         {JSON.stringify(baselineVal)}
                       </>
-                    : <span style={{ opacity: 0.6 }}>YAML baseline unavailable</span>
+                    : <span style={{ opacity: 0.6 }}>{m.settings_debug_yaml_baseline_unavailable()}</span>
                 }
               >
                 <span style={{ cursor: "help" }}>
@@ -117,7 +118,7 @@ function JsonValue({ value, overridden, baseline, path = "", indent = 0 }: JsonV
                   fontWeight: 600,
                 }}
               >
-                override
+                {m.settings_debug_override_tag()}
               </span>
             </span>
           ) : (
@@ -151,7 +152,7 @@ function DebugSection() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          Effective configuration
+          {m.settings_debug_effective_config_title()}
           {overrideCount > 0 && (
             <span
               style={{
@@ -164,20 +165,22 @@ function DebugSection() {
                 fontWeight: 600,
               }}
             >
-              {overrideCount} override{overrideCount > 1 ? "s" : ""}
+              {overrideCount > 1
+                ? m.settings_debug_override_count_plural({ count: overrideCount })
+                : m.settings_debug_override_count({ count: overrideCount })}
             </span>
           )}
         </CardTitle>
         <CardDescription>
-          Editable sections as the daemon sees them (YAML + UI overrides merged).{" "}
+          {m.settings_debug_description_intro()}{" "}
           {overrideCount > 0
-            ? "Lines with an amber border diverge from the YAML baseline — hover them to see the original value."
-            : "No active overrides — all values come from the YAML config file."}
+            ? m.settings_debug_description_with_overrides()
+            : m.settings_debug_description_no_overrides()}
         </CardDescription>
       </CardHeader>
       <CardContent>
         {settings.isLoading && (
-          <div className="text-sm" style={{ color: "var(--fg-3)" }}>Loading…</div>
+          <div className="text-sm" style={{ color: "var(--fg-3)" }}>{m.common_loading()}</div>
         )}
         {settings.isError && (
           <div className="text-sm" style={{ color: "var(--red)" }}>{String(settings.error)}</div>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
+import { m } from "@/paraglide/messages";
 
 // Shared form primitives + drawer-state hook for the *arr-connections and
 // torrent-client-connections settings sections. The two sections only diverge
@@ -209,7 +210,7 @@ export function DrawerActions<Form, TInput extends { kind: string }, TTest>({
 
       <div className="flex items-center gap-2 pt-2 border-t border-border">
         <Button onClick={onSave} disabled={!dirty || busy}>
-          {mutations.create.isPending || mutations.update.isPending ? "Saving…" : isDraft ? "Create" : "Save"}
+          {mutations.create.isPending || mutations.update.isPending ? m.common_saving() : isDraft ? m.settings_conn_create() : m.common_save()}
         </Button>
         <Button
           variant={confirmDelete ? "destructive" : "ghost"}
@@ -217,14 +218,14 @@ export function DrawerActions<Form, TInput extends { kind: string }, TTest>({
           disabled={busy}
           className="ml-auto"
         >
-          {isDraft ? "Cancel" : confirmDelete ? "Confirm delete?" : "Delete"}
+          {isDraft ? m.common_cancel() : confirmDelete ? m.settings_conn_confirm_delete() : m.common_delete()}
         </Button>
       </div>
 
       <div className="space-y-2 pt-2 border-t border-border">
         <div className="text-xs text-muted-foreground">{testHint}</div>
         <Button variant="outline" onClick={onTest} disabled={mutations.test.isPending || testDisabled}>
-          {mutations.test.isPending ? "Testing…" : "Test connection"}
+          {mutations.test.isPending ? m.settings_conn_testing() : m.settings_conn_test_connection()}
         </Button>
         {testResult && (
           <div

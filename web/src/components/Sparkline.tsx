@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { m } from "@/paraglide/messages";
 
 type Point = { ts: string; value: number };
 
@@ -7,7 +8,7 @@ export function Sparkline({ data, color = "var(--primary)", yUnit = "" }: { data
   // Multiple Sparklines on one page collide on a hard-coded gradient id.
   const gradientId = `sparkFill-${useId()}`;
   if (data.length === 0) {
-    return <div className="text-xs text-muted-foreground">No data yet.</div>;
+    return <div className="text-xs text-muted-foreground">{m.comp_sparkline_no_data()}</div>;
   }
   return (
     <div className="h-32 w-full">

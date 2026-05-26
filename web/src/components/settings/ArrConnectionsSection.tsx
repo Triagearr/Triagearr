@@ -13,6 +13,7 @@ import { Drawer } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { ArrLogo as SharedArrLogo } from "@/components/ArrLogo";
 import { cn } from "@/lib/cn";
+import { m } from "@/paraglide/messages";
 import {
   FieldRow,
   Toggle,
@@ -77,10 +78,10 @@ function KindTile({
   };
 
   const statusLabel: Record<TileStatus, string> = {
-    unconfigured: "Not configured",
-    disabled:     "Disabled",
-    unhealthy:    "Unreachable",
-    healthy:      "Connected",
+    unconfigured: m.common_not_configured(),
+    disabled:     m.common_disabled(),
+    unhealthy:    m.settings_status_unreachable(),
+    healthy:      m.settings_status_connected(),
   };
 
   return (
@@ -95,14 +96,14 @@ function KindTile({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="arr-tile-name">{meta.label}</div>
           {meta.stub && (
-            <div className="arr-tile-tag" style={{ color: "var(--fg-4)", fontSize: 10 }}>coming soon</div>
+            <div className="arr-tile-tag" style={{ color: "var(--fg-4)", fontSize: 10 }}>{m.settings_coming_soon()}</div>
           )}
         </div>
         <div className="arr-tile-state" title={statusLabel[status]}>
-          {status === "healthy"      && <><span className="dot green" /><span className="arr-tile-state-text" style={{ color: "var(--green-2)" }}>Connected</span></>}
-          {status === "unhealthy"    && <><span className="dot red pulse" /><span className="arr-tile-state-text" style={{ color: "var(--red-2)" }}>Unreachable</span></>}
-          {status === "disabled"     && <><span className="dot" /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>Disabled</span></>}
-          {status === "unconfigured" && <><span className="dot" style={{ background: "transparent", border: "1px dashed var(--border-2)" }} /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>Not configured</span></>}
+          {status === "healthy"      && <><span className="dot green" /><span className="arr-tile-state-text" style={{ color: "var(--green-2)" }}>{m.settings_status_connected()}</span></>}
+          {status === "unhealthy"    && <><span className="dot red pulse" /><span className="arr-tile-state-text" style={{ color: "var(--red-2)" }}>{m.settings_status_unreachable()}</span></>}
+          {status === "disabled"     && <><span className="dot" /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>{m.common_disabled()}</span></>}
+          {status === "unconfigured" && <><span className="dot" style={{ background: "transparent", border: "1px dashed var(--border-2)" }} /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>{m.common_not_configured()}</span></>}
         </div>
       </div>
 
@@ -111,13 +112,13 @@ function KindTile({
       {connection && (
         <div className="arr-tile-toggles">
           <span className={cn("arr-chip", connection.enabled && "on")}>
-            <span className="arr-chip-dot" /> Enabled
+            <span className="arr-chip-dot" /> {m.settings_chip_enabled()}
           </span>
           <span className={cn("arr-chip", connection.poll && "on")}>
-            <span className="arr-chip-dot" /> Poll
+            <span className="arr-chip-dot" /> {m.settings_chip_poll()}
           </span>
           <span className={cn("arr-chip", connection.act && "on danger")}>
-            <span className="arr-chip-dot" /> Act
+            <span className="arr-chip-dot" /> {m.settings_chip_act()}
             {connection.act && (
               <span style={{ marginLeft: 3, fontSize: 9.5, fontFamily: "'Geist Mono',ui-monospace,monospace", color: "var(--red-2)" }}>LIVE</span>
             )}
@@ -128,7 +129,7 @@ function KindTile({
       {arrView?.last_error && <div className="arr-tile-error">{arrView.last_error}</div>}
 
       {!connection && !meta.stub && (
-        <div className="arr-tile-empty"><span>Click to configure</span></div>
+        <div className="arr-tile-empty"><span>{m.settings_click_to_configure()}</span></div>
       )}
 
       {connection && status === "disabled" && (
@@ -202,24 +203,24 @@ const formToTest = (kind: string, f: Form): ArrTestInput => ({
 
 function clientValidate(f: Form): string | null {
   if (f.enabled) {
-    if (!f.url.trim()) return "URL is required when the connection is enabled.";
+    if (!f.url.trim()) return m.settings_validate_url_required();
     try {
       const u = new URL(f.url);
-      if (!u.host) return "URL must include a host.";
+      if (!u.host) return m.settings_validate_url_host();
     } catch {
-      return "URL is not valid.";
+      return m.settings_validate_url_invalid();
     }
-    if (!f.api_key) return "API key is required when the connection is enabled.";
+    if (!f.api_key) return m.settings_validate_api_key_required();
   }
-  if (f.timeout_seconds < 0) return "Timeout must be zero or positive.";
+  if (f.timeout_seconds < 0) return m.settings_validate_timeout_positive();
   if (f.public_url.trim()) {
     try {
       const u = new URL(f.public_url.trim());
       if (!u.host || (u.protocol !== "http:" && u.protocol !== "https:")) {
-        return "Public URL must be an absolute http(s) URL.";
+        return m.settings_validate_public_url_absolute();
       }
     } catch {
-      return "Public URL is not valid.";
+      return m.settings_validate_public_url_invalid();
     }
   }
   return null;
@@ -254,7 +255,7 @@ function ConnectionDrawer({
     formToInput,
     formToTest,
     clientValidate,
-    testSuccessMsg: "Connection OK — the instance responded.",
+    testSuccessMsg: m.settings_arr_test_success(),
     mutations,
     onClose,
   });
@@ -281,7 +282,7 @@ function ConnectionDrawer({
                 : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
             )}
           >
-            <span className="font-medium">{arrView.healthy ? "Reachable" : "Unreachable"}</span>
+            <span className="font-medium">{arrView.healthy ? m.settings_arr_reachable() : m.settings_status_unreachable()}</span>
             {arrView.last_error && (
               <span className="text-xs opacity-80 truncate">— {arrView.last_error}</span>
             )}
@@ -289,40 +290,40 @@ function ConnectionDrawer({
         )}
 
         <div className="space-y-3">
-          <FieldRow label="URL">
+          <FieldRow label={m.settings_field_url()}>
             <Input value={form.url} placeholder={meta.urlPlaceholder}
               onChange={(e) => set("url", e.target.value)} />
           </FieldRow>
-          <FieldRow label="Public URL" hint="optional, used for clickable links in this UI">
+          <FieldRow label={m.settings_field_public_url()} hint={m.settings_field_public_url_hint()}>
             <Input value={form.public_url} placeholder={`https://${meta.value}.example.com`}
               onChange={(e) => set("public_url", e.target.value)} />
           </FieldRow>
-          <FieldRow label="API key">
+          <FieldRow label={m.settings_field_api_key()}>
             <Input type="password" value={form.api_key} placeholder="••••••••"
               onChange={(e) => set("api_key", e.target.value)} />
           </FieldRow>
-          <FieldRow label="Timeout" hint="seconds">
+          <FieldRow label={m.settings_field_timeout()} hint={m.settings_field_timeout_hint()}>
             <Input type="number" min={0} className="w-28" value={form.timeout_seconds}
               onChange={(e) => set("timeout_seconds", Number(e.target.value))} />
           </FieldRow>
-          <FieldRow label="Tags exclude" hint="comma-separated">
+          <FieldRow label={m.settings_field_tags_exclude()} hint={m.settings_field_comma_separated()}>
             <Input value={form.tags_exclude} placeholder="keep, archive"
               onChange={(e) => set("tags_exclude", e.target.value)} />
           </FieldRow>
-          <FieldRow label="Categories" hint="comma-separated, optional">
+          <FieldRow label={m.settings_field_categories()} hint={m.settings_field_categories_hint()}>
             <Input value={form.categories_only} placeholder={meta.categoryHint}
               onChange={(e) => set("categories_only", e.target.value)} />
           </FieldRow>
-          <FieldRow label="Flags">
+          <FieldRow label={m.settings_field_flags()}>
             <div className="flex flex-wrap gap-4">
-              <Toggle label="Enabled" checked={form.enabled} onChange={(v) => set("enabled", v)} />
-              <Toggle label="Poll" checked={form.poll} onChange={(v) => set("poll", v)} />
-              <Toggle label="Act (allow deletes)" checked={form.act} onChange={(v) => set("act", v)} />
+              <Toggle label={m.settings_toggle_enabled()} checked={form.enabled} onChange={(v) => set("enabled", v)} />
+              <Toggle label={m.settings_toggle_poll()} checked={form.poll} onChange={(v) => set("poll", v)} />
+              <Toggle label={m.settings_toggle_act_allow_deletes()} checked={form.act} onChange={(v) => set("act", v)} />
             </div>
           </FieldRow>
           {form.act && (
             <p className="text-xs text-destructive/90 sm:pl-[9rem]">
-              Act is on — Triagearr may delete media from this instance during live runs.
+              {m.settings_arr_act_warning()}
             </p>
           )}
         </div>
@@ -331,7 +332,7 @@ function ConnectionDrawer({
           state={state}
           mutations={mutations}
           testDisabled={!form.url || !form.api_key}
-          testHint="Pings the instance with the current credentials without saving."
+          testHint={m.settings_arr_test_hint()}
         />
       </div>
     </Drawer>
@@ -355,17 +356,15 @@ export function ArrConnectionsSection() {
     <>
       <div className="space-y-6">
         <div>
-          <h2 className="text-lg font-semibold">*arr connections</h2>
+          <h2 className="text-lg font-semibold">{m.settings_arr_title()}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Click a tile to configure. Connections are stored in the database (ADR-0022) — the YAML{" "}
-            <code>arrs:</code> block only seeds them on first boot. Changes reload the daemon
-            automatically.
+            {m.settings_arr_description()}
           </p>
         </div>
 
         {connections.isError && (
           <div className="text-sm text-destructive">
-            {String(connections.error ?? "Failed to load connections.")}
+            {String(connections.error ?? m.settings_arr_load_failed())}
           </div>
         )}
 

@@ -5,6 +5,7 @@ import { PressureGauge } from "@/components/PressureGauge";
 import { humanBytes, relativeTime } from "@/lib/format";
 import type { ArrViewT } from "@/api/schemas";
 import { ArrLogo } from "@/components/ArrLogo";
+import { m } from "@/paraglide/messages";
 
 // ── Score tier (raw float from API) ───────────────────────────────────────
 function scoreTier(score: number | null | undefined): "low" | "med" | "high" {
@@ -46,8 +47,8 @@ function ArrHealthCard({ arr }: { arr: ArrViewT }) {
         </div>
         <div className="arr-tile-state">
           {arr.healthy
-            ? <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>Healthy</span></>
-            : <><span className="dot red pulse" /><span style={{ color: "var(--red-2)" }}>Down</span></>
+            ? <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>{m.common_healthy()}</span></>
+            : <><span className="dot red pulse" /><span style={{ color: "var(--red-2)" }}>{m.dash_arr_down()}</span></>
           }
         </div>
       </div>
@@ -59,8 +60,8 @@ function ArrHealthCard({ arr }: { arr: ArrViewT }) {
       )}
       <div className="arr-tile-foot">
         {arr.last_health_check
-          ? <span>checked {relativeTime(arr.last_health_check)}</span>
-          : <span>never checked</span>
+          ? <span>{m.dash_arr_checked()} {relativeTime(arr.last_health_check)}</span>
+          : <span>{m.dash_arr_never_checked()}</span>
         }
       </div>
     </div>
@@ -90,22 +91,22 @@ function Dashboard() {
     <div style={{ display: "contents" }}>
       {/* Topbar */}
       <div className="topbar">
-        <div className="topbar-title">Dashboard</div>
+        <div className="topbar-title">{m.dash_title()}</div>
         {data && (
           <div className="topbar-sub">
-            {topScore.length > 0 ? `${topScore.length} scored` : "no scores yet"}
+            {topScore.length > 0 ? m.dash_scored_count({ count: topScore.length }) : m.dash_no_scores_yet()}
           </div>
         )}
         <div className="topbar-right">
           <button className="btn btn-sm" onClick={() => summary.refetch()}>
-            <RefreshCw size={12} /> Refresh
+            <RefreshCw size={12} /> {m.common_refresh()}
           </button>
           <button
             className="btn btn-primary btn-sm"
             onClick={handleTriggerDryRun}
             disabled={trigger.isPending}
           >
-            <Zap size={12} /> Trigger dry-run
+            <Zap size={12} /> {m.dash_trigger_dry_run()}
           </button>
         </div>
       </div>
@@ -113,7 +114,7 @@ function Dashboard() {
       {/* Page content */}
       <div className="page">
         {summary.isLoading && (
-          <div style={{ color: "var(--fg-3)", fontSize: 12 }}>Loading…</div>
+          <div style={{ color: "var(--fg-3)", fontSize: 12 }}>{m.common_loading()}</div>
         )}
         {summary.isError && (
           <div className="badge badge-danger" style={{ marginBottom: 12 }}>
@@ -126,13 +127,13 @@ function Dashboard() {
             {/* Stat cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
               {[
-                { label: "Torrents tracked", value: data.counts.torrents, foot: "in qBittorrent" },
-                { label: "Scored", value: data.counts.scored, foot: "last cycle" },
-                { label: "Actions (all time)", value: data.counts.actions, foot: "deletions executed" },
+                { label: m.dash_stat_torrents_tracked(), value: data.counts.torrents, foot: m.dash_stat_in_qbittorrent() },
+                { label: m.dash_stat_scored(), value: data.counts.scored, foot: m.dash_stat_last_cycle() },
+                { label: m.dash_stat_actions_all_time(), value: data.counts.actions, foot: m.dash_stat_deletions_executed() },
                 {
-                  label: "*arrs healthy",
+                  label: m.dash_stat_arrs_healthy(),
                   value: totalArrs > 0 ? `${healthyArrs}/${totalArrs}` : "—",
-                  foot: healthyArrs < totalArrs ? `${totalArrs - healthyArrs} down` : "all healthy",
+                  foot: healthyArrs < totalArrs ? m.dash_stat_arrs_down({ count: totalArrs - healthyArrs }) : m.dash_stat_all_healthy(),
                   accent: healthyArrs < totalArrs ? "var(--amber-2)" : undefined,
                 },
               ].map(({ label, value, foot, accent }) => (
@@ -149,7 +150,7 @@ function Dashboard() {
               {/* Disk pressure */}
               <div className="card">
                 <div className="card-head">
-                  <span className="card-title">Disk pressure</span>
+                  <span className="card-title">{m.dash_disk_pressure()}</span>
                   {volume?.path && (
                     <span className="card-sub" style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>
                       {volume.path}
@@ -159,7 +160,7 @@ function Dashboard() {
                 <div className="card-body">
                   {volume
                     ? <PressureGauge volume={volume} />
-                    : <div style={{ color: "var(--fg-3)", fontSize: 12 }}>No volume configured.</div>
+                    : <div style={{ color: "var(--fg-3)", fontSize: 12 }}>{m.dash_no_volume_configured()}</div>
                   }
                 </div>
               </div>
@@ -167,14 +168,14 @@ function Dashboard() {
               {/* Recent runs */}
               <div className="card">
                 <div className="card-head">
-                  <span className="card-title">Recent runs</span>
+                  <span className="card-title">{m.dash_recent_runs()}</span>
                   <Link to="/actions" className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }}>
-                    View all →
+                    {m.dash_view_all()} →
                   </Link>
                 </div>
                 <div className="card-body tight">
                   {lastRuns.length === 0 ? (
-                    <div style={{ padding: 14, color: "var(--fg-3)", fontSize: 12 }}>No runs yet.</div>
+                    <div style={{ padding: 14, color: "var(--fg-3)", fontSize: 12 }}>{m.dash_no_runs_yet()}</div>
                   ) : (
                     <table className="tbl">
                       <tbody>
@@ -201,16 +202,16 @@ function Dashboard() {
             {topScore.length > 0 && (
               <div className="card" style={{ marginBottom: 14 }}>
                 <div className="card-head">
-                  <span className="card-title">Top reap candidates</span>
-                  <span className="card-sub">highest score · would be deleted first in a live run</span>
+                  <span className="card-title">{m.dash_top_reap_candidates()}</span>
+                  <span className="card-sub">{m.dash_top_reap_sub()}</span>
                 </div>
                 <div className="card-body tight">
                   <table className="tbl">
                     <thead>
                       <tr>
                         <th style={{ width: 28 }}>#</th>
-                        <th>Name</th>
-                        <th style={{ textAlign: "right", width: 110 }}>Reap score</th>
+                        <th>{m.dash_th_name()}</th>
+                        <th style={{ textAlign: "right", width: 110 }}>{m.dash_th_reap_score()}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -221,11 +222,11 @@ function Dashboard() {
                             <div className="name-text">{t.name}</div>
                             <div className="name-meta">
                               {t.private
-                                ? <span className="badge"><Lock size={9} /> private</span>
-                                : <span className="badge"><Unlock size={9} /> public</span>
+                                ? <span className="badge"><Lock size={9} /> {m.dash_badge_private()}</span>
+                                : <span className="badge"><Unlock size={9} /> {m.dash_badge_public()}</span>
                               }
                               {!t.any_tracker_alive && (
-                                <span className="badge badge-danger">tracker dead</span>
+                                <span className="badge badge-danger">{m.dash_badge_tracker_dead()}</span>
                               )}
                               <span style={{ opacity: 0.6, fontFamily: "'Geist Mono',ui-monospace,monospace" }}>
                                 {t.hash.slice(0, 10)}
@@ -245,8 +246,8 @@ function Dashboard() {
             {arrs.length > 0 && (
               <div className="card">
                 <div className="card-head">
-                  <span className="card-title">*arr instance health</span>
-                  <span className="card-sub">polled every 30s</span>
+                  <span className="card-title">{m.dash_arr_instance_health()}</span>
+                  <span className="card-sub">{m.dash_polled_30s()}</span>
                 </div>
                 <div className="card-body arr-grid">
                   {arrs.map((a) => <ArrHealthCard key={a.name} arr={a} />)}

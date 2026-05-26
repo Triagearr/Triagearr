@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { VolumeViewT } from "@/api/schemas";
 import { humanBytes, pct } from "@/lib/format";
+import { m } from "@/paraglide/messages";
 
 export function PressureGauge({
   volume,
@@ -21,13 +22,13 @@ export function PressureGauge({
   let badge: string;
   let badgeClass: string;
   if (threshold > 0 && free <= threshold) {
-    badge = "below threshold · run armed";
+    badge = m.comp_gauge_below_threshold();
     badgeClass = "badge badge-danger";
   } else if (target > 0 && free < target) {
-    badge = "above target · idle";
+    badge = m.comp_gauge_above_target();
     badgeClass = "badge badge-warn";
   } else {
-    badge = "healthy";
+    badge = m.comp_gauge_healthy();
     badgeClass = "badge badge-success";
   }
 
@@ -44,7 +45,7 @@ export function PressureGauge({
           fontFamily: "'Geist Mono',ui-monospace,monospace",
           color: threshold > 0 && free <= threshold ? "var(--red-2)" : "var(--amber-2)",
         }}>
-          {pct(100 - free)} used
+          {m.comp_gauge_pct_used({ pct: pct(100 - free) })}
         </div>
         <div style={{ marginLeft: "auto" }}>
           <span className={badgeClass}>{badge}</span>
@@ -60,7 +61,7 @@ export function PressureGauge({
           <div className="gauge-mark threshold" style={{ left: `${thresholdUsed}%` }}>
             <div className="gauge-mark-label above">
               <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--red)", marginRight: 2 }} />
-              threshold · {threshold}% free
+              {m.comp_gauge_threshold_mark({ pct: threshold })}
             </div>
           </div>
         )}
@@ -68,7 +69,7 @@ export function PressureGauge({
           <div className="gauge-mark target" style={{ left: `${targetUsed}%` }}>
             <div className="gauge-mark-label below">
               <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--green)", marginRight: 2 }} />
-              target · {target}% free
+              {m.comp_gauge_target_mark({ pct: target })}
             </div>
           </div>
         )}
@@ -77,15 +78,15 @@ export function PressureGauge({
       {/* Stats grid */}
       <div className="gauge-grid">
         <div>
-          <div className="gauge-lbl">Total</div>
+          <div className="gauge-lbl">{m.comp_gauge_total()}</div>
           <div className="gauge-val">{humanBytes(total)}</div>
         </div>
         <div>
-          <div className="gauge-lbl">Used</div>
+          <div className="gauge-lbl">{m.comp_gauge_used()}</div>
           <div className="gauge-val">{humanBytes(used)}</div>
         </div>
         <div>
-          <div className="gauge-lbl">Free</div>
+          <div className="gauge-lbl">{m.comp_gauge_free()}</div>
           <div className="gauge-val" style={{ color: threshold > 0 && free <= threshold ? "var(--red-2)" : "var(--green-2)" }}>
             {humanBytes(Number(volume.free_bytes ?? 0))}
           </div>
@@ -155,16 +156,19 @@ export function DiskGaugeEditor({
             {usedPct.toFixed(1)}%
           </div>
           <div style={{ fontSize: 11, color: "var(--fg-3)", marginTop: 2 }}>
-            currently used
+            {m.comp_gauge_currently_used()}
             {totalBytes && usedBytes
-              ? ` · ${Math.round(usedBytes / 1e12 * 10) / 10} of ${Math.round(totalBytes / 1e12 * 10) / 10} TiB`
+              ? m.comp_gauge_used_of_total({
+                  used: Math.round(usedBytes / 1e12 * 10) / 10,
+                  total: Math.round(totalBytes / 1e12 * 10) / 10,
+                })
               : ""}
           </div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 20 }}>
           {[
-            { label: "Threshold (free%)", value: thresholdFree, color: "var(--red-2)" },
-            { label: "Target (free%)",    value: targetFree,    color: "var(--green-2)" },
+            { label: m.comp_gauge_threshold_label(), value: thresholdFree, color: "var(--red-2)" },
+            { label: m.comp_gauge_target_label(),    value: targetFree,    color: "var(--green-2)" },
           ].map(({ label, value, color }) => (
             <div key={label} style={{ textAlign: "right" }}>
               <div style={{ fontSize: 11, color: "var(--fg-3)" }}>{label}</div>
@@ -197,7 +201,7 @@ export function DiskGaugeEditor({
           >
             <div className="disk-handle-label above">
               <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--red)", flex: "none" }} />
-              trigger when free &lt; <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{thresholdFree}%</strong>
+              {m.comp_gauge_trigger_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{thresholdFree}%</strong>
             </div>
             <div className="disk-handle-line" />
             <div className="disk-handle-pip" />
@@ -214,7 +218,7 @@ export function DiskGaugeEditor({
             <div className="disk-handle-line" />
             <div className="disk-handle-label below">
               <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--green)", flex: "none" }} />
-              stop when free ≥ <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{targetFree}%</strong>
+              {m.comp_gauge_stop_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{targetFree}%</strong>
             </div>
           </button>
         </div>
@@ -228,7 +232,7 @@ export function DiskGaugeEditor({
               fontSize: 10.5, color: "var(--fg-4)",
               left: `${usedT}%`, fontFamily: "'Geist Mono',ui-monospace,monospace",
             }}>
-              {100 - usedT}% free
+              {m.comp_gauge_pct_free({ pct: 100 - usedT })}
             </span>
           ))}
         </div>
@@ -236,9 +240,9 @@ export function DiskGaugeEditor({
 
       {/* Legend */}
       <div className="disk-editor-legend">
-        <span><span className="dot green" /> Safe — free ≥ target</span>
-        <span><span className="dot amber" /> Idle — above target, below threshold</span>
-        <span><span className="dot red" />  Armed — below threshold</span>
+        <span><span className="dot green" /> {m.comp_gauge_legend_safe()}</span>
+        <span><span className="dot amber" /> {m.comp_gauge_legend_idle()}</span>
+        <span><span className="dot red" />  {m.comp_gauge_legend_armed()}</span>
       </div>
     </div>
   );

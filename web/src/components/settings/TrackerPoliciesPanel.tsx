@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/Table";
+import { m } from "@/paraglide/messages";
 
 // DefaultsForm edits the singleton scoring_defaults row (ADR-0026). These
 // values apply to every torrent whose tracker has no override.
@@ -26,7 +27,7 @@ function DefaultsForm() {
   }, [defaults.data]);
 
   if (defaults.isLoading || !draft) {
-    return <div className="text-sm text-muted-foreground">Loading defaults…</div>;
+    return <div className="text-sm text-muted-foreground">{m.settings_tracker_loading_defaults()}</div>;
   }
   const dirty =
     defaults.data != null &&
@@ -38,18 +39,18 @@ function DefaultsForm() {
     <div className="space-y-3">
       <div className="grid grid-cols-3 gap-3">
         <NumberField
-          label="Min ratio"
+          label={m.settings_tracker_min_ratio()}
           value={draft.min_ratio}
           step={0.1}
           onChange={(v) => setDraft({ ...draft, min_ratio: v })}
         />
         <NumberField
-          label="Min seed days"
+          label={m.settings_tracker_min_seed_days()}
           value={draft.min_seed_days}
           onChange={(v) => setDraft({ ...draft, min_seed_days: v })}
         />
         <NumberField
-          label="Rare threshold"
+          label={m.settings_tracker_rare_threshold()}
           value={draft.rare_threshold}
           onChange={(v) => setDraft({ ...draft, rare_threshold: v })}
         />
@@ -59,15 +60,15 @@ function DefaultsForm() {
           disabled={!dirty || update.isPending}
           onClick={() => update.mutate(draft)}
         >
-          {update.isPending ? "Saving…" : "Save defaults"}
+          {update.isPending ? m.common_saving() : m.settings_tracker_save_defaults()}
         </Button>
         {dirty && (
           <Button variant="outline" onClick={() => defaults.data && setDraft(defaults.data)}>
-            Discard
+            {m.settings_tracker_discard()}
           </Button>
         )}
         <p className="text-xs text-muted-foreground">
-          Applied to every tracker without an explicit override.
+          {m.settings_tracker_defaults_applied()}
         </p>
       </div>
     </div>
@@ -121,13 +122,12 @@ function PoliciesTable() {
   const rows = useMemo(() => policies.data ?? [], [policies.data]);
 
   if (policies.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading trackers…</div>;
+    return <div className="text-sm text-muted-foreground">{m.settings_tracker_loading_trackers()}</div>;
   }
   if (rows.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No trackers observed yet. Configure qBittorrent and wait for the tracker poller to
-        run.
+        {m.settings_tracker_none_observed()}
       </p>
     );
   }
@@ -146,11 +146,11 @@ function PoliciesTable() {
     <Table>
       <THead>
         <TR>
-          <TH>Host</TH>
-          <TH className="w-24 text-right">Torrents</TH>
-          <TH className="w-28">Status</TH>
-          <TH>Policy</TH>
-          <TH className="w-40 text-right">Actions</TH>
+          <TH>{m.settings_tracker_th_host()}</TH>
+          <TH className="w-24 text-right">{m.settings_tracker_th_torrents()}</TH>
+          <TH className="w-28">{m.settings_tracker_th_status()}</TH>
+          <TH>{m.settings_tracker_th_policy()}</TH>
+          <TH className="w-40 text-right">{m.settings_tracker_th_actions()}</TH>
         </TR>
       </THead>
       <TBody>
@@ -163,9 +163,9 @@ function PoliciesTable() {
               <TD className="text-right tabular-nums">{row.torrent_count}</TD>
               <TD>
                 {row.all_dead ? (
-                  <Badge variant="destructive">dead</Badge>
+                  <Badge variant="destructive">{m.settings_tracker_status_dead()}</Badge>
                 ) : row.any_alive ? (
-                  <Badge variant="success">alive</Badge>
+                  <Badge variant="success">{m.settings_tracker_status_alive()}</Badge>
                 ) : (
                   <Badge>—</Badge>
                 )}
@@ -177,7 +177,7 @@ function PoliciesTable() {
                   <PolicySummary row={row} />
                 ) : (
                   <span className="text-xs text-muted-foreground italic">
-                    inherits defaults
+                    {m.settings_tracker_inherits_defaults()}
                   </span>
                 )}
               </TD>
@@ -195,26 +195,26 @@ function PoliciesTable() {
                         setEditing(null);
                       }}
                     >
-                      Save
+                      {m.common_save()}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setEditing(null)}>
-                      Cancel
+                      {m.common_cancel()}
                     </Button>
                   </div>
                 ) : (
                   <div className="flex justify-end gap-1">
                     <Button size="sm" variant="outline" onClick={() => startEdit(row)}>
-                      {hasOverride ? "Edit" : "Configure"}
+                      {hasOverride ? m.common_edit() : m.settings_tracker_configure()}
                     </Button>
                     {hasOverride && (
                       <Button
                         size="sm"
                         variant="ghost"
-                        title="Reset to defaults"
+                        title={m.settings_tracker_reset_title()}
                         disabled={remove.isPending}
                         onClick={() => remove.mutate(row.tracker_host)}
                       >
-                        Reset
+                        {m.settings_tracker_reset()}
                       </Button>
                     )}
                   </div>
@@ -233,7 +233,7 @@ function PolicySummary({ row }: { row: TrackerHostStatT }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <Badge variant={p.enabled ? "default" : "muted"}>
-        {p.enabled ? "active" : "disabled"}
+        {p.enabled ? m.settings_tracker_policy_active() : m.settings_tracker_policy_disabled()}
       </Badge>
       <span className="font-mono">
         ratio≥{p.min_ratio} · seed≥{p.min_seed_days}d
@@ -252,23 +252,23 @@ function PolicyEditor({
 }) {
   return (
     <div className="grid grid-cols-[auto_5rem_auto_5rem_auto_5rem_auto] items-center gap-1 text-xs">
-      <label className="text-muted-foreground">ratio≥</label>
+      <label className="text-muted-foreground">{m.settings_tracker_editor_ratio()}</label>
       <Input
         type="number"
         step={0.1}
         value={draft.min_ratio}
         onChange={(e) => setDraft({ ...draft, min_ratio: Number(e.target.value) || 0 })}
       />
-      <label className="text-muted-foreground">seed≥</label>
+      <label className="text-muted-foreground">{m.settings_tracker_editor_seed()}</label>
       <Input
         type="number"
         value={draft.min_seed_days}
         onChange={(e) => setDraft({ ...draft, min_seed_days: Number(e.target.value) || 0 })}
       />
-      <label className="text-muted-foreground">rare≤</label>
+      <label className="text-muted-foreground">{m.settings_tracker_editor_rare()}</label>
       <Input
         type="number"
-        placeholder="default"
+        placeholder={m.settings_tracker_editor_default()}
         value={draft.rare_threshold ?? ""}
         onChange={(e) =>
           setDraft({
@@ -283,7 +283,7 @@ function PolicyEditor({
           checked={draft.enabled}
           onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
         />
-        <span className="text-muted-foreground">enabled</span>
+        <span className="text-muted-foreground">{m.settings_tracker_editor_enabled()}</span>
       </label>
     </div>
   );
@@ -293,21 +293,18 @@ export function TrackerPoliciesPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Tracker policies</CardTitle>
+        <CardTitle>{m.settings_tracker_panel_title()}</CardTitle>
         <CardDescription>
-          Per-tracker overrides for Factor 1 (ratio obligation) and Factor 4 (rare-content
-          guard). Trackers without an override inherit the conservative defaults. When all
-          trackers attached to a torrent are dead, Factor 1 degrades silently — no policy
-          enforcement against a counterparty that no longer exists.
+          {m.settings_tracker_panel_description()}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold">Defaults</h3>
+          <h3 className="text-sm font-semibold">{m.settings_tracker_defaults_heading()}</h3>
           <DefaultsForm />
         </section>
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold">Per-tracker overrides</h3>
+          <h3 className="text-sm font-semibold">{m.settings_tracker_overrides_heading()}</h3>
           <PoliciesTable />
         </section>
       </CardContent>

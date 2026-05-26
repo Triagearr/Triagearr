@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/Card";
+import { m } from "@/paraglide/messages";
 
 /**
  * LoginGate renders the SPA when authentication is disabled OR when the
@@ -23,7 +24,7 @@ export function LoginGate({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState("");
 
   if (session.isLoading) {
-    return <div className="p-10 text-sm text-muted-foreground">Connecting…</div>;
+    return <div className="p-10 text-sm text-muted-foreground">{m.comp_login_connecting()}</div>;
   }
 
   if (session.isError) {
@@ -31,9 +32,9 @@ export function LoginGate({ children }: { children: ReactNode }) {
       <div className="min-h-screen p-6 flex items-center justify-center">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>Cannot reach the API</CardTitle>
+            <CardTitle>{m.comp_login_cannot_reach_api()}</CardTitle>
             <CardDescription>
-              {String(session.error)} — is the daemon running on this host?
+              {m.comp_login_daemon_running({ error: String(session.error) })}
             </CardDescription>
           </CardHeader>
         </Card>
@@ -50,9 +51,9 @@ export function LoginGate({ children }: { children: ReactNode }) {
     <div className="min-h-screen p-4 sm:p-6 flex items-center justify-center bg-background">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Sign in</CardTitle>
+          <CardTitle>{m.comp_sign_in()}</CardTitle>
           <CardDescription>
-            Authentication is enabled on this Triagearr instance.
+            {m.comp_login_auth_enabled_notice()}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -65,7 +66,7 @@ export function LoginGate({ children }: { children: ReactNode }) {
           >
             <Input
               autoComplete="username"
-              placeholder="username"
+              placeholder={m.comp_username()}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoFocus
@@ -75,7 +76,7 @@ export function LoginGate({ children }: { children: ReactNode }) {
             <Input
               type="password"
               autoComplete="current-password"
-              placeholder="password"
+              placeholder={m.comp_password()}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -88,7 +89,7 @@ export function LoginGate({ children }: { children: ReactNode }) {
               type="submit"
               disabled={!username.trim() || !password || login.isPending}
             >
-              {login.isPending ? "Signing in…" : "Sign in"}
+              {login.isPending ? m.comp_signing_in() : m.comp_sign_in()}
             </Button>
           </form>
         </CardContent>

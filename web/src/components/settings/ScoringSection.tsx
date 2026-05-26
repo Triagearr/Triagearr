@@ -1,5 +1,6 @@
 import { Field, SectionShell, Subsection } from "./SettingsField";
 import { TrackerPoliciesPanel } from "./TrackerPoliciesPanel";
+import { m } from "@/paraglide/messages";
 
 const WEIGHTS = [
   "ratio_obligation_met",
@@ -13,14 +14,14 @@ export function ScoringSection() {
   return (
     <div className="space-y-4">
       <SectionShell
-        title="Scoring"
-        description="Tunes the DeleteScore algorithm. The HnR-window veto (-10000) is hard-coded and not editable here."
+        title={m.settings_scoring_title()}
+        description={m.settings_scoring_description()}
         render={(h) => {
           const sc = h.settings.values.scoring;
           return (
             <>
               <Field
-                label="HnR window (days)"
+                label={m.settings_scoring_hnr_window_label()}
                 keyName="scoring.hnr_window_days"
                 type="number"
                 value={h.fieldValue("scoring.hnr_window_days", sc.hnr_window_days)}
@@ -29,7 +30,7 @@ export function ScoringSection() {
                 dirty={h.isDirty("scoring.hnr_window_days")}
                 onRevert={() => h.revert("scoring.hnr_window_days")}
               />
-              <Subsection title="Weights">
+              <Subsection title={m.settings_scoring_weights()}>
                 {WEIGHTS.map((w) => {
                   const k = `scoring.weights.${w}`;
                   return (

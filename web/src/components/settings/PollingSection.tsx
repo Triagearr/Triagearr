@@ -1,4 +1,5 @@
 import { Field, SectionShell } from "./SettingsField";
+import { m } from "@/paraglide/messages";
 
 const INTERVALS = [
   "torrent_client_interval",
@@ -11,8 +12,8 @@ const INTERVALS = [
 export function PollingSection() {
   return (
     <SectionShell
-      title="Polling intervals"
-      description="How often each poller runs. Accepts Go durations like 30s, 5m, 1h."
+      title={m.settings_polling_title()}
+      description={m.settings_polling_description()}
       render={(h) => {
         const p = h.settings.values.polling;
         return (
@@ -25,7 +26,7 @@ export function PollingSection() {
                   label={name}
                   keyName={k}
                   type="text"
-                  placeholder="e.g. 30s, 5m, 1h"
+                  placeholder={m.settings_polling_placeholder()}
                   value={h.fieldValue(k, p[name])}
                   onChange={(v) => h.setField(k, v)}
                   overridden={h.isOverridden(k)}

@@ -3,6 +3,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useTriggerRun } from "@/api/hooks";
+import { m } from "@/paraglide/messages";
 
 type Props = {
   open: boolean;
@@ -29,17 +30,17 @@ export function RunTriggerDialog({ open, onClose, onSuccess, mode }: Props) {
     <Modal
       open={open}
       onClose={close}
-      title={isLive ? "Execute live run?" : "Plan dry-run?"}
+      title={isLive ? m.comp_run_execute_live_title() : m.comp_run_plan_dryrun_title()}
       description={
         isLive
-          ? `Live mode deletes media via *arr and removes torrents from qBit. Type "${liveConfirmPhrase}" to confirm.`
-          : "Dry-run computes candidates and persists the plan without deleting anything."
+          ? m.comp_run_live_description({ phrase: liveConfirmPhrase })
+          : m.comp_run_dryrun_description()
       }
     >
       {isLive && (
         <Input
           autoFocus
-          placeholder={`Type "${liveConfirmPhrase}" to confirm`}
+          placeholder={m.comp_run_confirm_placeholder({ phrase: liveConfirmPhrase })}
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           className="mb-3"
@@ -54,7 +55,7 @@ export function RunTriggerDialog({ open, onClose, onSuccess, mode }: Props) {
 
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={close}>
-          Cancel
+          {m.common_cancel()}
         </Button>
         <Button
           variant={isLive ? "destructive" : "default"}
@@ -71,7 +72,7 @@ export function RunTriggerDialog({ open, onClose, onSuccess, mode }: Props) {
             )
           }
         >
-          {trigger.isPending ? "Running…" : isLive ? "Execute live" : "Plan dry-run"}
+          {trigger.isPending ? m.comp_run_running() : isLive ? m.comp_run_execute_live() : m.comp_run_plan_dryrun()}
         </Button>
       </div>
     </Modal>

@@ -1,12 +1,13 @@
 import { useVolume } from "@/api/hooks";
 import { DiskGaugeEditor } from "@/components/PressureGauge";
 import { Field, SectionShell, type SectionHelpers } from "./SettingsField";
+import { m } from "@/paraglide/messages";
 
 export function DiskPressureSection() {
   return (
     <SectionShell
-      title="Disk pressure"
-      description="Thresholds that drive the auto-deletion trigger. Threshold is when a run fires; target is how much free space the run aims to restore."
+      title={m.settings_disk_title()}
+      description={m.settings_disk_description()}
       render={(h) => <DiskPressureFields h={h} />}
     />
   );
@@ -37,14 +38,14 @@ function DiskPressureFields({ h }: { h: SectionHelpers }) {
         />
       ) : (
         <div className="text-xs text-muted-foreground">
-          {usage.isLoading ? "Loading disk usage…" : "No disk sample yet."}
+          {usage.isLoading ? m.settings_disk_loading_usage() : m.settings_disk_no_sample()}
         </div>
       )}
       <Field
-        label="Threshold free %"
+        label={m.settings_disk_threshold_label()}
         keyName={tk}
         type="number"
-        description="Run fires when free space drops below this"
+        description={m.settings_disk_threshold_desc()}
         value={h.fieldValue(tk, v.disk_pressure.threshold_free_percent)}
         onChange={(val) => h.setField(tk, val)}
         overridden={h.isOverridden(tk)}
@@ -52,10 +53,10 @@ function DiskPressureFields({ h }: { h: SectionHelpers }) {
         onRevert={() => h.revert(tk)}
       />
       <Field
-        label="Target free %"
+        label={m.settings_disk_target_label()}
         keyName={gk}
         type="number"
-        description="Free space the run aims to restore"
+        description={m.settings_disk_target_desc()}
         value={h.fieldValue(gk, v.disk_pressure.target_free_percent)}
         onChange={(val) => h.setField(gk, val)}
         overridden={h.isOverridden(gk)}
@@ -63,10 +64,10 @@ function DiskPressureFields({ h }: { h: SectionHelpers }) {
         onRevert={() => h.revert(gk)}
       />
       <Field
-        label="Max run size (GB)"
+        label={m.settings_disk_max_run_label()}
         keyName={mk}
         type="number"
-        description="Cap on data deleted per run"
+        description={m.settings_disk_max_run_desc()}
         value={h.fieldValue(mk, v.disk_pressure.max_run_size_gb)}
         onChange={(val) => h.setField(mk, val)}
         overridden={h.isOverridden(mk)}

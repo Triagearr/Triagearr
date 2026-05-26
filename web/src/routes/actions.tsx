@@ -6,6 +6,7 @@ import {
 } from "@/api/hooks";
 import { humanBytes, relativeTime, shortHash } from "@/lib/format";
 import type { ActionStatusT, AuditOutcomeT, RunResponseT } from "@/api/schemas";
+import { m } from "@/paraglide/messages";
 
 // ── Tone maps ─────────────────────────────────────────────────────────────────
 const statusClass: Record<ActionStatusT, string> = {
@@ -67,18 +68,17 @@ function ConfirmLiveModal({ open, onClose, onConfirm }: {
         <div className="modal-head" style={{ background: "var(--red-bg)", borderBottomColor: "color-mix(in oklch, var(--red) 30%, transparent)" }}>
           <AlertTriangle size={16} style={{ color: "var(--red-2)", flex: "none" }} />
           <h3 style={{ color: "var(--red-2)", fontSize: 14, fontWeight: 600, margin: 0 }}>
-            Trigger live run
+            {m.actions_trigger_live_run()}
           </h3>
-          <span className="badge badge-solid-danger" style={{ marginLeft: "auto" }}>destructive</span>
+          <span className="badge badge-solid-danger" style={{ marginLeft: "auto" }}>{m.actions_destructive()}</span>
         </div>
         <div className="modal-body">
           <p style={{ margin: 0, fontSize: 13 }}>
-            This will <strong style={{ color: "var(--red-2)" }}>permanently delete</strong> files
-            from disk and unmonitor matching items in connected *arrs.
+            {m.actions_warning_prefix()} <strong style={{ color: "var(--red-2)" }}>{m.actions_warning_permanently_delete()}</strong> {m.actions_warning_suffix()}
           </p>
           <div className="field">
             <label className="field-label">
-              Type <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", color: "var(--red-2)" }}>{expected}</span> to confirm
+              {m.actions_type_label_before()} <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", color: "var(--red-2)" }}>{expected}</span> {m.actions_type_label_after()}
             </label>
             <input
               className="ds-input mono-val"
@@ -90,14 +90,14 @@ function ConfirmLiveModal({ open, onClose, onConfirm }: {
           </div>
         </div>
         <div className="modal-foot">
-          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={onClose}>{m.common_cancel()}</button>
           <button
             className="btn btn-destructive"
             disabled={!matches || !armed}
             onClick={() => { onConfirm(); onClose(); }}
           >
             <Zap size={12} />
-            {armed ? "Execute live run" : `Hold ${count}s…`}
+            {armed ? m.actions_execute_live_run() : m.actions_hold_seconds({ count })}
           </button>
         </div>
       </div>
@@ -124,13 +124,13 @@ function AuditDrawer({ id, onClose }: { id: number | undefined; onClose: () => v
         <div className="drawer-head">
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".05em" }}>
-              Audit · action #{id}
+              {m.actions_audit_action({ id })}
             </div>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={12} /> Close</button>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={12} /> {m.common_close()}</button>
         </div>
         <div className="drawer-body">
-          {detail.isLoading && <div style={{ color: "var(--fg-3)", fontSize: 12 }}>Loading…</div>}
+          {detail.isLoading && <div style={{ color: "var(--fg-3)", fontSize: 12 }}>{m.common_loading()}</div>}
           {detail.data && (() => {
             const { action, audit } = detail.data;
             return (
@@ -138,9 +138,9 @@ function AuditDrawer({ id, onClose }: { id: number | undefined; onClose: () => v
                 <div className="drawer-section" style={{ marginTop: 0 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 1, background: "var(--border)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
                     {[
-                      ["Status", <span className={`badge ${statusClass[action.status]}`}>{action.status}</span>],
-                      ["Freed", humanBytes(action.freed_bytes)],
-                      ["Started", relativeTime(action.started_at)],
+                      [m.actions_col_status(), <span className={`badge ${statusClass[action.status]}`}>{action.status}</span>],
+                      [m.actions_col_freed(), humanBytes(action.freed_bytes)],
+                      [m.actions_col_started(), relativeTime(action.started_at)],
                     ].map(([k, v]) => (
                       <div key={String(k)} style={{ background: "var(--card)", padding: "8px 10px" }}>
                         <div style={{ fontSize: 10, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".05em" }}>{k}</div>
@@ -154,10 +154,10 @@ function AuditDrawer({ id, onClose }: { id: number | undefined; onClose: () => v
                 </div>
 
                 <div className="drawer-section">
-                  <div className="drawer-section-title">Audit trail</div>
+                  <div className="drawer-section-title">{m.actions_audit_trail()}</div>
                   <div style={{ background: "var(--card-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 12px" }}>
                     {audit.length === 0
-                      ? <div style={{ color: "var(--fg-3)", fontSize: 12, padding: "8px 0" }}>No audit rows.</div>
+                      ? <div style={{ color: "var(--fg-3)", fontSize: 12, padding: "8px 0" }}>{m.actions_no_audit_rows()}</div>
                       : audit.map((e) => (
                         <div key={e.id} className="audit-step">
                           <span className="audit-step-time">{relativeTime(e.ts)}</span>
@@ -193,17 +193,17 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
             #{run.run_id}
           </span>
           <ModeBadge mode={run.mode} />
-          {inFlight && <span className="badge badge-warn"><span className="dot amber pulse" style={{ marginRight: 3 }} />running</span>}
-          {run.status === "aborted" && <span className="badge badge-danger">aborted</span>}
-          {run.status === "completed" && <span className="badge badge-success">completed</span>}
+          {inFlight && <span className="badge badge-warn"><span className="dot amber pulse" style={{ marginRight: 3 }} />{m.actions_status_running()}</span>}
+          {run.status === "aborted" && <span className="badge badge-danger">{m.actions_status_aborted()}</span>}
+          {run.status === "completed" && <span className="badge badge-success">{m.actions_status_completed()}</span>}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 1, background: "var(--border)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
           {[
-            ["Status",     run.status],
-            ["Triggered",  run.triggered_by],
-            ["Stop",       run.stop_reason],
-            ["Freed",      humanBytes(run.estimated_freed_bytes)],
-            ["Started",    relativeTime(run.triggered_at)],
+            [m.actions_col_status(),    run.status],
+            [m.actions_col_triggered(), run.triggered_by],
+            [m.actions_col_stop(),      run.stop_reason],
+            [m.actions_col_freed(),     humanBytes(run.estimated_freed_bytes)],
+            [m.actions_col_started(),   relativeTime(run.triggered_at)],
           ].map(([k, v]) => (
             <div key={k} style={{ background: "var(--card)", padding: "9px 11px" }}>
               <div style={{ fontSize: 10, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".05em" }}>{k}</div>
@@ -217,16 +217,16 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
       {run.candidates && run.candidates.length > 0 && (
         <div>
           <div style={{ fontSize: 11, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600, marginBottom: 8 }}>
-            Candidates · {run.candidates.length}
+            {m.actions_candidates_count({ count: run.candidates.length })}
           </div>
           <table className="tbl" style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
             <thead>
               <tr>
-                <th style={{ width: 50 }}>Rank</th>
-                <th>Hash</th>
-                <th style={{ textAlign: "right", width: 80 }}>Score</th>
-                <th style={{ textAlign: "right", width: 90 }}>Size</th>
-                <th style={{ textAlign: "right", width: 90 }}>Would free</th>
+                <th style={{ width: 50 }}>{m.actions_th_rank()}</th>
+                <th>{m.actions_th_hash()}</th>
+                <th style={{ textAlign: "right", width: 80 }}>{m.actions_th_score()}</th>
+                <th style={{ textAlign: "right", width: 90 }}>{m.actions_th_size()}</th>
+                <th style={{ textAlign: "right", width: 90 }}>{m.actions_th_would_free()}</th>
               </tr>
             </thead>
             <tbody>
@@ -247,21 +247,21 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
       {/* Actions */}
       <div>
         <div style={{ fontSize: 11, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600, marginBottom: 8 }}>
-          Actions {inFlight && <span className="badge badge-warn" style={{ marginLeft: 6, textTransform: "none" }}>live…</span>}
+          {m.actions_section_actions()} {inFlight && <span className="badge badge-warn" style={{ marginLeft: 6, textTransform: "none" }}>{m.actions_live_ellipsis()}</span>}
         </div>
         {actionList.length === 0 ? (
           <div style={{ color: "var(--fg-3)", fontSize: 12 }}>
-            {inFlight ? "Waiting for first action…" : "No actions recorded for this run."}
+            {inFlight ? m.actions_waiting_first_action() : m.actions_none_recorded()}
           </div>
         ) : (
           <table className="tbl" style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
             <thead>
               <tr>
-                <th style={{ width: 50 }}>Rank</th>
-                <th>Hash</th>
-                <th>Status</th>
-                <th style={{ textAlign: "right", width: 90 }}>Freed</th>
-                <th style={{ width: 90 }}>Started</th>
+                <th style={{ width: 50 }}>{m.actions_th_rank()}</th>
+                <th>{m.actions_th_hash()}</th>
+                <th>{m.actions_th_status()}</th>
+                <th style={{ textAlign: "right", width: 90 }}>{m.actions_th_freed()}</th>
+                <th style={{ width: 90 }}>{m.actions_th_started()}</th>
                 <th style={{ width: 50 }}></th>
               </tr>
             </thead>
@@ -274,7 +274,7 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
                   <td className="num">{humanBytes(a.freed_bytes)}</td>
                   <td style={{ fontSize: 11.5, color: "var(--fg-3)" }}>{relativeTime(a.started_at)}</td>
                   <td>
-                    <button className="btn btn-ghost btn-sm" onClick={() => onAudit(a.id)}>audit</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => onAudit(a.id)}>{m.actions_audit_btn()}</button>
                   </td>
                 </tr>
               ))}
@@ -315,19 +315,19 @@ function ActionsPage() {
     <div style={{ display: "contents" }}>
       {/* Topbar */}
       <div className={`topbar ${hasLive ? "live" : ""}`}>
-        <div className="topbar-title">Actions</div>
+        <div className="topbar-title">{m.actions_title()}</div>
         <div className="topbar-sub">
           {hasLive
-            ? <><span className="dot red pulse" style={{ marginRight: 6 }} />Live run in progress</>
-            : "No run in flight"
+            ? <><span className="dot red pulse" style={{ marginRight: 6 }} />{m.actions_live_in_progress()}</>
+            : m.actions_no_run_in_flight()
           }
         </div>
         <div className="topbar-right">
           <button className="btn" onClick={triggerDryRun} disabled={trigger.isPending}>
-            <Play size={12} /> Plan dry-run
+            <Play size={12} /> {m.actions_plan_dry_run()}
           </button>
           <button className="btn btn-destructive" onClick={() => setConfirmLive(true)}>
-            <Zap size={12} /> Execute live…
+            <Zap size={12} /> {m.actions_execute_live()}
           </button>
         </div>
       </div>
@@ -337,17 +337,17 @@ function ActionsPage() {
         {/* Runs list */}
         <div className="split-list">
           <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10.5, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".06em" }}>Runs</span>
+            <span style={{ fontSize: 10.5, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".06em" }}>{m.actions_runs()}</span>
             <span style={{ marginLeft: "auto", fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 11, color: "var(--fg-3)" }}>
               {runList.length}
             </span>
           </div>
           {runs.isLoading && (
-            <div style={{ padding: 14, color: "var(--fg-3)", fontSize: 12 }}>Loading…</div>
+            <div style={{ padding: 14, color: "var(--fg-3)", fontSize: 12 }}>{m.common_loading()}</div>
           )}
           {!runs.isLoading && runList.length === 0 && (
             <div style={{ padding: 14, color: "var(--fg-3)", fontSize: 12 }}>
-              No runs yet. Trigger one above.
+              {m.actions_no_runs_trigger()}
             </div>
           )}
           {runList.map((r) => {
@@ -381,7 +381,7 @@ function ActionsPage() {
         <div className="split-detail">
           {!selectedRun ? (
             <div style={{ padding: 32, color: "var(--fg-3)", fontSize: 13, textAlign: "center" }}>
-              Select a run on the left to see its candidates and actions.
+              {m.actions_select_run_hint()}
             </div>
           ) : (
             <RunDetail run={selectedRun} onAudit={setAuditId} />
@@ -392,10 +392,10 @@ function ActionsPage() {
       {/* Live deletions strip */}
       <div className="live-strip">
         <div className="live-strip-head">
-          Live deletions — all runs
+          {m.actions_live_deletions_all_runs()}
           {allActions.data && (
             <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
-              · {allActions.data.actions.length} actions
+              · {m.actions_actions_count({ count: allActions.data.actions.length })}
             </span>
           )}
         </div>
@@ -403,11 +403,11 @@ function ActionsPage() {
           <table className="tbl">
             <thead>
               <tr>
-                <th style={{ width: 60 }}>Run</th>
-                <th>Hash</th>
-                <th>Status</th>
-                <th style={{ textAlign: "right", width: 90 }}>Freed</th>
-                <th style={{ width: 90 }}>When</th>
+                <th style={{ width: 60 }}>{m.actions_th_run()}</th>
+                <th>{m.actions_th_hash()}</th>
+                <th>{m.actions_th_status()}</th>
+                <th style={{ textAlign: "right", width: 90 }}>{m.actions_th_freed()}</th>
+                <th style={{ width: 90 }}>{m.actions_th_when()}</th>
                 <th style={{ width: 50 }}></th>
               </tr>
             </thead>
@@ -428,14 +428,14 @@ function ActionsPage() {
                   <td className="num">{humanBytes(a.freed_bytes)}</td>
                   <td style={{ fontSize: 11.5, color: "var(--fg-3)" }}>{relativeTime(a.started_at)}</td>
                   <td>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setAuditId(a.id)}>audit</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setAuditId(a.id)}>{m.actions_audit_btn()}</button>
                   </td>
                 </tr>
               ))}
               {allActions.data?.actions.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: "center", color: "var(--fg-3)", padding: "10px 14px", fontSize: 12 }}>
-                    No live deletions yet — only live runs record actions.
+                    {m.actions_no_live_deletions()}
                   </td>
                 </tr>
               )}

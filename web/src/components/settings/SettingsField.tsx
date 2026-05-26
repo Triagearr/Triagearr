@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { m } from "@/paraglide/messages";
 
 // Pending holds the user's in-flight edits for the current section keyed by
 // dotted koanf path. Null means "delete this override" (revert to YAML).
@@ -44,7 +45,7 @@ export function SectionShell({
         <CardHeader>
           <CardTitle>{title}</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">Loading…</CardContent>
+        <CardContent className="text-sm text-muted-foreground">{m.common_loading()}</CardContent>
       </Card>
     );
   }
@@ -55,7 +56,7 @@ export function SectionShell({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-destructive">
-          {String(settings.error ?? "no data")}
+          {String(settings.error ?? m.settings_shell_no_data())}
         </CardContent>
       </Card>
     );
@@ -117,17 +118,19 @@ export function SectionShell({
         <div className="flex items-center gap-3 pt-2 border-t">
           <Button onClick={onSave} disabled={dirtyCount === 0 || update.isPending}>
             {update.isPending
-              ? "Saving + reloading…"
-              : `Save ${dirtyCount} change${dirtyCount === 1 ? "" : "s"}`}
+              ? m.settings_shell_saving_reloading()
+              : dirtyCount === 1
+                ? m.settings_shell_save_changes({ count: dirtyCount })
+                : m.settings_shell_save_changes_plural({ count: dirtyCount })}
           </Button>
           {dirtyCount > 0 && (
             <Button variant="outline" onClick={() => setPending({})} disabled={update.isPending}>
-              Discard
+              {m.settings_shell_discard()}
             </Button>
           )}
           {update.isPending && (
             <span className="text-xs text-muted-foreground">
-              Daemon restarting — values refresh shortly.
+              {m.settings_shell_daemon_restarting()}
             </span>
           )}
         </div>
@@ -200,11 +203,11 @@ export function Field(p: FieldProps) {
         />
       )}
       <div className="flex items-center gap-1">
-        {p.dirty && <Badge variant="warning">edited</Badge>}
+        {p.dirty && <Badge variant="warning">{m.settings_field_badge_edited()}</Badge>}
         {!p.dirty && p.overridden && (
           <>
-            <Badge>overridden</Badge>
-            <Button size="sm" variant="ghost" onClick={p.onRevert} title="Revert to YAML default">
+            <Badge>{m.settings_field_badge_overridden()}</Badge>
+            <Button size="sm" variant="ghost" onClick={p.onRevert} title={m.settings_field_revert_title()}>
               ↺
             </Button>
           </>
@@ -222,12 +225,12 @@ function parseValueForKey(key: string, raw: string): unknown | Error {
   // Boolean toggle — value is always "true"/"false", never empty.
   if (key === "notifications.telegram.enabled") return raw === "true";
   if (raw.trim() === "") {
-    return new Error("empty value (use the revert button to remove the override)");
+    return new Error(m.settings_field_error_empty());
   }
   // Notification credentials and polling/cron fields go as JSON strings.
   if (key.startsWith("notifications.")) return raw;
   if (key.startsWith("polling.")) return raw;
   const n = Number(raw);
-  if (Number.isNaN(n)) return new Error(`expected a number, got ${JSON.stringify(raw)}`);
+  if (Number.isNaN(n)) return new Error(m.settings_field_error_nan({ value: JSON.stringify(raw) }));
   return n;
 }

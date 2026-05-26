@@ -1,16 +1,17 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { Bell, Database, Download, Gauge, Info, Link2, Settings2, Shield, SlidersHorizontal, Timer } from "lucide-react";
+import { m } from "@/paraglide/messages";
 
 const sections = [
-  { to: "/settings/arr-connections",            label: "*arr connections",   Icon: Link2 },
-  { to: "/settings/torrent-client-connections", label: "Torrent connections", Icon: Download },
-  { to: "/settings/scoring",         label: "Scoring",          Icon: SlidersHorizontal },
-  { to: "/settings/polling",         label: "Polling",          Icon: Timer },
-  { to: "/settings/disk-pressure",   label: "Disk pressure",    Icon: Gauge },
-  { to: "/settings/notifications",   label: "Notifications",    Icon: Bell },
-  { to: "/settings/security",        label: "Security",         Icon: Shield },
-  { to: "/settings/debug",           label: "Effective config", Icon: Database },
-  { to: "/settings/about",           label: "About",            Icon: Info },
+  { to: "/settings/arr-connections",            label: m.settings_nav_arr_connections(),     Icon: Link2 },
+  { to: "/settings/torrent-client-connections", label: m.settings_nav_torrent_connections(), Icon: Download },
+  { to: "/settings/scoring",         label: m.settings_nav_scoring(),          Icon: SlidersHorizontal },
+  { to: "/settings/polling",         label: m.settings_nav_polling(),          Icon: Timer },
+  { to: "/settings/disk-pressure",   label: m.settings_nav_disk_pressure(),    Icon: Gauge },
+  { to: "/settings/notifications",   label: m.settings_nav_notifications(),    Icon: Bell },
+  { to: "/settings/security",        label: m.settings_nav_security(),         Icon: Shield },
+  { to: "/settings/debug",           label: m.settings_nav_effective_config(), Icon: Database },
+  { to: "/settings/about",           label: m.settings_nav_about(),            Icon: Info },
 ] as const;
 
 function SettingsLayout() {
@@ -19,8 +20,8 @@ function SettingsLayout() {
       {/* Topbar */}
       <div className="topbar">
         <Settings2 size={15} style={{ color: "var(--fg-3)" }} />
-        <div className="topbar-title">Settings</div>
-        <div className="topbar-sub">Live config — changes apply on save</div>
+        <div className="topbar-title">{m.settings_title()}</div>
+        <div className="topbar-sub">{m.settings_live_config_sub()}</div>
       </div>
 
       {/* Horizontal tab nav */}

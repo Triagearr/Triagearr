@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
+import { m } from "@/paraglide/messages";
 
 // ── Provider catalogue ────────────────────────────────────────────────────────
 
@@ -67,9 +68,9 @@ function ProviderTile({
 
   const statusEl = (
     <div className="arr-tile-state">
-      {status === "enabled"      && <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>Enabled</span></>}
-      {status === "disabled"     && <><span className="dot" /><span style={{ color: "var(--fg-3)" }}>Disabled</span></>}
-      {status === "unconfigured" && <span style={{ color: "var(--fg-3)" }}>Not configured</span>}
+      {status === "enabled"      && <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>{m.settings_notif_telegram_enabled_status()}</span></>}
+      {status === "disabled"     && <><span className="dot" /><span style={{ color: "var(--fg-3)" }}>{m.common_disabled()}</span></>}
+      {status === "unconfigured" && <span style={{ color: "var(--fg-3)" }}>{m.common_not_configured()}</span>}
     </div>
   );
 
@@ -88,7 +89,7 @@ function ProviderTile({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="arr-tile-name">{meta.label}</div>
           {meta.stub ? (
-            <div className="arr-tile-tag" style={{ color: "var(--fg-4)", fontSize: 10 }}>coming soon</div>
+            <div className="arr-tile-tag" style={{ color: "var(--fg-4)", fontSize: 10 }}>{m.settings_coming_soon()}</div>
           ) : (
             <div className="arr-tile-tag">{meta.description}</div>
           )}
@@ -100,7 +101,7 @@ function ProviderTile({
       {configured && (
         <div className="arr-tile-toggles">
           <span className={cn("arr-chip", enabled && "on")}>
-            <span className="arr-chip-dot" /> Enabled
+            <span className="arr-chip-dot" /> {m.settings_chip_enabled()}
           </span>
         </div>
       )}
@@ -108,7 +109,7 @@ function ProviderTile({
       {/* Not configured prompt */}
       {!configured && !meta.stub && (
         <div className="arr-tile-empty">
-          <span>Click to configure</span>
+          <span>{m.settings_click_to_configure()}</span>
         </div>
       )}
     </button>
@@ -135,11 +136,11 @@ function CredentialField(p: CredentialFieldProps) {
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-muted-foreground font-mono">{p.label}</label>
         <div className="flex items-center gap-1">
-          {p.dirty && <Badge variant="warning">edited</Badge>}
+          {p.dirty && <Badge variant="warning">{m.settings_field_badge_edited()}</Badge>}
           {!p.dirty && p.overridden && (
             <>
-              <Badge>overridden</Badge>
-              <Button size="sm" variant="ghost" onClick={p.onRevert} title="Revert to YAML default">
+              <Badge>{m.settings_field_badge_overridden()}</Badge>
+              <Button size="sm" variant="ghost" onClick={p.onRevert} title={m.settings_field_revert_title()}>
                 ↺
               </Button>
             </>
@@ -235,7 +236,7 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
         ops.push({ key, value: raw === "true" });
       } else {
         if (raw.trim() === "") {
-          setError(`${key}: empty value — use revert to clear`);
+          setError(m.settings_notif_telegram_empty_value({ key }));
           return;
         }
         ops.push({ key, value: raw });
@@ -254,7 +255,7 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
     setTestResult(null);
     try {
       await test.mutateAsync();
-      setTestResult({ ok: true, msg: "Test sent — check your Telegram chat." });
+      setTestResult({ ok: true, msg: m.settings_notif_test_success() });
     } catch (e) {
       setTestResult({ ok: false, msg: e instanceof Error ? e.message : String(e) });
     }
@@ -272,13 +273,13 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
       }
     >
       {settings.isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading…</div>
+        <div className="text-sm text-muted-foreground">{m.common_loading()}</div>
       ) : (
         <div className="space-y-6">
           {/* Enable toggle */}
           <ToggleRow
-            label="Enable Telegram notifications"
-            hint="Fires on disk-pressure deletes only — not on manual runs."
+            label={m.settings_notif_enable_telegram()}
+            hint={m.settings_notif_enable_telegram_hint()}
             checked={enabledVal}
             onChange={(v) => set("notifications.telegram.enabled", String(v))}
           />
@@ -286,7 +287,7 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
           {/* Credentials */}
           <div className="space-y-4">
             <CredentialField
-              label="Bot token"
+              label={m.settings_notif_bot_token()}
               keyName="notifications.telegram.bot_token"
               type="password"
               placeholder="123456:ABC-DEF..."
@@ -297,7 +298,7 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
               onRevert={() => set("notifications.telegram.bot_token", null)}
             />
             <CredentialField
-              label="Chat ID"
+              label={m.settings_notif_chat_id()}
               keyName="notifications.telegram.chat_id"
               type="text"
               placeholder="-1001234567890"
@@ -320,12 +321,14 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="flex items-center gap-3 pt-2 border-t border-border">
             <Button onClick={onSave} disabled={dirtyCount === 0 || update.isPending}>
               {update.isPending
-                ? "Saving…"
-                : `Save ${dirtyCount} change${dirtyCount === 1 ? "" : "s"}`}
+                ? m.common_saving()
+                : dirtyCount === 1
+                  ? m.settings_notif_save_changes({ count: dirtyCount })
+                  : m.settings_notif_save_changes_plural({ count: dirtyCount })}
             </Button>
             {dirtyCount > 0 && (
               <Button variant="outline" onClick={() => setPending({})} disabled={update.isPending}>
-                Discard
+                {m.settings_notif_discard()}
               </Button>
             )}
           </div>
@@ -333,7 +336,7 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
           {/* Test */}
           <div className="space-y-2 pt-2 border-t border-border">
             <div className="text-xs text-muted-foreground">
-              Sends a synthetic message through the saved config.
+              {m.settings_notif_test_desc()}
             </div>
             <div className="flex items-center gap-3">
               <Button
@@ -341,10 +344,10 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
                 onClick={onTest}
                 disabled={test.isPending || dirtyCount > 0}
               >
-                {test.isPending ? "Sending…" : "Send test message"}
+                {test.isPending ? m.settings_notif_sending() : m.settings_notif_send_test()}
               </Button>
               {dirtyCount > 0 && (
-                <span className="text-xs text-muted-foreground">Save first to test.</span>
+                <span className="text-xs text-muted-foreground">{m.settings_notif_save_first()}</span>
               )}
             </div>
             {testResult && (
@@ -383,7 +386,7 @@ export function NotificationSection() {
     {
       id: "telegram",
       label: "Telegram",
-      description: "Bot API",
+      description: m.settings_notif_telegram_bot_api(),
       logo: <TelegramLogo className="w-9 h-9" />,
     },
   ];
@@ -392,10 +395,9 @@ export function NotificationSection() {
     <>
       <div className="space-y-6">
         <div>
-          <h2 className="text-lg font-semibold">Notifications</h2>
+          <h2 className="text-lg font-semibold">{m.settings_notif_title()}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Click a tile to configure. Notifications fire only on disk-pressure deletes —
-            manual runs stay silent. Credentials are stored as runtime overrides.
+            {m.settings_notif_description()}
           </p>
         </div>
 

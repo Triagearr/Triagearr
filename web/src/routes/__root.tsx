@@ -5,12 +5,14 @@ import { useSummary } from "@/api/hooks";
 import { Logo } from "@/components/Logo";
 import { relativeTime } from "@/lib/format";
 import { toggleTheme, resolveTheme, type Theme } from "@/lib/theme";
+import { availableLocales, changeLocale, currentLocale, localeNames, type Locale } from "@/lib/locale";
+import { m } from "@/paraglide/messages";
 
 const nav = [
-  { to: "/", label: "Dashboard", Icon: Gauge, exact: true },
-  { to: "/torrents", label: "Torrents", Icon: ListChecks },
-  { to: "/actions", label: "Actions", Icon: Activity },
-  { to: "/settings", label: "Settings", Icon: Settings },
+  { to: "/", label: () => m.nav_dashboard(), Icon: Gauge, exact: true },
+  { to: "/torrents", label: () => m.nav_torrents(), Icon: ListChecks },
+  { to: "/actions", label: () => m.nav_actions(), Icon: Activity },
+  { to: "/settings", label: () => m.nav_settings(), Icon: Settings },
 ];
 
 function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -43,11 +45,11 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="sidebar-brand-name">Triagearr</div>
           <div className="sidebar-brand-sub" style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>
-            {data ? "connected" : "—"}
+            {data ? m.status_connected() : "—"}
           </div>
         </div>
         {onClose && (
-          <button onClick={onClose} aria-label="Close menu" className="btn btn-ghost btn-sm" style={{ padding: "0 6px" }}>
+          <button onClick={onClose} aria-label={m.aria_close_menu()} className="btn btn-ghost btn-sm" style={{ padding: "0 6px" }}>
             <X size={15} />
           </button>
         )}
@@ -64,25 +66,25 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
             inactiveProps={{ className: "nav-item" }}
           >
             <Icon size={15} />
-            <span>{label}</span>
+            <span>{label()}</span>
           </Link>
         ))}
       </div>
 
       <div className="sidebar-foot">
         <div className="sidebar-foot-row">
-          <span>Disk pressure</span>
+          <span>{m.sidebar_disk_pressure()}</span>
           <strong style={{ color: isCritical ? "var(--red-2)" : usedPct ? "var(--amber-2)" : undefined }}>
             {usedPct != null ? `${usedPct}%` : "—"}
           </strong>
         </div>
         <div className="sidebar-foot-row">
-          <span>*arrs healthy</span>
+          <span>{m.sidebar_arrs_healthy()}</span>
           <strong>{totalCount > 0 ? `${healthyCount}/${totalCount}` : "—"}</strong>
         </div>
         {data?.last_runs?.[0] && (
           <div className="sidebar-foot-row">
-            <span>Last run</span>
+            <span>{m.sidebar_last_run()}</span>
             <strong>{relativeTime(data.last_runs[0].triggered_at)}</strong>
           </div>
         )}
@@ -90,16 +92,31 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
         <div className="sidebar-foot-row">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
             <span className={`dot ${data ? "green" : "red"}`} />
-            {data ? "Daemon up" : "Connecting…"}
+            {data ? m.status_daemon_up() : m.status_connecting()}
           </span>
-          <button
-            onClick={handleThemeToggle}
-            aria-label="Toggle dark/light mode"
-            className="btn btn-ghost btn-sm"
-            style={{ height: 22, padding: "0 5px" }}
-          >
-            {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
-          </button>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <select
+              aria-label={m.aria_select_language()}
+              value={currentLocale()}
+              onChange={(e) => changeLocale(e.target.value as Locale)}
+              className="btn btn-ghost btn-sm"
+              style={{ height: 22, padding: "0 4px", fontSize: 11 }}
+            >
+              {availableLocales.map((loc) => (
+                <option key={loc} value={loc}>
+                  {localeNames[loc]}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleThemeToggle}
+              aria-label={m.aria_toggle_theme()}
+              className="btn btn-ghost btn-sm"
+              style={{ height: 22, padding: "0 5px" }}
+            >
+              {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
+            </button>
+          </span>
         </div>
       </div>
     </nav>
@@ -149,7 +166,7 @@ function Layout() {
         >
           <button
             onClick={() => setDrawerOpen(true)}
-            aria-label="Open menu"
+            aria-label={m.aria_open_menu()}
             className="btn btn-ghost btn-sm"
             style={{ padding: "0 6px" }}
           >
