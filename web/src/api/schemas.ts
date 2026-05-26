@@ -288,7 +288,7 @@ export const ScoringSettings = z.object({
   hnr_window_days: z.number().optional(),
 });
 export const PollingSettings = z.object({
-  qbit_interval: z.string().optional(),
+  torrent_client_interval: z.string().optional(),
   arr_interval: z.string().optional(),
   arr_file_min_interval: z.string().optional(),
   tracker_interval: z.string().optional(),

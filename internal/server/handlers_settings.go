@@ -69,13 +69,13 @@ type weightsDTO struct {
 }
 
 type pollingDTO struct {
-	QbitInterval        string `json:"qbit_interval"`
-	ArrInterval         string `json:"arr_interval"`
-	ArrFileMinInterval  string `json:"arr_file_min_interval"`
-	TrackerInterval     string `json:"tracker_interval"`
-	DiskInterval        string `json:"disk_interval"`
-	MaintainerrInterval string `json:"maintainerr_interval"`
-	DownsampleCron      string `json:"downsample_cron"`
+	TorrentClientInterval string `json:"torrent_client_interval"`
+	ArrInterval           string `json:"arr_interval"`
+	ArrFileMinInterval    string `json:"arr_file_min_interval"`
+	TrackerInterval       string `json:"tracker_interval"`
+	DiskInterval          string `json:"disk_interval"`
+	MaintainerrInterval   string `json:"maintainerr_interval"`
+	DownsampleCron        string `json:"downsample_cron"`
 }
 
 type volumeSettingsDTO struct {
@@ -106,13 +106,13 @@ func scoringToDTO(s config.ScoringConfig) scoringDTO {
 
 func pollingToDTO(p config.PollingConfig) pollingDTO {
 	return pollingDTO{
-		QbitInterval:        p.QbitInterval.String(),
-		ArrInterval:         p.ArrInterval.String(),
-		ArrFileMinInterval:  p.ArrFileMinInterval.String(),
-		TrackerInterval:     p.TrackerInterval.String(),
-		DiskInterval:        p.DiskInterval.String(),
-		MaintainerrInterval: p.MaintainerrInterval.String(),
-		DownsampleCron:      p.DownsampleCron,
+		TorrentClientInterval: p.TorrentClientInterval.String(),
+		ArrInterval:           p.ArrInterval.String(),
+		ArrFileMinInterval:    p.ArrFileMinInterval.String(),
+		TrackerInterval:       p.TrackerInterval.String(),
+		DiskInterval:          p.DiskInterval.String(),
+		MaintainerrInterval:   p.MaintainerrInterval.String(),
+		DownsampleCron:        p.DownsampleCron,
 	}
 }
 

@@ -76,7 +76,7 @@ We have enough signal at startup to **infer** the remap with high confidence, an
 - Debugging is `triagearr inspect remap` away. The origin (inferred N/M vs config) is always visible.
 
 **Harder:**
-- Mapper must wait on the first qBit + *arr poll before answering queries. That window is bounded by `min(qbit_interval, arr_interval)` at worst (~30 min default), or by the explicit `--initial-sync` triggered at startup (the M1 daemon already does an immediate first poll on each poller, so practically the wait is ≤ a few seconds).
+- Mapper must wait on the first qBit + *arr poll before answering queries. That window is bounded by `min(torrent_client_interval, arr_interval)` at worst (~30 min default), or by the explicit `--initial-sync` triggered at startup (the M1 daemon already does an immediate first poll on each poller, so practically the wait is ≤ a few seconds).
 - Index walk cost. On a 200k-file library it's ~1-2 s of `os.ReadDir` on a warm cache. Acceptable for a once-per-boot operation; we don't re-walk on every poll.
 - One more "are we ready" gate to handle in tests.
 

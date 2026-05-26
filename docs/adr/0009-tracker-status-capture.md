@@ -44,7 +44,7 @@ We **do not** snapshot tracker status over time. The set of trackers attached to
 
 ### Polling
 
-A new `tracker_interval` (default `6h`) is added to `polling`. The tracker poller fans out one call per torrent. With 262 torrents at 6 h, that is ~44 req/h — negligible. Existing `qbit_interval` is unchanged.
+A new `tracker_interval` (default `6h`) is added to `polling`. The tracker poller fans out one call per torrent. With 262 torrents at 6 h, that is ~44 req/h — negligible. Existing `torrent_client_interval` is unchanged.
 
 ### Scoring impact
 

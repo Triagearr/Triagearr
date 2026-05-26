@@ -13,38 +13,38 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-type fakeQbit struct {
+type fakeTorrentClient struct {
 	torrents []triagearr.Torrent
 }
 
-func (f *fakeQbit) ListTorrents(_ context.Context) ([]triagearr.Torrent, error) {
+func (f *fakeTorrentClient) ListTorrents(_ context.Context) ([]triagearr.Torrent, error) {
 	return f.torrents, nil
 }
-func (f *fakeQbit) TorrentFiles(_ context.Context, _ triagearr.Hash) ([]triagearr.TorrentFile, error) {
+func (f *fakeTorrentClient) TorrentFiles(_ context.Context, _ triagearr.Hash) ([]triagearr.TorrentFile, error) {
 	return nil, nil
 }
-func (f *fakeQbit) ListTrackers(_ context.Context, _ triagearr.Hash) ([]triagearr.TrackerInfo, error) {
+func (f *fakeTorrentClient) ListTrackers(_ context.Context, _ triagearr.Hash) ([]triagearr.TrackerInfo, error) {
 	return nil, nil
 }
-func (f *fakeQbit) Delete(_ context.Context, _ triagearr.Hash, _ triagearr.DeleteOpts) error {
+func (f *fakeTorrentClient) Delete(_ context.Context, _ triagearr.Hash, _ triagearr.DeleteOpts) error {
 	return nil
 }
 
-func TestQbitPoller_PersistsTickThenExits(t *testing.T) {
+func TestTorrentClientPoller_PersistsTickThenExits(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	require.NoError(t, s.Migrate())
 
 	now := time.Now().UTC()
-	fake := &fakeQbit{
+	fake := &fakeTorrentClient{
 		torrents: []triagearr.Torrent{{
 			Hash: "h1", Name: "Foo", Size: 100, AddedOn: now,
 			Ratio: 1.5, Seeders: 4, Leechers: 1, State: "uploading",
 		}},
 	}
 
-	p := &pollers.QbitPoller{Client: fake, Store: s, Interval: time.Hour}
+	p := &pollers.TorrentClientPoller{Client: fake, Store: s, Interval: time.Hour}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- p.Run(ctx) }()

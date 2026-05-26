@@ -122,7 +122,7 @@ volume:
 # Polling cadences
 # -----------------------------------------------------------------------------
 polling:
-  qbit_interval: 30m
+  torrent_client_interval: 30m
   arr_interval: 1h
   arr_file_min_interval: 200ms     # spacing between per-file *arr calls (~5 req/s)
   tracker_interval: 6h             # qBit tracker statuses (ADR-0009)

@@ -14,7 +14,7 @@ func TestSettingsOverrides_UpsertGetList(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, s.UpsertSettingsOverride(ctx, "scoring.hnr_window_days", `21`))
-	require.NoError(t, s.UpsertSettingsOverride(ctx, "polling.qbit_interval", `"5m"`))
+	require.NoError(t, s.UpsertSettingsOverride(ctx, "polling.torrent_client_interval", `"5m"`))
 
 	row, err := s.GetSettingsOverride(ctx, "scoring.hnr_window_days")
 	require.NoError(t, err)
@@ -24,7 +24,7 @@ func TestSettingsOverrides_UpsertGetList(t *testing.T) {
 	all, err := s.ListSettingsOverrides(ctx)
 	require.NoError(t, err)
 	require.Len(t, all, 2)
-	require.Equal(t, "polling.qbit_interval", all[0].Key)
+	require.Equal(t, "polling.torrent_client_interval", all[0].Key)
 	require.Equal(t, "scoring.hnr_window_days", all[1].Key)
 }
 

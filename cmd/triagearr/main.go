@@ -280,7 +280,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 		// for now (their fields are typed against it).
 		if qc, isQbit := active.(*qbit.Client); isQbit {
 			qb = qc
-			ps = append(ps, &pollers.QbitPoller{Client: qb, Store: s, Interval: cfg.Polling.QbitInterval, Notify: scoreSignal, TrackerCatchup: trackerCatchup})
+			ps = append(ps, &pollers.TorrentClientPoller{Client: qb, Store: s, Interval: cfg.Polling.TorrentClientInterval, Notify: scoreSignal, TrackerCatchup: trackerCatchup})
 			ps = append(ps, &pollers.TrackerPoller{Client: qb, Store: s, Interval: cfg.Polling.TrackerInterval, Signal: trackerCatchup, Notify: scoreSignal})
 		}
 	}
@@ -303,7 +303,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 	}
 
 	if qb != nil {
-		ps = append(ps, &pollers.FilesPoller{Store: s, Qbit: qb, Interval: cfg.Polling.QbitInterval})
+		ps = append(ps, &pollers.FilesPoller{Store: s, Qbit: qb, Interval: cfg.Polling.TorrentClientInterval})
 	}
 
 	// ADR-0023 boot validation: refuse to start if the TRaSH single-shared-mount

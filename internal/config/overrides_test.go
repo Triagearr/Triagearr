@@ -46,7 +46,7 @@ scoring:
     swarm_health_bonus: 5
   hnr_window_days: 14
 polling:
-  qbit_interval: 30m
+  torrent_client_interval: 30m
   arr_interval: 1h
   arr_file_min_interval: 200ms
   tracker_interval: 6h
@@ -70,7 +70,7 @@ func TestLoadWithOverrides_NoOverrides_MatchesLoad(t *testing.T) {
 	merged, err := config.LoadWithOverrides(p, nil)
 	require.NoError(t, err)
 	require.Equal(t, base.Scoring.HnRWindowDays, merged.Scoring.HnRWindowDays)
-	require.Equal(t, base.Polling.QbitInterval, merged.Polling.QbitInterval)
+	require.Equal(t, base.Polling.TorrentClientInterval, merged.Polling.TorrentClientInterval)
 }
 
 func TestLoadWithOverrides_ScalarOverride(t *testing.T) {
@@ -94,10 +94,10 @@ func TestLoadWithOverrides_NestedWeight(t *testing.T) {
 func TestLoadWithOverrides_DurationOverride(t *testing.T) {
 	p := writeBaseYAML(t)
 	cfg, err := config.LoadWithOverrides(p, []config.Override{
-		{Key: "polling.qbit_interval", ValueJSON: `"5m"`},
+		{Key: "polling.torrent_client_interval", ValueJSON: `"5m"`},
 	})
 	require.NoError(t, err)
-	require.Equal(t, "5m0s", cfg.Polling.QbitInterval.String())
+	require.Equal(t, "5m0s", cfg.Polling.TorrentClientInterval.String())
 }
 
 func TestLoadWithOverrides_InvalidJSON(t *testing.T) {
@@ -138,7 +138,7 @@ func TestIsEditableKey(t *testing.T) {
 	editable := []string{
 		"scoring.hnr_window_days",
 		"scoring.weights.ratio_obligation_met",
-		"polling.qbit_interval",
+		"polling.torrent_client_interval",
 		"volume.disk_pressure.threshold_free_percent",
 	}
 	forbidden := []string{

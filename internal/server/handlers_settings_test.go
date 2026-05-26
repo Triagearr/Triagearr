@@ -132,9 +132,9 @@ func TestPutSettings_DeletesWhenValueNull(t *testing.T) {
 
 func TestDeleteSetting_RevertsToDefault(t *testing.T) {
 	h, s, reloadCalled := buildSettingsSrv(t)
-	require.NoError(t, s.UpsertSettingsOverride(context.Background(), "polling.qbit_interval", `"5m"`))
+	require.NoError(t, s.UpsertSettingsOverride(context.Background(), "polling.torrent_client_interval", `"5m"`))
 
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/v1/settings/polling.qbit_interval", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/v1/settings/polling.torrent_client_interval", nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)

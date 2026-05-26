@@ -154,7 +154,7 @@ container path (ADR-0023). No path translation layer exists.
 
 ```yaml
 polling:
-  qbit_interval: 30m
+  torrent_client_interval: 30m
   arr_interval: 1h
   disk_interval: 5m
   maintainerr_interval: 1h

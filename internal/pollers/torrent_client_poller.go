@@ -9,16 +9,16 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-// QbitStore is the subset of store operations the qbit poller needs.
-type QbitStore interface {
+// TorrentClientStore is the subset of store operations the torrent client poller needs.
+type TorrentClientStore interface {
 	UpsertTorrent(ctx context.Context, t triagearr.Torrent) error
 	InsertSnapshot(ctx context.Context, snap triagearr.Snapshot) error
 }
 
-// QbitPoller polls a qBittorrent instance and persists torrents + snapshots.
-type QbitPoller struct {
+// TorrentClientPoller polls a torrent client instance and persists torrents + snapshots.
+type TorrentClientPoller struct {
 	Client   triagearr.TorrentClient
-	Store    QbitStore
+	Store    TorrentClientStore
 	Interval time.Duration
 	// Notify, when non-nil, is signalled after each successful tick so the
 	// scorer can re-score against the freshly persisted torrents.
@@ -30,16 +30,16 @@ type QbitPoller struct {
 }
 
 // Name implements Poller.
-func (p *QbitPoller) Name() string { return "qbit" }
+func (p *TorrentClientPoller) Name() string { return "torrent-client" }
 
 // Run blocks until ctx is cancelled.
-func (p *QbitPoller) Run(ctx context.Context) error {
+func (p *TorrentClientPoller) Run(ctx context.Context) error {
 	// Notify is delivered by tick() so we can fan out to multiple subscribers
 	// (scorer + tracker catchup) without spawning a router goroutine.
 	return TickLoop(ctx, p.Name(), p.Interval, p.tick, nil)
 }
 
-func (p *QbitPoller) tick(ctx context.Context) error {
+func (p *TorrentClientPoller) tick(ctx context.Context) error {
 	torrents, err := p.Client.ListTorrents(ctx)
 	if err != nil {
 		return fmt.Errorf("listing torrents: %w", err)
@@ -64,7 +64,7 @@ func (p *QbitPoller) tick(ctx context.Context) error {
 			slog.Warn("insert snapshot failed", "hash", t.Hash, "err", err)
 		}
 	}
-	slog.Info("qbit tick complete", "torrents", len(torrents))
+	slog.Info("torrent-client tick complete", "torrents", len(torrents))
 	notifyNonBlocking(p.Notify)
 	notifyNonBlocking(p.TrackerCatchup)
 	return nil

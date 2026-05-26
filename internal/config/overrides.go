@@ -14,7 +14,7 @@ import (
 )
 
 // Override is one runtime-editable settings entry. The key is a dotted koanf
-// path (e.g. "scoring.weights.ratio_obligation_met", "polling.qbit_interval")
+// path (e.g. "scoring.weights.ratio_obligation_met", "polling.torrent_client_interval")
 // and ValueJSON is its replacement value encoded as JSON.
 //
 // Overrides are applied on top of the YAML baseline by LoadWithOverrides,

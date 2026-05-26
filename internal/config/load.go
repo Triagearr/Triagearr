@@ -125,8 +125,8 @@ func applyDefaults(c *Config) {
 	if c.Storage.SQLitePath == "" {
 		c.Storage.SQLitePath = defaultSQLitePath
 	}
-	if c.Polling.QbitInterval == 0 {
-		c.Polling.QbitInterval = defaultQbitInterval
+	if c.Polling.TorrentClientInterval == 0 {
+		c.Polling.TorrentClientInterval = defaultTorrentClientInterval
 	}
 	if c.Polling.ArrInterval == 0 {
 		c.Polling.ArrInterval = defaultArrInterval

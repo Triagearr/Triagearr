@@ -1,7 +1,7 @@
 import { Field, SectionShell } from "./SettingsField";
 
 const INTERVALS = [
-  "qbit_interval",
+  "torrent_client_interval",
   "arr_interval",
   "arr_file_min_interval",
   "tracker_interval",
