@@ -2,35 +2,16 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, Lock, RefreshCw, Unlock, Zap } from "lucide-react";
 import { useSummary, useArrs, useTriggerRun } from "@/api/hooks";
 import { PressureGauge } from "@/components/PressureGauge";
+import { ScoreCell } from "@/components/ScoreCell";
 import { humanBytes, relativeTime } from "@/lib/format";
 import type { ArrViewT } from "@/api/schemas";
 import { ArrLogo } from "@/components/ArrLogo";
 import { m } from "@/paraglide/messages";
 
-// ── Score tier (raw float from API) ───────────────────────────────────────
-function scoreTier(score: number | null | undefined): "low" | "med" | "high" {
-  if (score == null) return "low";
-  if (score <= 1)  return "low";
-  if (score <= 5)  return "med";
-  return "high";
-}
-
-function ScoreCell({ score }: { score: number | null | undefined }) {
-  if (score == null) return <span style={{ color: "var(--fg-4)" }}>—</span>;
-  const tier = scoreTier(score);
-  const pct = Math.min(100, Math.max(0, (score / 10) * 100));
-  return (
-    <span className={`score-cell ${tier}`}>
-      <span className="score-bar"><i style={{ width: `${pct}%` }} /></span>
-      {score.toFixed(2)}
-    </span>
-  );
-}
-
 function ModeBadge({ mode }: { mode: string }) {
   return mode === "live"
-    ? <span className="badge badge-solid-danger">● live</span>
-    : <span className="badge">dry-run</span>;
+    ? <span className="badge badge-solid-danger">● {m.common_mode_live()}</span>
+    : <span className="badge">{m.common_mode_dry_run()}</span>;
 }
 
 // ── *arr health tile — same visual as Settings tiles, uses real SVG logos ─────
@@ -180,7 +161,7 @@ function Dashboard() {
                     <table className="tbl">
                       <tbody>
                         {lastRuns.slice(0, 5).map((r) => (
-                          <tr key={r.run_id} className="clickable" onClick={() => navigate({ to: "/actions" })}>
+                          <tr key={r.run_id} className="clickable" onClick={() => navigate({ to: "/actions", search: { run: r.run_id } })}>
                             <td style={{ width: 1, paddingRight: 6 }}>
                               <ModeBadge mode={r.mode} />
                             </td>
@@ -228,9 +209,6 @@ function Dashboard() {
                               {!t.any_tracker_alive && (
                                 <span className="badge badge-danger">{m.dash_badge_tracker_dead()}</span>
                               )}
-                              <span style={{ opacity: 0.6, fontFamily: "'Geist Mono',ui-monospace,monospace" }}>
-                                {t.hash.slice(0, 10)}
-                              </span>
                             </div>
                           </td>
                           <td style={{ textAlign: "right" }}><ScoreCell score={t.score} /></td>

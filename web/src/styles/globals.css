@@ -376,18 +376,27 @@
 .gauge-mark { position: absolute; top: -5px; bottom: -5px; width: 2px; pointer-events: none; z-index: 2; }
 .gauge-mark.threshold { background: var(--red); }
 .gauge-mark.target    { background: var(--green); }
-.gauge-mark-label {
+/* Shared marker label: dot centered on the mark, text flows right or left */
+.mark-label {
   position: absolute;
-  font-size: 10px;
-  font-family: "Geist Mono", ui-monospace, monospace;
-  color: var(--fg-3);
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 3;
 }
-.gauge-mark-label.above { bottom: calc(100% + 4px); }
-.gauge-mark-label.below { top:    calc(100% + 4px); }
+.mark-label.above { bottom: calc(100% + 8px); }
+.mark-label.below { top:    calc(100% + 8px); }
+.mark-label-dot { display: block; width: 7px; height: 7px; border-radius: 2px; }
+.mark-label-text {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  color: var(--fg-2);
+}
+.mark-label-text.right { left:  calc(100% + 5px); }
+.mark-label-text.left  { right: calc(100% + 5px); }
 .gauge-grid {
   display: grid;
   grid-template-columns: repeat(3,1fr);
@@ -476,19 +485,6 @@
 }
 .disk-handle.threshold .disk-handle-pip { background: var(--red); }
 .disk-handle.target    .disk-handle-pip { background: var(--green); }
-.disk-handle-label {
-  position: absolute;
-  font-size: 10.5px;
-  font-family: "Geist Mono", ui-monospace, monospace;
-  color: var(--fg-2);
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  pointer-events: none;
-}
-.disk-handle-label.above { bottom: calc(100% + 10px); }
-.disk-handle-label.below { top:    calc(100% + 10px); }
 
 /* ── Forms ────────────────────────────────────────────────────────────────── */
 .field        { display: flex; flex-direction: column; gap: 5px; }

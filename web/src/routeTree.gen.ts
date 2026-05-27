@@ -15,7 +15,6 @@ import { Route as ActionsRouteImport } from './routes/actions'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TorrentsIndexRouteImport } from './routes/torrents.index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
-import { Route as TorrentsHashRouteImport } from './routes/torrents.$hash'
 import { Route as SettingsTorrentClientConnectionsRouteImport } from './routes/settings.torrent-client-connections'
 import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
 import { Route as SettingsScoringRouteImport } from './routes/settings.scoring'
@@ -55,11 +54,6 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => SettingsRoute,
-} as any)
-const TorrentsHashRoute = TorrentsHashRouteImport.update({
-  id: '/$hash',
-  path: '/$hash',
-  getParentRoute: () => TorrentsRoute,
 } as any)
 const SettingsTorrentClientConnectionsRoute =
   SettingsTorrentClientConnectionsRouteImport.update({
@@ -122,7 +116,6 @@ export interface FileRoutesByFullPath {
   '/settings/scoring': typeof SettingsScoringRoute
   '/settings/security': typeof SettingsSecurityRoute
   '/settings/torrent-client-connections': typeof SettingsTorrentClientConnectionsRoute
-  '/torrents/$hash': typeof TorrentsHashRoute
   '/settings/': typeof SettingsIndexRoute
   '/torrents/': typeof TorrentsIndexRoute
 }
@@ -138,7 +131,6 @@ export interface FileRoutesByTo {
   '/settings/scoring': typeof SettingsScoringRoute
   '/settings/security': typeof SettingsSecurityRoute
   '/settings/torrent-client-connections': typeof SettingsTorrentClientConnectionsRoute
-  '/torrents/$hash': typeof TorrentsHashRoute
   '/settings': typeof SettingsIndexRoute
   '/torrents': typeof TorrentsIndexRoute
 }
@@ -157,7 +149,6 @@ export interface FileRoutesById {
   '/settings/scoring': typeof SettingsScoringRoute
   '/settings/security': typeof SettingsSecurityRoute
   '/settings/torrent-client-connections': typeof SettingsTorrentClientConnectionsRoute
-  '/torrents/$hash': typeof TorrentsHashRoute
   '/settings/': typeof SettingsIndexRoute
   '/torrents/': typeof TorrentsIndexRoute
 }
@@ -177,7 +168,6 @@ export interface FileRouteTypes {
     | '/settings/scoring'
     | '/settings/security'
     | '/settings/torrent-client-connections'
-    | '/torrents/$hash'
     | '/settings/'
     | '/torrents/'
   fileRoutesByTo: FileRoutesByTo
@@ -193,7 +183,6 @@ export interface FileRouteTypes {
     | '/settings/scoring'
     | '/settings/security'
     | '/settings/torrent-client-connections'
-    | '/torrents/$hash'
     | '/settings'
     | '/torrents'
   id:
@@ -211,7 +200,6 @@ export interface FileRouteTypes {
     | '/settings/scoring'
     | '/settings/security'
     | '/settings/torrent-client-connections'
-    | '/torrents/$hash'
     | '/settings/'
     | '/torrents/'
   fileRoutesById: FileRoutesById
@@ -266,13 +254,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof SettingsRoute
-    }
-    '/torrents/$hash': {
-      id: '/torrents/$hash'
-      path: '/$hash'
-      fullPath: '/torrents/$hash'
-      preLoaderRoute: typeof TorrentsHashRouteImport
-      parentRoute: typeof TorrentsRoute
     }
     '/settings/torrent-client-connections': {
       id: '/settings/torrent-client-connections'
@@ -371,12 +352,10 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 )
 
 interface TorrentsRouteChildren {
-  TorrentsHashRoute: typeof TorrentsHashRoute
   TorrentsIndexRoute: typeof TorrentsIndexRoute
 }
 
 const TorrentsRouteChildren: TorrentsRouteChildren = {
-  TorrentsHashRoute: TorrentsHashRoute,
   TorrentsIndexRoute: TorrentsIndexRoute,
 }
 

@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, Lock, Shield, ShieldOff, Unlock, X } from "lucide-react";
 import { useMemo } from "react";
 import { useSetTorrentProtected, useSnapshots, useTorrent } from "@/api/hooks";
@@ -8,12 +7,35 @@ import { Sparkline } from "@/components/Sparkline";
 import { humanBytes, relativeTime } from "@/lib/format";
 import { m } from "@/paraglide/messages";
 
+// Maps each *arr kind to its detail-page route prefix. whisparr_v2 is a
+// Sonarr fork (series), v3 a Radarr fork (movies); Lidarr keys on artist,
+// Readarr on author. Falls back to the instance root when the slug is absent
+// (today only Sonarr/Radarr populate title_slug; the rest are stubs).
+const arrRoutePrefix: Record<string, string> = {
+  sonarr: "series",
+  whisparr_v2: "series",
+  radarr: "movie",
+  whisparr_v3: "movie",
+  lidarr: "artist",
+  readarr: "author",
+};
+
+// Localized labels for the qBittorrent tracker status enum (schemas.ts).
+function trackerStatusLabel(status: string): string {
+  switch (status) {
+    case "working": return m.tracker_status_working();
+    case "not_contacted": return m.tracker_status_not_contacted();
+    case "updating": return m.tracker_status_updating();
+    case "not_working": return m.tracker_status_not_working();
+    case "disabled": return m.tracker_status_disabled();
+    default: return m.tracker_status_unknown();
+  }
+}
+
 function arrDeepLink(arrType: string, arrUrl: string, titleSlug: string): string {
   if (!arrUrl) return "";
-  if (titleSlug) {
-    if (arrType === "sonarr") return `${arrUrl}/series/${titleSlug}`;
-    if (arrType === "radarr") return `${arrUrl}/movie/${titleSlug}`;
-  }
+  const prefix = arrRoutePrefix[arrType];
+  if (titleSlug && prefix) return `${arrUrl}/${prefix}/${titleSlug}`;
   return arrUrl;
 }
 
@@ -64,9 +86,6 @@ export function TorrentDrawer({ hash, onClose }: Props) {
                 {t.score && !t.score.any_tracker_alive && (
                   <span className="badge badge-danger">{m.comp_drawer_tracker_dead()}</span>
                 )}
-                <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 10.5, color: "var(--fg-3)" }}>
-                  {t.hash}
-                </span>
               </div>
             </>
           ) : (
@@ -120,7 +139,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
                         <td className="mono" style={{ fontSize: 11.5 }}>{tr.host || "—"}</td>
                         <td>
                           <span className={`badge ${tr.status === "working" ? "badge-success" : "badge-danger"}`}>
-                            {tr.status}
+                            {trackerStatusLabel(tr.status)}
                           </span>
                         </td>
                         <td style={{ color: "var(--fg-3)", fontSize: 11, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
@@ -192,16 +211,16 @@ export function TorrentDrawer({ hash, onClose }: Props) {
               </div>
             )}
 
+            {/* Full hash */}
+            <div className="drawer-section">
+              <div className="drawer-section-title">{m.comp_drawer_hash()}</div>
+              <div style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 11, color: "var(--fg-3)", wordBreak: "break-all" }}>
+                {t.hash}
+              </div>
+            </div>
+
             {/* Footer actions */}
             <div className="drawer-section" style={{ display: "flex", gap: 8, paddingTop: 4 }}>
-              <Link
-                to="/torrents/$hash"
-                params={{ hash: t.hash }}
-                className="btn btn-sm"
-                style={{ textDecoration: "none" }}
-              >
-                {m.comp_drawer_open_full_page()} <ArrowUpRight size={11} />
-              </Link>
               <button
                 className={`btn btn-sm ${t.protected ? "btn-ghost" : "btn-primary"}`}
                 disabled={setProtected.isPending}

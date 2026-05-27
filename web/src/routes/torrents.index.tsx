@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Download, Lock, RefreshCw, Search, Unlock } from "lucide-react";
+import { ArrowDown, ArrowUp, Lock, Search, Unlock } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { useTorrentCategories, useTorrents } from "@/api/hooks";
+import { ScoreCell } from "@/components/ScoreCell";
 import { TorrentDrawer } from "@/components/TorrentDrawer";
-import { humanBytes, relativeTime, shortHash } from "@/lib/format";
+import { humanBytes, relativeTime } from "@/lib/format";
 import { m } from "@/paraglide/messages";
 
 type TorrentsSearch = { detail?: string };
@@ -11,25 +12,6 @@ type Order = "asc" | "desc";
 
 function defaultOrder(field: string): Order {
   return field === "name" ? "asc" : "desc";
-}
-
-function scoreTier(score: number | null | undefined): "low" | "med" | "high" {
-  if (score == null) return "low";
-  if (score <= 1) return "low";
-  if (score <= 5) return "med";
-  return "high";
-}
-
-function ScoreCell({ score }: { score: number | null | undefined }) {
-  if (score == null) return <span style={{ color: "var(--fg-4)" }}>—</span>;
-  const tier = scoreTier(score);
-  const pct = Math.min(100, Math.max(0, (score / 10) * 100));
-  return (
-    <span className={`score-cell ${tier}`}>
-      <span className="score-bar"><i style={{ width: `${pct}%` }} /></span>
-      {score.toFixed(2)}
-    </span>
-  );
 }
 
 function TorrentsPage() {
@@ -88,14 +70,6 @@ function TorrentsPage() {
         <div className="topbar-title">{m.torrents_title()}</div>
         <div className="topbar-sub">
           {list.data ? m.torrents_total_showing({ total: total.toLocaleString(), shown }) : m.common_loading()}
-        </div>
-        <div className="topbar-right">
-          <button className="btn btn-sm" onClick={() => list.refetch()}>
-            <RefreshCw size={12} /> {m.torrents_rescore()}
-          </button>
-          <button className="btn btn-sm">
-            <Download size={12} /> {m.torrents_export_csv()}
-          </button>
         </div>
       </div>
 
@@ -170,7 +144,6 @@ function TorrentsPage() {
                       {t.any_tracker_alive === false && (
                         <span className="badge badge-danger">{m.torrents_badge_tracker_dead()}</span>
                       )}
-                      <span style={{ opacity: 0.6 }}>{shortHash(t.hash, 10)}</span>
                     </div>
                   </td>
                   <td style={{ fontSize: 12, color: "var(--fg-2)" }}>

@@ -96,7 +96,7 @@ function isInFlight(run: RunResponseT) {
 function ModeBadge({ mode }: { mode: string }) {
   // Live runs are signalled by the status dots/badges; only dry-runs need an
   // explicit tag so they aren't mistaken for the destructive default.
-  return mode === "live" ? null : <span className="badge">dry-run</span>;
+  return mode === "live" ? null : <span className="badge">{m.common_mode_dry_run()}</span>;
 }
 
 // MetricGrid renders the repeated key/value summary cells used by the run and
@@ -491,9 +491,16 @@ function ActionsPage() {
   const runs = useRuns();
   const allActions = useActions(50, 0);
   const trigger = useTriggerRun();
+  const { run: runParam } = Route.useSearch();
   const [confirmLive, setConfirmLive] = useState(false);
-  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(runParam ?? null);
   const [auditId, setAuditId] = useState<number | undefined>();
+
+  // Sync selection when the ?run= param changes (e.g. navigating in from the
+  // dashboard's recent-runs list while this page is already mounted).
+  useEffect(() => {
+    if (runParam != null) setSelectedRunId(runParam);
+  }, [runParam]);
 
   const runList = runs.data?.runs ?? [];
   const runListEntry = runList.find((r) => r.run_id === selectedRunId) ?? null;
@@ -634,4 +641,12 @@ function ActionsPage() {
   );
 }
 
-export const Route = createFileRoute("/actions")({ component: ActionsPage });
+type ActionsSearch = { run?: number };
+
+export const Route = createFileRoute("/actions")({
+  component: ActionsPage,
+  validateSearch: (search: Record<string, unknown>): ActionsSearch => {
+    const run = Number(search.run);
+    return Number.isInteger(run) && run > 0 ? { run } : {};
+  },
+});

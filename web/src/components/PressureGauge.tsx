@@ -1,7 +1,30 @@
 import { useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { VolumeViewT } from "@/api/schemas";
 import { humanBytes, pct } from "@/lib/format";
 import { m } from "@/paraglide/messages";
+
+// Shared marker label for the disk gauges: a colored dot centered on the mark at
+// `pct`, with the text flowing right (or left past the midpoint) so it never
+// overflows the bar near 0% or 100%.
+function MarkLabel({ pct, color, side, bumpUp, children }: {
+  pct: number;
+  color: string;
+  side: "above" | "below";
+  bumpUp?: boolean;
+  children: ReactNode;
+}) {
+  const p = Math.max(0, Math.min(100, pct));
+  return (
+    <div
+      className={`mark-label ${side}`}
+      style={{ left: `${p}%`, ...(bumpUp ? { bottom: "calc(100% + 28px)" } : null) }}
+    >
+      <span className="mark-label-dot" style={{ background: color }} />
+      <span className={`mark-label-text ${p > 50 ? "left" : "right"}`}>{children}</span>
+    </div>
+  );
+}
 
 export function PressureGauge({
   volume,
@@ -58,20 +81,20 @@ export function PressureGauge({
           <div className="gauge-fill" style={{ width: `${Math.min(100, fillPct).toFixed(2)}%` }} />
         </div>
         {threshold > 0 && (
-          <div className="gauge-mark threshold" style={{ left: `${thresholdUsed}%` }}>
-            <div className="gauge-mark-label above">
-              <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--red)", marginRight: 2 }} />
+          <>
+            <div className="gauge-mark threshold" style={{ left: `${thresholdUsed}%` }} />
+            <MarkLabel pct={thresholdUsed} color="var(--red)" side="above">
               {m.comp_gauge_threshold_mark({ pct: threshold })}
-            </div>
-          </div>
+            </MarkLabel>
+          </>
         )}
         {target > 0 && (
-          <div className="gauge-mark target" style={{ left: `${targetUsed}%` }}>
-            <div className="gauge-mark-label below">
-              <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--green)", marginRight: 2 }} />
+          <>
+            <div className="gauge-mark target" style={{ left: `${targetUsed}%` }} />
+            <MarkLabel pct={targetUsed} color="var(--green)" side="below">
               {m.comp_gauge_target_mark({ pct: target })}
-            </div>
-          </div>
+            </MarkLabel>
+          </>
         )}
       </div>
 
@@ -192,6 +215,14 @@ export function DiskGaugeEditor({
 
         {/* Handle layer — overlays track exactly via margin-top: -trackHeight */}
         <div className="disk-editor-handle-layer">
+          <MarkLabel pct={thresholdUsed} color="var(--red)" side="above"
+            bumpUp={Math.abs(thresholdUsed - targetUsed) < 18}>
+            {m.comp_gauge_trigger_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{thresholdFree}%</strong>
+          </MarkLabel>
+          <MarkLabel pct={targetUsed} color="var(--green)" side="above">
+            {m.comp_gauge_stop_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{targetFree}%</strong>
+          </MarkLabel>
+
           {/* Threshold handle */}
           <button
             type="button"
@@ -199,13 +230,6 @@ export function DiskGaugeEditor({
             style={{ left: `${thresholdUsed}%` }}
             onMouseDown={() => startDrag("threshold")}
           >
-            <div
-              className="disk-handle-label above"
-              style={Math.abs(thresholdUsed - targetUsed) < 18 ? { bottom: "calc(100% + 28px)" } : undefined}
-            >
-              <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--red)", flex: "none" }} />
-              {m.comp_gauge_trigger_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{thresholdFree}%</strong>
-            </div>
             <div className="disk-handle-line" />
             <div className="disk-handle-pip" />
           </button>
@@ -217,10 +241,6 @@ export function DiskGaugeEditor({
             style={{ left: `${targetUsed}%` }}
             onMouseDown={() => startDrag("target")}
           >
-            <div className="disk-handle-label above">
-              <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--green)", flex: "none" }} />
-              {m.comp_gauge_stop_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{targetFree}%</strong>
-            </div>
             <div className="disk-handle-line" />
             <div className="disk-handle-pip" />
           </button>
