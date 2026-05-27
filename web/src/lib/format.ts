@@ -24,23 +24,26 @@ function relativeFmt(): Intl.RelativeTimeFormat {
   return fmt;
 }
 
-const byteUnits = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte", "petabyte"] as const;
+// Fixed binary-step unit labels. CLDR's "unit" style is avoided here: its
+// short forms vary by ICU build ("kB" vs "KB", "byte" vs "B") and don't pad
+// fraction digits, so byte sizes get conventional, stable abbreviations while
+// the count itself stays locale-aware (decimal separator, grouping).
+const byteLabels = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
 
 export function humanBytes(bytes: number | undefined | null): string {
   if (bytes == null || !isFinite(bytes)) return "—";
   let n = bytes;
   let i = 0;
-  while (n >= 1024 && i < byteUnits.length - 1) {
+  while (n >= 1024 && i < byteLabels.length - 1) {
     n /= 1024;
     i++;
   }
   const digits = i === 0 ? 0 : n < 10 ? 2 : 1;
-  return numberFmt({
-    style: "unit",
-    unit: byteUnits[i],
-    unitDisplay: "short",
+  const count = numberFmt({
+    minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(n);
+  return `${count} ${byteLabels[i]}`;
 }
 
 export function pct(v: number | undefined | null, digits = 1): string {
