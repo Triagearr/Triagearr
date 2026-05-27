@@ -135,9 +135,10 @@ func TestPlan_AlreadyAboveTarget(t *testing.T) {
 		Name: "data", Path: "/data", TargetFreePercent: 20,
 	})
 	require.NoError(t, err)
-	// need = 0 → first candidate already meets target
+	// need = 0 → target already met → empty plan, no candidate elected
 	require.Equal(t, triagearr.StopTargetReached, plan.StopReason)
-	require.Len(t, plan.Items, 1)
+	require.Empty(t, plan.Items)
+	require.Zero(t, plan.EstimatedFreedBytes)
 }
 
 func TestPlan_NoSnapshot(t *testing.T) {

@@ -82,6 +82,13 @@ func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 	}
 
 	needBytes := neededBytes(snap.TotalBytes, snap.FreePercent, v.TargetFreePercent)
+	// Target already met: nothing to free. Return an empty plan rather than
+	// electing the top-scored torrent — the budget check below appends a
+	// candidate before testing it, so needBytes == 0 would otherwise delete one
+	// torrent under no pressure (manual HTTP/CLI runs aren't threshold-gated).
+	if needBytes == 0 {
+		return RunPlan{Volume: v, FreePctAtFire: snap.FreePercent, StopReason: triagearr.StopTargetReached}, nil
+	}
 
 	scores, err := d.src.ListScores(ctx, store.ListScoresOpts{IncludeExcluded: false})
 	if err != nil {
