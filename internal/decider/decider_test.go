@@ -75,7 +75,6 @@ func TestPlan_TargetReached(t *testing.T) {
 	require.Equal(t, triagearr.Hash("b"), plan.Items[1].TorrentHash)
 }
 
-
 func TestPlan_NoMoreCandidates(t *testing.T) {
 	const oneGiB = int64(1024 * 1024 * 1024)
 	src := &fakeSrc{

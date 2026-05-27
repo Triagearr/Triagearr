@@ -457,15 +457,15 @@ func (s *Server) buildArrViews(ctx context.Context) ([]arrView, error) {
 }
 
 type actionView struct {
-	ID           int64      `json:"id"`
-	RunID        int64      `json:"run_id"`
-	Rank         int        `json:"rank"`
-	TorrentHash  string     `json:"torrent_hash"`
-	TorrentName  string     `json:"torrent_name,omitempty"`
-	Status       string     `json:"status"`
-	StartedAt    time.Time  `json:"started_at"`
-	FinishedAt   *time.Time `json:"finished_at,omitempty"`
-	FreedBytes   int64      `json:"freed_bytes"`
+	ID          int64      `json:"id"`
+	RunID       int64      `json:"run_id"`
+	Rank        int        `json:"rank"`
+	TorrentHash string     `json:"torrent_hash"`
+	TorrentName string     `json:"torrent_name,omitempty"`
+	Status      string     `json:"status"`
+	StartedAt   time.Time  `json:"started_at"`
+	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+	FreedBytes  int64      `json:"freed_bytes"`
 }
 
 type actionListResponse struct {
