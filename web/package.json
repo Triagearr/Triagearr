@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build && touch dist/.gitkeep",
     "preview": "vite preview",
-    "lint": "tsc --noEmit",
+    "paraglide": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide",
+    "lint": "bun run paraglide && tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
