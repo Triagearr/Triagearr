@@ -262,7 +262,6 @@ type DiskPressureConfig struct {
 	Enabled              bool    `koanf:"enabled"`
 	ThresholdFreePercent float64 `koanf:"threshold_free_percent"`
 	TargetFreePercent    float64 `koanf:"target_free_percent"`
-	MaxRunSizeGB         int     `koanf:"max_run_size_gb"`
 }
 
 // PollingConfig groups the poll intervals for the various pollers.

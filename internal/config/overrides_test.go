@@ -36,7 +36,6 @@ volume:
     enabled: true
     threshold_free_percent: 15
     target_free_percent: 25
-    max_run_size_gb: 50
 scoring:
   weights:
     ratio_obligation_met: 50
@@ -131,7 +130,6 @@ func TestLoadWithOverrides_VolumeDiskPressure(t *testing.T) {
 	require.Equal(t, "/tmp", cfg.Volume.Path)
 	require.InDelta(t, 10.0, cfg.Volume.DiskPressure.ThresholdFreePercent, 0.001)
 	require.InDelta(t, 20.0, cfg.Volume.DiskPressure.TargetFreePercent, 0.001)
-	require.Equal(t, 50, cfg.Volume.DiskPressure.MaxRunSizeGB)
 }
 
 func TestIsEditableKey(t *testing.T) {

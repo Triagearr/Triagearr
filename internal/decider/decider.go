@@ -1,7 +1,7 @@
 // Package decider turns the M3 scorer's verdicts into an ordered run plan:
 // the set of torrents to delete to bring a volume back above its
-// target_free_percent, capped by max_run_size_gb. M4 only emits dry-run
-// plans; M5's Actor consumes the same shape and executes deletions.
+// target_free_percent. M4 only emits dry-run plans; M5's Actor consumes
+// the same shape and executes deletions.
 package decider
 
 import (
@@ -20,7 +20,6 @@ type Volume struct {
 	Name              string
 	Path              string
 	TargetFreePercent float64
-	MaxRunSizeGB      int
 }
 
 // Source is the data contract the Decider reads from. *store.Store satisfies it.
@@ -72,7 +71,7 @@ func New(src Source) *Decider {
 // Plan computes a run plan for v. It reads the latest disk_usage to determine
 // need_bytes (the gap to target_free_percent), then walks scores in DESC
 // order, keeping only torrents whose save_path is under v.Path, until the
-// budget is met or the size cap is reached.
+// budget is met or candidates are exhausted.
 func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 	snap, err := d.src.LatestDiskUsage(ctx)
 	if err != nil {
@@ -83,7 +82,6 @@ func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 	}
 
 	needBytes := neededBytes(snap.TotalBytes, snap.FreePercent, v.TargetFreePercent)
-	capBytes := int64(v.MaxRunSizeGB) * 1024 * 1024 * 1024
 
 	scores, err := d.src.ListScores(ctx, store.ListScoresOpts{IncludeExcluded: false})
 	if err != nil {
@@ -154,10 +152,6 @@ func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 		plan.EstimatedFreedBytes += t.Size
 		rank++
 
-		if capBytes > 0 && plan.EstimatedFreedBytes >= capBytes {
-			plan.StopReason = triagearr.StopSizeCap
-			return plan, nil
-		}
 		if plan.EstimatedFreedBytes >= needBytes {
 			plan.StopReason = triagearr.StopTargetReached
 			return plan, nil

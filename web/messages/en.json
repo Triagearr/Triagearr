@@ -109,8 +109,8 @@
   "settings_disk_threshold_desc": "Run fires when free space drops below this",
   "settings_disk_target_label": "Target free %",
   "settings_disk_target_desc": "Free space the run aims to restore",
-  "settings_disk_max_run_label": "Max run size (GB)",
-  "settings_disk_max_run_desc": "Cap on data deleted per run",
+  "settings_disk_tip_threshold_free_percent": "Percentage of free space below which a deletion run is triggered. Example: 10 means a run starts when less than 10 % of the volume is free.",
+  "settings_disk_tip_target_free_percent": "Free space percentage the deletion run aims to restore. The run stops once this level is reached. Must be higher than the threshold.",
 
   "settings_notif_telegram_enabled_status": "Enabled",
   "settings_notif_telegram_empty_value": "{key}: empty value — use revert to clear",
@@ -400,9 +400,6 @@
   "comp_gauge_trigger_when": "trigger when free <",
   "comp_gauge_stop_when": "stop when free ≥",
   "comp_gauge_pct_free": "{pct}% free",
-  "comp_gauge_legend_safe": "Safe — free ≥ target",
-  "comp_gauge_legend_idle": "Idle — above target, below threshold",
-  "comp_gauge_legend_armed": "Armed — below threshold",
 
   "comp_score_no_breakdown": "No factor breakdown was persisted for this torrent.",
   "comp_score_total": "total score:",

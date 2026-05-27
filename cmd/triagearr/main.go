@@ -518,7 +518,6 @@ func pressureRule(cfg *config.Config) (triggers.VolumeRule, bool) {
 		Path:                 v.Path,
 		ThresholdFreePercent: v.DiskPressure.ThresholdFreePercent,
 		TargetFreePercent:    v.DiskPressure.TargetFreePercent,
-		MaxRunSizeGB:         v.DiskPressure.MaxRunSizeGB,
 	}, true
 }
 
@@ -529,7 +528,6 @@ func theVolume(cfg *config.Config) decider.Volume {
 		Name:              v.Name,
 		Path:              v.Path,
 		TargetFreePercent: v.DiskPressure.TargetFreePercent,
-		MaxRunSizeGB:      v.DiskPressure.MaxRunSizeGB,
 	}
 }
 

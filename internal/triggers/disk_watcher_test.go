@@ -67,7 +67,7 @@ func newWatcher(s *store.Store, freshClock *time.Time) *DiskWatcher {
 	return &DiskWatcher{
 		Rule: VolumeRule{
 			Name: "data", Path: "/data",
-			ThresholdFreePercent: 10, TargetFreePercent: 20, MaxRunSizeGB: 100,
+			ThresholdFreePercent: 10, TargetFreePercent: 20,
 		},
 		Decider:     decider.New(s),
 		Store:       s,

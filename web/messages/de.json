@@ -109,8 +109,8 @@
   "settings_disk_threshold_desc": "Der Lauf startet, wenn der freie Speicher darunter fällt",
   "settings_disk_target_label": "Ziel frei %",
   "settings_disk_target_desc": "Freier Speicher, den der Lauf wiederherstellen soll",
-  "settings_disk_max_run_label": "Max. Laufgröße (GB)",
-  "settings_disk_max_run_desc": "Obergrenze für pro Lauf gelöschte Daten",
+  "settings_disk_tip_threshold_free_percent": "Prozentualer freier Speicher, unterhalb dessen ein Löschlauf ausgelöst wird. Beispiel: 10 bedeutet, ein Lauf startet, wenn weniger als 10 % des Volumes frei sind.",
+  "settings_disk_tip_target_free_percent": "Prozentualer freier Speicher, den der Löschlauf wiederherstellen soll. Der Lauf stoppt, sobald dieser Wert erreicht ist. Muss höher als der Schwellenwert sein.",
 
   "settings_notif_telegram_enabled_status": "Aktiviert",
   "settings_notif_telegram_empty_value": "{key}: leerer Wert — zum Löschen zurücksetzen verwenden",
@@ -400,9 +400,6 @@
   "comp_gauge_trigger_when": "auslösen wenn frei <",
   "comp_gauge_stop_when": "stoppen wenn frei ≥",
   "comp_gauge_pct_free": "{pct}% frei",
-  "comp_gauge_legend_safe": "Sicher — frei ≥ Ziel",
-  "comp_gauge_legend_idle": "Ruhe — über Ziel, unter Schwelle",
-  "comp_gauge_legend_armed": "Scharf — unter Schwelle",
 
   "comp_score_no_breakdown": "Für diesen Torrent wurde keine Faktor-Aufschlüsselung gespeichert.",
   "comp_score_total": "Gesamt-Score:",

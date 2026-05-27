@@ -342,7 +342,6 @@ type volumeView struct {
 	Path                 string     `json:"path"`
 	TargetFreePercent    float64    `json:"target_free_percent,omitempty"`
 	ThresholdFreePercent float64    `json:"threshold_free_percent,omitempty"`
-	MaxRunSizeGB         int        `json:"max_run_size_gb,omitempty"`
 	TotalBytes           uint64     `json:"total_bytes,omitempty"`
 	UsedBytes            uint64     `json:"used_bytes,omitempty"`
 	FreeBytes            uint64     `json:"free_bytes,omitempty"`
@@ -371,7 +370,6 @@ func (s *Server) buildVolumeView(ctx context.Context) (volumeView, error) {
 			Name: v.Name, Path: v.Path,
 			TargetFreePercent:    v.DiskPressure.TargetFreePercent,
 			ThresholdFreePercent: v.DiskPressure.ThresholdFreePercent,
-			MaxRunSizeGB:         v.DiskPressure.MaxRunSizeGB,
 		}
 	}
 	if latest != nil {

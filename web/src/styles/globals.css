@@ -489,7 +489,6 @@
 }
 .disk-handle-label.above { bottom: calc(100% + 10px); }
 .disk-handle-label.below { top:    calc(100% + 10px); }
-.disk-editor-legend { display: flex; gap: 16px; font-size: 11px; color: var(--fg-3); flex-wrap: wrap; margin-top: 12px; }
 
 /* ── Forms ────────────────────────────────────────────────────────────────── */
 .field        { display: flex; flex-direction: column; gap: 5px; }

@@ -69,7 +69,7 @@ func buildSrvWithDaemonLive(t *testing.T, apiKey string, daemonLive bool) (*serv
 	s := testStore(t)
 	seed(t, s)
 	vol := decider.Volume{
-		Name: "data", Path: "/data", TargetFreePercent: 20, MaxRunSizeGB: 100,
+		Name: "data", Path: "/data", TargetFreePercent: 20,
 	}
 	srv := server.New(server.Options{
 		Bind:       "127.0.0.1:0",

@@ -87,7 +87,6 @@ type diskPressureDTO struct {
 	Enabled              bool    `json:"enabled"`
 	ThresholdFreePercent float64 `json:"threshold_free_percent"`
 	TargetFreePercent    float64 `json:"target_free_percent"`
-	MaxRunSizeGB         int     `json:"max_run_size_gb"`
 }
 
 func scoringToDTO(s config.ScoringConfig) scoringDTO {
@@ -133,7 +132,6 @@ func volumeToDTO(v config.VolumeConfig) volumeSettingsDTO {
 			Enabled:              v.DiskPressure.Enabled,
 			ThresholdFreePercent: v.DiskPressure.ThresholdFreePercent,
 			TargetFreePercent:    v.DiskPressure.TargetFreePercent,
-			MaxRunSizeGB:         v.DiskPressure.MaxRunSizeGB,
 		},
 	}
 }

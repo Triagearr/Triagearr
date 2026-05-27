@@ -109,8 +109,8 @@
   "settings_disk_threshold_desc": "La ejecución se lanza cuando el espacio libre cae por debajo de esto",
   "settings_disk_target_label": "Objetivo % libre",
   "settings_disk_target_desc": "Espacio libre que la ejecución pretende restaurar",
-  "settings_disk_max_run_label": "Tamaño máx. por ejecución (GB)",
-  "settings_disk_max_run_desc": "Límite de datos eliminados por ejecución",
+  "settings_disk_tip_threshold_free_percent": "Porcentaje de espacio libre por debajo del cual se dispara una ejecución de eliminación. Ejemplo: 10 significa que una ejecución comienza cuando menos del 10 % del volumen está libre.",
+  "settings_disk_tip_target_free_percent": "Porcentaje de espacio libre que la ejecución pretende restaurar. La ejecución se detiene una vez alcanzado este nivel. Debe ser superior al umbral.",
 
   "settings_notif_telegram_enabled_status": "Activado",
   "settings_notif_telegram_empty_value": "{key}: valor vacío — use restablecer para borrar",
@@ -400,9 +400,6 @@
   "comp_gauge_trigger_when": "disparar cuando libre <",
   "comp_gauge_stop_when": "detener cuando libre ≥",
   "comp_gauge_pct_free": "{pct}% libre",
-  "comp_gauge_legend_safe": "Seguro — libre ≥ objetivo",
-  "comp_gauge_legend_idle": "Inactivo — sobre el objetivo, bajo el umbral",
-  "comp_gauge_legend_armed": "Armado — bajo el umbral",
 
   "comp_score_no_breakdown": "No se guardó ningún desglose de factores para este torrent.",
   "comp_score_total": "puntuación total:",

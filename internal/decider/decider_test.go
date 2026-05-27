@@ -65,7 +65,7 @@ func TestPlan_TargetReached(t *testing.T) {
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
-		Name: "data", Path: "/data", TargetFreePercent: 10, MaxRunSizeGB: 50,
+		Name: "data", Path: "/data", TargetFreePercent: 10,
 	})
 	require.NoError(t, err)
 	require.Equal(t, triagearr.StopTargetReached, plan.StopReason)
@@ -75,28 +75,6 @@ func TestPlan_TargetReached(t *testing.T) {
 	require.Equal(t, triagearr.Hash("b"), plan.Items[1].TorrentHash)
 }
 
-func TestPlan_SizeCap(t *testing.T) {
-	const oneGiB = int64(1024 * 1024 * 1024)
-	src := &fakeSrc{
-		scores: []store.ScoreRow{
-			{Hash: "a", Score: 100},
-			{Hash: "b", Score: 90},
-		},
-		torrents: []store.TorrentBasic{
-			{Hash: "a", SavePath: "/data/x", Size: 6 * oneGiB},
-			{Hash: "b", SavePath: "/data/x", Size: 6 * oneGiB},
-		},
-		disk: &triagearr.DiskUsage{TotalBytes: 1000 * uint64(oneGiB), FreePercent: 0},
-	}
-	d := decider.New(src)
-	plan, err := d.Plan(context.Background(), decider.Volume{
-		Name: "data", Path: "/data", TargetFreePercent: 50, MaxRunSizeGB: 5,
-	})
-	require.NoError(t, err)
-	require.Equal(t, triagearr.StopSizeCap, plan.StopReason)
-	// cap = 5 GiB ; first item (6 GiB) already exceeds it → 1 item
-	require.Len(t, plan.Items, 1)
-}
 
 func TestPlan_NoMoreCandidates(t *testing.T) {
 	const oneGiB = int64(1024 * 1024 * 1024)
@@ -109,7 +87,7 @@ func TestPlan_NoMoreCandidates(t *testing.T) {
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
-		Name: "data", Path: "/data", TargetFreePercent: 50, MaxRunSizeGB: 100,
+		Name: "data", Path: "/data", TargetFreePercent: 50,
 	})
 	require.NoError(t, err)
 	require.Equal(t, triagearr.StopNoMoreCandidates, plan.StopReason)
@@ -133,7 +111,7 @@ func TestPlan_VolumeFilterByPrefix(t *testing.T) {
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
-		Name: "data", Path: "/data", TargetFreePercent: 1, MaxRunSizeGB: 100,
+		Name: "data", Path: "/data", TargetFreePercent: 1,
 	})
 	require.NoError(t, err)
 	// 'a' filtered out (outside the volume path) ; 'b' brings 4 GiB > need
@@ -154,7 +132,7 @@ func TestPlan_AlreadyAboveTarget(t *testing.T) {
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
-		Name: "data", Path: "/data", TargetFreePercent: 20, MaxRunSizeGB: 100,
+		Name: "data", Path: "/data", TargetFreePercent: 20,
 	})
 	require.NoError(t, err)
 	// need = 0 → first candidate already meets target
@@ -190,7 +168,7 @@ func TestPlan_FiltersCrossSeed(t *testing.T) {
 	}
 	d := decider.New(src)
 	plan, err := d.Plan(context.Background(), decider.Volume{
-		Name: "data", Path: "/data", TargetFreePercent: 100, MaxRunSizeGB: 100,
+		Name: "data", Path: "/data", TargetFreePercent: 100,
 	})
 	require.NoError(t, err)
 	require.Equal(t, 2, plan.FilteredCrossSeed, "a (nlink=3) and d (qbit-only nlink=2) filtered")

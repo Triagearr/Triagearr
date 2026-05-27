@@ -184,7 +184,7 @@ export type FieldProps = {
 };
 
 export function Field(p: FieldProps) {
-  const cols = p.compact ? "grid-cols-[11rem_5rem_1fr]" : "grid-cols-[12rem_1fr_auto]";
+  const cols = p.compact ? "grid-cols-[minmax(7rem,auto)_5rem_auto]" : "grid-cols-[12rem_1fr_auto]";
   const labelEl = (
     <label
       className={`text-muted-foreground font-mono text-xs ${p.tooltip ? "cursor-help underline decoration-dotted decoration-muted-foreground/60 underline-offset-2" : ""}`}

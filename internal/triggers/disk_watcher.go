@@ -38,7 +38,6 @@ type VolumeRule struct {
 	Path                 string
 	ThresholdFreePercent float64
 	TargetFreePercent    float64
-	MaxRunSizeGB         int
 }
 
 // RunStore is the subset of store ops the watcher writes through. The last two
@@ -134,7 +133,6 @@ func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error 
 		Name:              r.Name,
 		Path:              r.Path,
 		TargetFreePercent: r.TargetFreePercent,
-		MaxRunSizeGB:      r.MaxRunSizeGB,
 	}
 	plan, err := w.Decider.Plan(ctx, v)
 	if err != nil {

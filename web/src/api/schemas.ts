@@ -140,7 +140,6 @@ export const VolumeView = z.object({
   path: z.string(),
   target_free_percent: z.number().optional(),
   threshold_free_percent: z.number().optional(),
-  max_run_size_gb: z.number().optional(),
   total_bytes: z.number().optional(),
   used_bytes: z.number().optional(),
   free_bytes: z.number().optional(),
@@ -301,7 +300,6 @@ export const VolumeDiskPressure = z.object({
   enabled: z.boolean().optional(),
   threshold_free_percent: z.number().optional(),
   target_free_percent: z.number().optional(),
-  max_run_size_gb: z.number().optional(),
 });
 export const VolumeSettings = z.object({
   name: z.string(),

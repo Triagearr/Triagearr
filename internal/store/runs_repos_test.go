@@ -90,7 +90,7 @@ func TestRunItems_CascadeOnRunDelete(t *testing.T) {
 		TriggeredBy: triagearr.RunTriggerHTTP,
 		TriggeredAt: time.Now().UTC(),
 		Mode:        "dry-run",
-		StopReason:  triagearr.StopSizeCap,
+		StopReason:  triagearr.StopNoMoreCandidates,
 		Status:      "completed",
 	})
 	require.NoError(t, err)

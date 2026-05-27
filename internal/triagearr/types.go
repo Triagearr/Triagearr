@@ -261,7 +261,6 @@ type RunStopReason string
 // Supported RunStopReason values.
 const (
 	StopTargetReached    RunStopReason = "target_reached"
-	StopSizeCap          RunStopReason = "size_cap"
 	StopNoMoreCandidates RunStopReason = "no_more_candidates"
 )
 

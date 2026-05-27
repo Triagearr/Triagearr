@@ -199,7 +199,10 @@ export function DiskGaugeEditor({
             style={{ left: `${thresholdUsed}%` }}
             onMouseDown={() => startDrag("threshold")}
           >
-            <div className="disk-handle-label above">
+            <div
+              className="disk-handle-label above"
+              style={Math.abs(thresholdUsed - targetUsed) < 18 ? { bottom: "calc(100% + 28px)" } : undefined}
+            >
               <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--red)", flex: "none" }} />
               {m.comp_gauge_trigger_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{thresholdFree}%</strong>
             </div>
@@ -214,12 +217,12 @@ export function DiskGaugeEditor({
             style={{ left: `${targetUsed}%` }}
             onMouseDown={() => startDrag("target")}
           >
-            <div className="disk-handle-pip" />
-            <div className="disk-handle-line" />
-            <div className="disk-handle-label below">
+            <div className="disk-handle-label above">
               <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: "var(--green)", flex: "none" }} />
               {m.comp_gauge_stop_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{targetFree}%</strong>
             </div>
+            <div className="disk-handle-line" />
+            <div className="disk-handle-pip" />
           </button>
         </div>
 
@@ -238,12 +241,6 @@ export function DiskGaugeEditor({
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="disk-editor-legend">
-        <span><span className="dot green" /> {m.comp_gauge_legend_safe()}</span>
-        <span><span className="dot amber" /> {m.comp_gauge_legend_idle()}</span>
-        <span><span className="dot red" />  {m.comp_gauge_legend_armed()}</span>
-      </div>
     </div>
   );
 }

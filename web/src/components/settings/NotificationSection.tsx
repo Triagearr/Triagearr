@@ -66,11 +66,16 @@ function ProviderTile({
     enabled:      "state-healthy",
   };
 
+  const statusLabel: Record<TileStatus, string> = {
+    enabled: m.settings_notif_telegram_enabled_status(),
+    disabled: m.common_disabled(),
+    unconfigured: m.common_not_configured(),
+  };
   const statusEl = (
-    <div className="arr-tile-state">
-      {status === "enabled"      && <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>{m.settings_notif_telegram_enabled_status()}</span></>}
-      {status === "disabled"     && <><span className="dot" /><span style={{ color: "var(--fg-3)" }}>{m.common_disabled()}</span></>}
-      {status === "unconfigured" && <span style={{ color: "var(--fg-3)" }}>{m.common_not_configured()}</span>}
+    <div className="arr-tile-state" title={statusLabel[status]}>
+      {status === "enabled"      && <><span className="dot green" /><span className="arr-tile-state-text" style={{ color: "var(--green-2)" }}>{m.settings_notif_telegram_enabled_status()}</span></>}
+      {status === "disabled"     && <><span className="dot" /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>{m.common_disabled()}</span></>}
+      {status === "unconfigured" && <><span className="dot" style={{ background: "transparent", border: "1px dashed var(--border-2)" }} /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>{m.common_not_configured()}</span></>}
     </div>
   );
 
