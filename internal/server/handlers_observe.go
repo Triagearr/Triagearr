@@ -203,10 +203,18 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Linker != nil {
 		if links, err := s.opts.Linker.Links(r.Context(), hash); err == nil {
 			out.Links = make([]linkView, len(links))
+			// Resolve each arr kind's base URL once: a multi-file torrent can
+			// carry many links of the same ArrType, and arrBaseURL hits the DB.
+			arrURLs := make(map[triagearr.ArrType]string)
 			for i, l := range links {
+				baseURL, ok := arrURLs[l.ArrType]
+				if !ok {
+					baseURL = s.arrBaseURL(r.Context(), l.ArrType)
+					arrURLs[l.ArrType] = baseURL
+				}
 				out.Links[i] = linkView{
 					ArrType:      string(l.ArrType),
-					ArrURL:       s.arrBaseURL(r.Context(), l.ArrType),
+					ArrURL:       baseURL,
 					TitleSlug:    l.TitleSlug,
 					FileID:       l.FileID,
 					Size:         l.Size,

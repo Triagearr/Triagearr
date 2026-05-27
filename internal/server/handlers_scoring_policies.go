@@ -102,8 +102,7 @@ func (s *Server) handlePutScoringDefaults(w http.ResponseWriter, r *http.Request
 		return
 	}
 	// No daemon reload — the next ScoreAll pass picks the new values up from
-	// the DB on its own. Trigger a score-only rescore so the UI sees fresh
-	// verdicts within one polling tick instead of waiting for the next pass.
+	// the DB on its own, so verdicts refresh on the following scorer tick.
 	w.WriteHeader(http.StatusNoContent)
 }
 

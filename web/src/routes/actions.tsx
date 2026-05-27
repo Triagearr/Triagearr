@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   useAction, useActions, usePreviewRun, useRun, useRunActions, useRuns, useTriggerRun,
 } from "@/api/hooks";
+import { ApiError } from "@/api/client";
 import { humanBytes, relativeTime, shortHash } from "@/lib/format";
 import { Tooltip } from "@/components/ui/Tooltip";
 import type { ActionStatusT, ActionViewT, AuditOutcomeT, RunResponseT } from "@/api/schemas";
@@ -12,6 +13,17 @@ import { m } from "@/paraglide/messages";
 function torrentLabel(name: string | undefined, hash: string, maxLen = 40): string {
   if (name) return name.length > maxLen ? name.slice(0, maxLen - 1) + "…" : name;
   return shortHash(hash, 12);
+}
+
+// Localizes the run-trigger failure banner. Backend error strings are English
+// and bypass i18n, so map the known HTTP statuses to translated reasons rather
+// than rendering the raw message.
+function triggerErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 409) return `${m.actions_trigger_failed()} — ${m.actions_live_in_progress()}`;
+    if (err.status === 400) return `${m.actions_trigger_failed()} — ${m.dash_no_volume_configured()}`;
+  }
+  return m.actions_trigger_failed();
 }
 
 // ── Tone maps ─────────────────────────────────────────────────────────────────
@@ -550,7 +562,7 @@ function ActionsPage() {
       {trigger.isError && (
         <div className="banner banner-danger" role="alert">
           <AlertTriangle size={13} />
-          <span>{m.actions_trigger_failed()}{trigger.error instanceof Error ? ` — ${trigger.error.message}` : ""}</span>
+          <span>{triggerErrorMessage(trigger.error)}</span>
         </div>
       )}
 

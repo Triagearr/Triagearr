@@ -21,6 +21,9 @@ import {
   useConnectionDrawer,
   DrawerActions,
   ConnectionKindTile,
+  validateConnUrl,
+  validateTimeout,
+  validatePublicUrl,
   type ConnectionMutations,
   type VisualTileStatus,
 } from "./ConnectionsCommon";
@@ -168,27 +171,11 @@ const formToTest = (kind: string, f: Form): ArrTestInput => ({
 
 function clientValidate(f: Form): string | null {
   if (f.enabled) {
-    if (!f.url.trim()) return m.settings_validate_url_required();
-    try {
-      const u = new URL(f.url);
-      if (!u.host) return m.settings_validate_url_host();
-    } catch {
-      return m.settings_validate_url_invalid();
-    }
+    const urlErr = validateConnUrl(f.url);
+    if (urlErr) return urlErr;
     if (!f.api_key) return m.settings_validate_api_key_required();
   }
-  if (f.timeout_seconds < 0) return m.settings_validate_timeout_positive();
-  if (f.public_url.trim()) {
-    try {
-      const u = new URL(f.public_url.trim());
-      if (!u.host || (u.protocol !== "http:" && u.protocol !== "https:")) {
-        return m.settings_validate_public_url_absolute();
-      }
-    } catch {
-      return m.settings_validate_public_url_invalid();
-    }
-  }
-  return null;
+  return validateTimeout(f.timeout_seconds) ?? validatePublicUrl(f.public_url);
 }
 
 // ── Drawer ─────────────────────────────────────────────────────────────────────

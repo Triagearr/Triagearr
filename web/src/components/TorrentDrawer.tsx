@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useSetTorrentProtected, useSnapshots, useTorrent } from "@/api/hooks";
 import { ArrLogo } from "@/components/ArrLogo";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
+import { scoreTier } from "@/components/ScoreCell";
 import { Sparkline } from "@/components/Sparkline";
 import { humanBytes, relativeTime } from "@/lib/format";
 import { m } from "@/paraglide/messages";
@@ -54,7 +55,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
 
   const t = torrent.data;
   const score = t?.score?.score;
-  const tier = score == null ? "low" : score <= 1 ? "low" : score <= 5 ? "med" : "high";
+  const tier = scoreTier(score);
 
   if (!open) return null;
   return (

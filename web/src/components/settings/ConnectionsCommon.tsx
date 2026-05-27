@@ -172,6 +172,39 @@ export function splitList(s: string): string[] {
     .filter((x) => x.length > 0);
 }
 
+// Shared field validators for the two connection sections. They diverge only
+// on the credential field (api_key vs username/password), so the URL, timeout
+// and public_url checks live here to stay in lockstep.
+export function validateConnUrl(url: string): string | null {
+  if (!url.trim()) return m.settings_validate_url_required();
+  try {
+    const u = new URL(url);
+    if (!u.host) return m.settings_validate_url_host();
+  } catch {
+    return m.settings_validate_url_invalid();
+  }
+  return null;
+}
+
+export function validateTimeout(seconds: number): string | null {
+  if (seconds < 0) return m.settings_validate_timeout_positive();
+  return null;
+}
+
+export function validatePublicUrl(publicUrl: string): string | null {
+  const trimmed = publicUrl.trim();
+  if (!trimmed) return null;
+  try {
+    const u = new URL(trimmed);
+    if (!u.host || (u.protocol !== "http:" && u.protocol !== "https:")) {
+      return m.settings_validate_public_url_absolute();
+    }
+  } catch {
+    return m.settings_validate_public_url_invalid();
+  }
+  return null;
+}
+
 // Minimal mutation surface the hook needs from the createConnectionHooks
 // outputs. Each mutation exposes mutateAsync + isPending — that's enough.
 type Mutation<TArgs> = {

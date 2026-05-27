@@ -93,8 +93,10 @@ func trackerPolicyFor(trackers []trackerView, defaults triagearr.ScoringDefaults
 			RareThreshold: defaults.RareThreshold,
 		}
 	}
-	var out effectivePolicy
-	for _, t := range trackers {
+	// Seed RareThreshold from the first tracker so the min-merge below starts
+	// from a real value: 0 is a legitimate threshold, not an "unset" sentinel.
+	out := effectivePolicy{RareThreshold: defaults.RareThreshold}
+	for i, t := range trackers {
 		var perTracker effectivePolicy
 		if p, ok := overrides[t.Host]; ok && p.Enabled {
 			perTracker.MinRatio = p.MinRatio
@@ -117,7 +119,7 @@ func trackerPolicyFor(trackers []trackerView, defaults triagearr.ScoringDefaults
 		if perTracker.MinRatio > out.MinRatio {
 			out.MinRatio = perTracker.MinRatio
 		}
-		if out.RareThreshold == 0 || perTracker.RareThreshold < out.RareThreshold {
+		if i == 0 || perTracker.RareThreshold < out.RareThreshold {
 			out.RareThreshold = perTracker.RareThreshold
 		}
 	}

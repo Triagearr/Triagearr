@@ -164,24 +164,10 @@ func (s *Server) handlePreviewRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), runItemHashes(plan.Items))
-	candidates := make([]runItemResponse, 0, len(plan.Items))
-	for _, it := range plan.Items {
-		c := runItemResponse{
-			Rank:           it.Rank,
-			TorrentHash:    string(it.TorrentHash),
-			Score:          it.Score,
-			SizeBytes:      it.SizeBytes,
-			WouldFreeBytes: it.WouldFreeBytes,
-		}
-		if n, ok := names[it.TorrentHash]; ok {
-			c.TorrentName = n
-		}
-		candidates = append(candidates, c)
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"estimated_freed_bytes": plan.EstimatedFreedBytes,
 		"stop_reason":           string(plan.StopReason),
-		"candidates":            candidates,
+		"candidates":            buildRunItems(plan.Items, names),
 	})
 }
 
@@ -229,6 +215,14 @@ func buildResponse(r triagearr.Run, items []triagearr.RunItem, names map[triagea
 		StopReason:          string(r.StopReason),
 		Status:              r.Status,
 	}
+	out.Candidates = buildRunItems(items, names)
+	return out
+}
+
+// buildRunItems maps deletion-plan items to their wire shape, merging in
+// torrent names when known. Shared by the persisted-run view and the preview.
+func buildRunItems(items []triagearr.RunItem, names map[triagearr.Hash]string) []runItemResponse {
+	out := make([]runItemResponse, 0, len(items))
 	for _, it := range items {
 		c := runItemResponse{
 			Rank:           it.Rank,
@@ -240,7 +234,7 @@ func buildResponse(r triagearr.Run, items []triagearr.RunItem, names map[triagea
 		if n, ok := names[it.TorrentHash]; ok {
 			c.TorrentName = n
 		}
-		out.Candidates = append(out.Candidates, c)
+		out = append(out, c)
 	}
 	return out
 }
