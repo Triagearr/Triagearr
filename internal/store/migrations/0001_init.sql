@@ -114,7 +114,8 @@ CREATE TABLE media (
     last_seen  TIMESTAMP NOT NULL,
     PRIMARY KEY (arr_type, id)
 );
-CREATE INDEX idx_media_last_seen ON media(last_seen);
+-- No index on media.last_seen: media is upserted but never pruned or sorted by
+-- it (unlike torrents), and every read enters by the PK (arr_type, id).
 
 CREATE TABLE media_files (
     arr_type  TEXT      NOT NULL,
@@ -125,7 +126,8 @@ CREATE TABLE media_files (
     last_seen TIMESTAMP NOT NULL,
     PRIMARY KEY (arr_type, file_id)
 );
-CREATE INDEX idx_media_files_media ON media_files(arr_type, media_id);
+-- No index on media_id: every join enters media_files by the PK
+-- (arr_type, file_id); media_id is only projected to reach the media row.
 
 -- API-only hardlink map (ADR-0012). download_id is the lowercased qBit
 -- info-hash that *arr's import history recorded for this file.
@@ -198,8 +200,10 @@ CREATE TABLE tracker_policies (
     updated_at     TIMESTAMP NOT NULL
 ) WITHOUT ROWID;
 
--- The partial index serves the Decider's hot path: eligible candidates ranked
--- by score. factors_json is the breakdown read whole by the explain path.
+-- scores stays small-row (no blob) so WITHOUT ROWID is ideal and the partial
+-- index below is near-covering for the Decider's hot path: eligible candidates
+-- ranked by score. The per-factor breakdown lives in score_factors, read whole
+-- only by the explain path (drawer / CLI), never during ranking.
 CREATE TABLE scores (
     torrent_hash      TEXT      NOT NULL PRIMARY KEY,
     score             REAL      NOT NULL,
@@ -207,10 +211,17 @@ CREATE TABLE scores (
     any_tracker_alive INTEGER   NOT NULL,
     excluded          INTEGER   NOT NULL DEFAULT 0,
     exclusion_reasons TEXT      NOT NULL DEFAULT '',
-    factors_json      TEXT      NOT NULL,
     computed_at       TIMESTAMP NOT NULL
 ) WITHOUT ROWID;
 CREATE INDEX idx_scores_eligible ON scores(score DESC) WHERE excluded = 0;
+
+-- Breakdown blob split out of scores (see above). Keyed and cascade-deleted by
+-- the parent score row, so PruneStaleTorrents' DELETE FROM scores cleans it up.
+CREATE TABLE score_factors (
+    torrent_hash TEXT NOT NULL PRIMARY KEY
+        REFERENCES scores(torrent_hash) ON DELETE CASCADE,
+    factors_json TEXT NOT NULL
+) WITHOUT ROWID;
 
 ------------------------------------------------------------------------------
 -- Runs / actions / audit
@@ -238,7 +249,7 @@ CREATE TABLE run_items (
     would_free_bytes INTEGER NOT NULL,
     PRIMARY KEY (run_id, rank)
 );
-CREATE INDEX idx_run_items_hash ON run_items(torrent_hash);
+-- No index on torrent_hash: run_items is only read by (run_id, rank).
 
 -- One row per candidate the actor attempts. started_at is indexed for the
 -- dashboard's global action timeline (ORDER BY started_at DESC).
@@ -256,8 +267,9 @@ CREATE TABLE actions (
     freed_bytes  INTEGER   NOT NULL DEFAULT 0,
     UNIQUE(run_id, rank)
 );
-CREATE INDEX idx_actions_hash       ON actions(torrent_hash);
-CREATE INDEX idx_actions_status     ON actions(status);
+-- Only started_at is indexed: the dashboard timeline orders by it. actions is
+-- otherwise read by id (PK) or run_id (the UNIQUE(run_id, rank) prefix);
+-- torrent_hash and status are never filter/sort predicates.
 CREATE INDEX idx_actions_started_at ON actions(started_at DESC);
 
 -- One row per API call — per-file granularity on the *arr side so a partial
@@ -274,7 +286,10 @@ CREATE TABLE audit_log (
     outcome     TEXT      NOT NULL,
     detail      TEXT
 );
-CREATE INDEX idx_audit_log_action ON audit_log(action_id, ts);
+-- (action_id) alone serves "WHERE action_id=? ORDER BY id": audit_log is a
+-- rowid table, so id rides every index entry and the ts column would be dead
+-- weight (the query orders by id, not ts).
+CREATE INDEX idx_audit_log_action ON audit_log(action_id);
 
 ------------------------------------------------------------------------------
 -- Auth

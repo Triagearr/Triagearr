@@ -272,33 +272,54 @@ type ScoreRow struct {
 	ComputedAt       time.Time `db:"computed_at"`
 }
 
-// UpsertScore writes (or replaces) one score row.
+// UpsertScore writes (or replaces) one score row. The verdict and its factor
+// breakdown live in separate tables (scores / score_factors), so the write is
+// wrapped in a transaction to keep the two in sync.
 func (s *Store) UpsertScore(ctx context.Context, row ScoreRow) error {
-	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO scores(torrent_hash, score, private, any_tracker_alive, excluded, exclusion_reasons, factors_json, computed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	tx, err := s.writer.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin upsert score %s: %w", row.Hash, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO scores(torrent_hash, score, private, any_tracker_alive, excluded, exclusion_reasons, computed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(torrent_hash) DO UPDATE SET
 			score=excluded.score,
 			private=excluded.private,
 			any_tracker_alive=excluded.any_tracker_alive,
 			excluded=excluded.excluded,
 			exclusion_reasons=excluded.exclusion_reasons,
-			factors_json=excluded.factors_json,
 			computed_at=excluded.computed_at
-	`, row.Hash, row.Score, row.Private, row.AnyTrackerAlive, row.Excluded, row.ExclusionReasons, row.FactorsJSON, ts(row.ComputedAt))
-	if err != nil {
+	`, row.Hash, row.Score, row.Private, row.AnyTrackerAlive, row.Excluded, row.ExclusionReasons, ts(row.ComputedAt)); err != nil {
 		return fmt.Errorf("upserting score %s: %w", row.Hash, err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO score_factors(torrent_hash, factors_json)
+		VALUES (?, ?)
+		ON CONFLICT(torrent_hash) DO UPDATE SET factors_json=excluded.factors_json
+	`, row.Hash, row.FactorsJSON); err != nil {
+		return fmt.Errorf("upserting score factors %s: %w", row.Hash, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit upsert score %s: %w", row.Hash, err)
 	}
 	return nil
 }
 
-// GetScore returns the persisted score row for one hash. Returns sql.ErrNoRows
-// when the scorer has not produced a verdict yet.
+// GetScore returns the persisted score row for one hash, including the factor
+// breakdown. Returns sql.ErrNoRows when the scorer has not produced a verdict
+// yet.
 func (s *Store) GetScore(ctx context.Context, hash triagearr.Hash) (ScoreRow, error) {
 	var row ScoreRow
 	err := s.reader.GetContext(ctx, &row, `
-		SELECT torrent_hash, score, private, any_tracker_alive, excluded, exclusion_reasons, factors_json, computed_at
-		FROM scores WHERE torrent_hash = ?
+		SELECT sc.torrent_hash, sc.score, sc.private, sc.any_tracker_alive,
+		       sc.excluded, sc.exclusion_reasons, sc.computed_at,
+		       COALESCE(sf.factors_json, '') AS factors_json
+		FROM scores sc
+		LEFT JOIN score_factors sf ON sf.torrent_hash = sc.torrent_hash
+		WHERE sc.torrent_hash = ?
 	`, string(hash))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -314,6 +335,10 @@ type ListScoresOpts struct {
 	// IncludeExcluded leaves rows flagged excluded=1 in the result. The
 	// default (false) is what M4's Decider wants: only eligible candidates.
 	IncludeExcluded bool
+	// WithFactors joins score_factors to populate FactorsJSON. The Decider
+	// ranks by score alone, so it leaves this false to avoid reading the
+	// breakdown blob for every candidate; the explain/UI paths set it true.
+	WithFactors bool
 	// Limit caps the number of rows. <= 0 means no limit.
 	Limit int
 }
@@ -321,13 +346,21 @@ type ListScoresOpts struct {
 // ListScores returns score rows ordered by score descending (most-deletable
 // first), joined to the torrents table so callers get a human-readable name.
 func (s *Store) ListScores(ctx context.Context, opts ListScoresOpts) ([]ScoreRow, error) {
-	q := `
+	factorsCol := "'' AS factors_json"
+	factorsJoin := ""
+	if opts.WithFactors {
+		factorsCol = "COALESCE(sf.factors_json, '') AS factors_json"
+		factorsJoin = "LEFT JOIN score_factors sf ON sf.torrent_hash = sc.torrent_hash"
+	}
+	q := fmt.Sprintf(`
 		SELECT sc.torrent_hash, sc.score, sc.private, sc.any_tracker_alive,
-		       sc.excluded, sc.exclusion_reasons, sc.factors_json, sc.computed_at,
+		       sc.excluded, sc.exclusion_reasons, sc.computed_at,
+		       %s,
 		       COALESCE(t.name, sc.torrent_hash) AS name
 		FROM scores sc
 		LEFT JOIN torrents t ON t.hash = sc.torrent_hash
-	`
+		%s
+	`, factorsCol, factorsJoin)
 	if !opts.IncludeExcluded {
 		q += ` WHERE sc.excluded = 0`
 	}

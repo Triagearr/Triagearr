@@ -323,6 +323,7 @@ func (s *Server) handleListScores(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.opts.Store.ListScores(r.Context(), store.ListScoresOpts{
 		Limit:           intParam(q, "limit", 50, 1, 500),
 		IncludeExcluded: boolParam(q, "include_excluded"),
+		WithFactors:     true,
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -663,7 +664,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	run("list scores", func() error {
-		rows, err := s.opts.Store.ListScores(ctx, store.ListScoresOpts{Limit: 10})
+		rows, err := s.opts.Store.ListScores(ctx, store.ListScoresOpts{Limit: 10, WithFactors: true})
 		if err != nil {
 			return err
 		}

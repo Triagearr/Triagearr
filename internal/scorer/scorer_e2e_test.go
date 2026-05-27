@@ -151,7 +151,7 @@ func TestScoreAll_PublicHealthyVsRareVsGraveyard(t *testing.T) {
 	require.Equal(t, 0, stats.Errors)
 
 	// Ordering: graveyard > publichealthy > publicrare (vetoed) > freshprivate (HnR vetoed).
-	rows, err := s.ListScores(ctx, store.ListScoresOpts{IncludeExcluded: true})
+	rows, err := s.ListScores(ctx, store.ListScoresOpts{IncludeExcluded: true, WithFactors: true})
 	require.NoError(t, err)
 	require.Len(t, rows, 5)
 	require.Equal(t, "graveyard", rows[0].Hash, "graveyard should top the eligible list")
