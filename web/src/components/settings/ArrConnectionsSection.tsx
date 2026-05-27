@@ -20,7 +20,9 @@ import {
   splitList,
   useConnectionDrawer,
   DrawerActions,
+  ConnectionKindTile,
   type ConnectionMutations,
+  type VisualTileStatus,
 } from "./ConnectionsCommon";
 
 // ── Kind catalogue ─────────────────────────────────────────────────────────────
@@ -57,6 +59,20 @@ function tileStatus(
   return "unhealthy";
 }
 
+const STATUS_TEXT: Record<TileStatus, () => string> = {
+  unconfigured: m.common_not_configured,
+  disabled:     m.common_disabled,
+  unhealthy:    m.settings_status_unreachable,
+  healthy:      m.settings_status_connected,
+};
+
+const VISUAL: Record<TileStatus, VisualTileStatus> = {
+  unconfigured: "unconfigured",
+  disabled:     "disabled",
+  unhealthy:    "unhealthy",
+  healthy:      "healthy",
+};
+
 function KindTile({
   meta,
   connection,
@@ -69,75 +85,24 @@ function KindTile({
   onClick: () => void;
 }) {
   const status = tileStatus(connection, arrView);
-
-  const stateClass: Record<TileStatus, string> = {
-    unconfigured: "state-unconfigured",
-    disabled:     "state-disabled",
-    unhealthy:    "state-down",
-    healthy:      "state-healthy",
-  };
-
-  const statusLabel: Record<TileStatus, string> = {
-    unconfigured: m.common_not_configured(),
-    disabled:     m.common_disabled(),
-    unhealthy:    m.settings_status_unreachable(),
-    healthy:      m.settings_status_connected(),
-  };
-
   return (
-    <button
-      type="button"
+    <ConnectionKindTile
+      label={meta.label}
+      stub={meta.stub}
+      connected={!!connection}
+      status={VISUAL[status]}
+      statusText={STATUS_TEXT[status]()}
+      url={connection?.url}
+      chips={connection ? [
+        { label: m.settings_chip_enabled(), on: connection.enabled },
+        { label: m.settings_chip_poll(),    on: connection.poll },
+        { label: m.settings_chip_act(),     on: connection.act, danger: true, liveTag: true },
+      ] : undefined}
+      lastError={arrView?.last_error}
+      footNote={status === "disabled" ? m.common_disabled() : undefined}
+      renderLogo={(size) => <SharedArrLogo kind={meta.value} size={size} greyscale={meta.stub} />}
       onClick={onClick}
-      disabled={meta.stub}
-      className={cn("arr-tile", stateClass[status], meta.stub && "opacity-50 cursor-not-allowed")}
-    >
-      <div className="arr-tile-head">
-        <SharedArrLogo kind={meta.value} size={36} greyscale={meta.stub} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="arr-tile-name">{meta.label}</div>
-          {meta.stub && (
-            <div className="arr-tile-tag" style={{ color: "var(--fg-4)", fontSize: 10 }}>{m.settings_coming_soon()}</div>
-          )}
-        </div>
-        <div className="arr-tile-state" title={statusLabel[status]}>
-          {status === "healthy"      && <><span className="dot green" /><span className="arr-tile-state-text" style={{ color: "var(--green-2)" }}>{m.settings_status_connected()}</span></>}
-          {status === "unhealthy"    && <><span className="dot red pulse" /><span className="arr-tile-state-text" style={{ color: "var(--red-2)" }}>{m.settings_status_unreachable()}</span></>}
-          {status === "disabled"     && <><span className="dot" /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>{m.common_disabled()}</span></>}
-          {status === "unconfigured" && <><span className="dot" style={{ background: "transparent", border: "1px dashed var(--border-2)" }} /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>{m.common_not_configured()}</span></>}
-        </div>
-      </div>
-
-      {connection && <div className="arr-tile-url">{connection.url}</div>}
-
-      {connection && (
-        <div className="arr-tile-toggles">
-          <span className={cn("arr-chip", connection.enabled && "on")}>
-            <span className="arr-chip-dot" /> {m.settings_chip_enabled()}
-          </span>
-          <span className={cn("arr-chip", connection.poll && "on")}>
-            <span className="arr-chip-dot" /> {m.settings_chip_poll()}
-          </span>
-          <span className={cn("arr-chip", connection.act && "on danger")}>
-            <span className="arr-chip-dot" /> {m.settings_chip_act()}
-            {connection.act && (
-              <span style={{ marginLeft: 3, fontSize: 9.5, fontFamily: "'Geist Mono',ui-monospace,monospace", color: "var(--red-2)" }}>LIVE</span>
-            )}
-          </span>
-        </div>
-      )}
-
-      {arrView?.last_error && <div className="arr-tile-error">{arrView.last_error}</div>}
-
-      {!connection && !meta.stub && (
-        <div className="arr-tile-empty"><span>{m.settings_click_to_configure()}</span></div>
-      )}
-
-      {connection && status === "disabled" && (
-        <div className="arr-tile-foot" style={{ color: "var(--fg-4)", fontSize: 11 }}>
-          {statusLabel[status]}
-        </div>
-      )}
-    </button>
+    />
   );
 }
 
@@ -368,7 +333,7 @@ export function ArrConnectionsSection() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="arr-tile-grid">
           {KINDS.map((meta) => (
             <KindTile
               key={meta.value}

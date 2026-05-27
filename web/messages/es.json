@@ -20,7 +20,6 @@
   "common_test": "Probar",
 
   "settings_title": "Ajustes",
-  "settings_live_config_sub": "Configuración en vivo — los cambios se aplican al guardar",
   "settings_nav_arr_connections": "Conexiones *arr",
   "settings_nav_torrent_connections": "Conexiones torrent",
   "settings_nav_scoring": "Puntuación",
@@ -180,7 +179,6 @@
   "settings_scoring_archdesc_dead_tracker_library": "Privado, todos los trackers muertos más allá del periodo de gracia — objetivo de cementerio prioritario.",
 
   "settings_field_revert_title": "Restablecer al valor YAML por defecto",
-  "settings_field_badge_edited": "editado",
   "settings_field_badge_overridden": "anulado",
   "settings_shell_no_data": "sin datos",
   "settings_shell_saving_reloading": "Guardando + recargando…",

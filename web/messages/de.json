@@ -20,7 +20,6 @@
   "common_test": "Testen",
 
   "settings_title": "Einstellungen",
-  "settings_live_config_sub": "Live-Konfiguration — Änderungen werden beim Speichern übernommen",
   "settings_nav_arr_connections": "*arr-Verbindungen",
   "settings_nav_torrent_connections": "Torrent-Verbindungen",
   "settings_nav_scoring": "Scoring",
@@ -180,7 +179,6 @@
   "settings_scoring_archdesc_dead_tracker_library": "Privat, alle Tracker über die Karenzzeit hinaus tot — primäres Friedhofsziel.",
 
   "settings_field_revert_title": "Auf YAML-Standard zurücksetzen",
-  "settings_field_badge_edited": "bearbeitet",
   "settings_field_badge_overridden": "überschrieben",
   "settings_shell_no_data": "keine Daten",
   "settings_shell_saving_reloading": "Speichern + Neuladen…",

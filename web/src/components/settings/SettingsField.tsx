@@ -184,7 +184,7 @@ export type FieldProps = {
 };
 
 export function Field(p: FieldProps) {
-  const cols = p.compact ? "grid-cols-[minmax(7rem,auto)_5rem_auto]" : "grid-cols-[12rem_1fr_auto]";
+  const cols = p.compact ? "grid-cols-[10rem_6rem_auto]" : "grid-cols-[12rem_1fr_auto]";
   const labelEl = (
     <label
       className={`text-muted-foreground font-mono text-xs ${p.tooltip ? "cursor-help underline decoration-dotted decoration-muted-foreground/60 underline-offset-2" : ""}`}
@@ -226,11 +226,14 @@ export function Field(p: FieldProps) {
           value={p.value}
           placeholder={p.placeholder}
           onChange={(e) => p.onChange(e.target.value)}
+          className={[
+            p.compact && p.type === "number" ? "[appearance:textfield] [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden" : "",
+            p.dirty ? "ring-1 ring-amber-500/70 border-amber-500/70" : "",
+          ].filter(Boolean).join(" ") || undefined}
         />
       )}
       <div className="flex items-center gap-1">
-        {p.dirty && <Badge variant="warning">{m.settings_field_badge_edited()}</Badge>}
-        {!p.dirty && p.overridden && (
+        {p.overridden && !p.dirty && (
           <>
             <Badge>{m.settings_field_badge_overridden()}</Badge>
             <Button size="sm" variant="ghost" onClick={p.onRevert} title={m.settings_field_revert_title()}>

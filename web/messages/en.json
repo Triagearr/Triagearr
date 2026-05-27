@@ -20,7 +20,6 @@
   "common_test": "Test",
 
   "settings_title": "Settings",
-  "settings_live_config_sub": "Live config — changes apply on save",
   "settings_nav_arr_connections": "*arr connections",
   "settings_nav_torrent_connections": "Torrent connections",
   "settings_nav_scoring": "Scoring",
@@ -180,7 +179,6 @@
   "settings_scoring_archdesc_dead_tracker_library": "Private, every tracker dead past the grace window — primary graveyard target.",
 
   "settings_field_revert_title": "Revert to YAML default",
-  "settings_field_badge_edited": "edited",
   "settings_field_badge_overridden": "overridden",
   "settings_shell_no_data": "no data",
   "settings_shell_saving_reloading": "Saving + reloading…",

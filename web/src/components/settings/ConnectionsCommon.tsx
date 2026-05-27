@@ -4,6 +4,120 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
 
+// ── Shared connection tile ──────────────────────────────────────────────────────
+
+export type ChipDef = {
+  label: string;
+  on: boolean;
+  danger?: boolean;
+  liveTag?: boolean;
+};
+
+export type VisualTileStatus = "unconfigured" | "disabled" | "healthy" | "unhealthy";
+
+const TILE_STATE_CLASS: Record<VisualTileStatus, string> = {
+  unconfigured: "state-unconfigured",
+  disabled:     "state-disabled",
+  unhealthy:    "state-down",
+  healthy:      "state-healthy",
+};
+
+const STATUS_COLOR: Record<VisualTileStatus, string> = {
+  healthy:      "var(--green-2)",
+  unhealthy:    "var(--red-2)",
+  disabled:     "var(--fg-3)",
+  unconfigured: "var(--fg-3)",
+};
+
+export function ConnectionKindTile({
+  label,
+  subtitle,
+  stub,
+  connected,
+  status,
+  statusText,
+  url,
+  chips,
+  lastError,
+  footNote,
+  renderLogo,
+  onClick,
+}: {
+  label: string;
+  subtitle?: string;
+  stub?: boolean;
+  connected: boolean;
+  status: VisualTileStatus;
+  statusText: string;
+  url?: string;
+  chips?: ChipDef[];
+  lastError?: string;
+  footNote?: string;
+  renderLogo: (size: number) => ReactNode;
+  onClick: () => void;
+}) {
+  const color = STATUS_COLOR[status];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={stub}
+      className={cn("arr-tile", TILE_STATE_CLASS[status], stub && "opacity-50 cursor-not-allowed")}
+    >
+      <div className="arr-tile-head">
+        {renderLogo(36)}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="arr-tile-name">{label}</div>
+          {stub
+            ? <div className="arr-tile-tag" style={{ color: "var(--fg-4)", fontSize: 10 }}>{m.settings_coming_soon()}</div>
+            : subtitle
+              ? <div className="arr-tile-tag">{subtitle}</div>
+              : null
+          }
+        </div>
+        <div className="arr-tile-state" title={statusText}>
+          {status === "unconfigured" ? (
+            <><span className="dot" style={{ background: "transparent", border: "1px dashed var(--border-2)" }} /><span className="arr-tile-state-text" style={{ color }}>{statusText}</span></>
+          ) : status === "unhealthy" ? (
+            <><span className="dot red pulse" /><span className="arr-tile-state-text" style={{ color }}>{statusText}</span></>
+          ) : status === "healthy" ? (
+            <><span className="dot green" /><span className="arr-tile-state-text" style={{ color }}>{statusText}</span></>
+          ) : (
+            <><span className="dot" /><span className="arr-tile-state-text" style={{ color }}>{statusText}</span></>
+          )}
+        </div>
+      </div>
+
+      {url && <div className="arr-tile-url">{url}</div>}
+
+      {chips && chips.length > 0 && (
+        <div className="arr-tile-toggles">
+          {chips.map((chip) => (
+            <span key={chip.label} className={cn("arr-chip", chip.on && "on", chip.on && chip.danger && "danger")}>
+              <span className="arr-chip-dot" /> {chip.label}
+              {chip.on && chip.liveTag && (
+                <span style={{ marginLeft: 3, fontSize: 9.5, fontFamily: "'Geist Mono',ui-monospace,monospace", color: "var(--red-2)" }}>LIVE</span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {lastError && <div className="arr-tile-error">{lastError}</div>}
+
+      {!connected && !stub && (
+        <div className="arr-tile-empty"><span>{m.settings_click_to_configure()}</span></div>
+      )}
+
+      {footNote && (
+        <div className="arr-tile-foot" style={{ color: "var(--fg-4)", fontSize: 11 }}>
+          {footNote}
+        </div>
+      )}
+    </button>
+  );
+}
+
 // Shared form primitives + drawer-state hook for the *arr-connections and
 // torrent-client-connections settings sections. The two sections only diverge
 // on their kind catalog, tile visuals and form field set; everything below is

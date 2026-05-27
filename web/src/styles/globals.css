@@ -647,7 +647,9 @@
 .filter-checkbox input { accent-color: var(--primary); }
 
 /* ── *arr tiles ───────────────────────────────────────────────────────────── */
-.arr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.arr-grid      { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+/* min 235px = chips row in the longest locale (fr: "Activé" + "Interroger" + "Agir" ≈ 203px) + tile padding (28px) + border (3px) */
+.arr-tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 12px; }
 .arr-tile {
   background: var(--card-2);
   border: 1px solid var(--border);
@@ -662,6 +664,8 @@
   font-family: inherit;
   color: var(--fg);
   container-type: inline-size;
+  /* floor = height of a connected tile (head 36 + url 16 + chips 18 + 3×gap 30 + padding 28) */
+  min-height: 120px;
 }
 /* Hide the verbose state text on narrow tiles so the *arr name keeps room.
    The tooltip on .arr-tile-state still surfaces the full label. */
@@ -673,12 +677,12 @@
 .arr-tile.state-down         { border-left: 3px solid var(--red); }
 .arr-tile.state-disabled     { border-left: 3px solid var(--border-2); }
 .arr-tile.state-unconfigured { border-left: 3px dashed var(--border-2); }
-.arr-tile-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.arr-tile-head { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0; }
 .arr-tile-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .arr-tile-tag  { font-size: 11px; color: var(--fg-3); margin-top: 1px; }
 .arr-tile-state { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; flex-shrink: 0; min-width: 0; }
 .arr-tile-url { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.arr-tile-toggles { display: flex; gap: 6px; flex-wrap: wrap; }
+.arr-tile-toggles { display: flex; gap: 6px; flex-wrap: nowrap; }
 .arr-chip {
   font-size: 11px;
   padding: 2px 8px;

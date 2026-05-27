@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { Bell, Database, Download, Gauge, Info, Link2, Settings2, Shield, SlidersHorizontal, Timer } from "lucide-react";
+import { Bell, Database, Download, Gauge, Info, Link2, Settings, Shield, SlidersHorizontal, Timer } from "lucide-react";
 import { m } from "@/paraglide/messages";
 
 const sections = [
@@ -19,9 +19,8 @@ function SettingsLayout() {
     <div style={{ display: "contents" }}>
       {/* Topbar */}
       <div className="topbar">
-        <Settings2 size={15} style={{ color: "var(--fg-3)" }} />
+        <Settings size={15} style={{ color: "var(--fg-3)" }} />
         <div className="topbar-title">{m.settings_title()}</div>
-        <div className="topbar-sub">{m.settings_live_config_sub()}</div>
       </div>
 
       {/* Horizontal tab nav */}

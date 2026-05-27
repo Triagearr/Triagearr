@@ -7,6 +7,10 @@ import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
+import {
+  ConnectionKindTile,
+  type VisualTileStatus,
+} from "./ConnectionsCommon";
 
 // ── Provider catalogue ────────────────────────────────────────────────────────
 
@@ -41,11 +45,17 @@ function TelegramLogo({ className }: { className?: string }) {
 
 type TileStatus = "unconfigured" | "disabled" | "enabled";
 
-function tileStatus(enabled: boolean | undefined, configured: boolean): TileStatus {
-  if (!configured) return "unconfigured";
-  if (!enabled) return "disabled";
-  return "enabled";
-}
+const VISUAL: Record<TileStatus, VisualTileStatus> = {
+  unconfigured: "unconfigured",
+  disabled:     "disabled",
+  enabled:      "healthy",
+};
+
+const STATUS_TEXT: Record<TileStatus, () => string> = {
+  enabled:      m.settings_notif_telegram_enabled_status,
+  disabled:     m.common_disabled,
+  unconfigured: m.common_not_configured,
+};
 
 function ProviderTile({
   meta,
@@ -58,66 +68,23 @@ function ProviderTile({
   configured: boolean;
   onClick: () => void;
 }) {
-  const status = tileStatus(enabled, configured);
-
-  const stateClass: Record<TileStatus, string> = {
-    unconfigured: "state-unconfigured",
-    disabled:     "state-disabled",
-    enabled:      "state-healthy",
-  };
-
-  const statusLabel: Record<TileStatus, string> = {
-    enabled: m.settings_notif_telegram_enabled_status(),
-    disabled: m.common_disabled(),
-    unconfigured: m.common_not_configured(),
-  };
-  const statusEl = (
-    <div className="arr-tile-state" title={statusLabel[status]}>
-      {status === "enabled"      && <><span className="dot green" /><span className="arr-tile-state-text" style={{ color: "var(--green-2)" }}>{m.settings_notif_telegram_enabled_status()}</span></>}
-      {status === "disabled"     && <><span className="dot" /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>{m.common_disabled()}</span></>}
-      {status === "unconfigured" && <><span className="dot" style={{ background: "transparent", border: "1px dashed var(--border-2)" }} /><span className="arr-tile-state-text" style={{ color: "var(--fg-3)" }}>{m.common_not_configured()}</span></>}
-    </div>
-  );
-
+  const status: TileStatus = !configured ? "unconfigured" : !enabled ? "disabled" : "enabled";
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={meta.stub}
-      className={cn("arr-tile", stateClass[status], meta.stub && "opacity-50 cursor-not-allowed")}
-    >
-      {/* Tile header: logo + label + status */}
-      <div className="arr-tile-head">
-        <div style={{ width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <ConnectionKindTile
+      label={meta.label}
+      subtitle={meta.description}
+      stub={meta.stub}
+      connected={configured}
+      status={VISUAL[status]}
+      statusText={STATUS_TEXT[status]()}
+      chips={configured ? [{ label: m.settings_chip_enabled(), on: enabled }] : undefined}
+      renderLogo={(size) => (
+        <div style={{ width: size, height: size, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           {meta.logo}
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="arr-tile-name">{meta.label}</div>
-          {meta.stub ? (
-            <div className="arr-tile-tag" style={{ color: "var(--fg-4)", fontSize: 10 }}>{m.settings_coming_soon()}</div>
-          ) : (
-            <div className="arr-tile-tag">{meta.description}</div>
-          )}
-        </div>
-        {statusEl}
-      </div>
-
-      {/* Chips */}
-      {configured && (
-        <div className="arr-tile-toggles">
-          <span className={cn("arr-chip", enabled && "on")}>
-            <span className="arr-chip-dot" /> {m.settings_chip_enabled()}
-          </span>
-        </div>
       )}
-
-      {/* Not configured prompt */}
-      {!configured && !meta.stub && (
-        <div className="arr-tile-empty">
-          <span>{m.settings_click_to_configure()}</span>
-        </div>
-      )}
-    </button>
+      onClick={onClick}
+    />
   );
 }
 
@@ -141,7 +108,6 @@ function CredentialField(p: CredentialFieldProps) {
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-muted-foreground font-mono">{p.label}</label>
         <div className="flex items-center gap-1">
-          {p.dirty && <Badge variant="warning">{m.settings_field_badge_edited()}</Badge>}
           {!p.dirty && p.overridden && (
             <>
               <Badge>{m.settings_field_badge_overridden()}</Badge>
@@ -157,6 +123,7 @@ function CredentialField(p: CredentialFieldProps) {
         value={p.value}
         placeholder={p.placeholder}
         onChange={(e) => p.onChange(e.target.value)}
+        className={p.dirty ? "ring-1 ring-amber-500/70 border-amber-500/70" : undefined}
       />
     </div>
   );
@@ -406,7 +373,7 @@ export function NotificationSection() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="arr-tile-grid">
           {PROVIDERS.map((meta) => (
             <ProviderTile
               key={meta.id}
