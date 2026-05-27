@@ -713,6 +713,37 @@
 .live-strip-head { padding: 6px 16px; border-bottom: 1px solid var(--border); font-size: 10.5px; color: var(--fg-3); text-transform: uppercase; letter-spacing: .06em; flex: none; }
 .live-strip-body { flex: 1; overflow: auto; }
 
+/* ── Metric grid (run/action summary cells) ──────────────────────────────── */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--metric-cols, 3), 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.metric-cell { background: var(--card); padding: 9px 11px; }
+.metric-k { font-size: 10px; color: var(--fg-3); text-transform: uppercase; letter-spacing: .05em; }
+.metric-v { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11.5px; margin-top: 2px; }
+.metric-v.plain { font-family: inherit; font-size: 12.5px; }
+
+/* ── Inline banner (alerts) ──────────────────────────────────────────────── */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+}
+.banner-danger {
+  background: var(--red-bg);
+  color: var(--red-2);
+  border-bottom-color: color-mix(in oklch, var(--red) 30%, transparent);
+}
+
 /* ── Misc ─────────────────────────────────────────────────────────────────── */
 .kv-grid { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 12.5px; }
 .kv-grid dt { color: var(--fg-3); }

@@ -15,6 +15,7 @@ import {
   SettingsView,
   RunActionList,
   RunList,
+  RunPreview,
   RunResponse,
   ScoreList,
   ScoringDefaults,
@@ -44,6 +45,7 @@ export const queryKeys = {
   snapshots: (hash: string, since: string) => ["torrent", hash, "snapshots", since] as const,
   scores: ["scores"] as const,
   runs: ["runs"] as const,
+  runPreview: ["runs", "preview"] as const,
   run: (id: number) => ["run", id] as const,
   runActions: (id: number) => ["run", id, "actions"] as const,
   actions: (limit: number, offset: number) => ["actions", limit, offset] as const,
@@ -244,6 +246,19 @@ export function useRuns() {
     queryKey: queryKeys.runs,
     queryFn: () => apiFetch("/api/v1/runs?limit=50", RunList),
     refetchInterval: 5_000,
+  });
+}
+
+// usePreviewRun fetches the plan a live run would execute right now, without
+// persisting it. Enabled only while the confirm modal is open so we don't poll
+// the Decider in the background. staleTime is short: the plan moves with disk
+// state, and the modal should reflect a recent view.
+export function usePreviewRun(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.runPreview,
+    queryFn: () => apiFetch("/api/v1/runs/preview", RunPreview),
+    enabled,
+    staleTime: 5_000,
   });
 }
 

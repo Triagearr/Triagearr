@@ -94,6 +94,16 @@ type Server struct {
 	runRate  *ipRateLimiter
 	authRate *ipRateLimiter
 
+	// baseCtx is the daemon-lifetime context, captured in Start. Async live
+	// runs detach onto it so a deletion pipeline outlives the HTTP request
+	// that triggered it (and is cancelled on daemon shutdown). Background
+	// (no cancellation) until Start runs — fine for tests that never Start.
+	baseCtx context.Context
+	// liveRun is a capacity-1 semaphore: at most one live run executes at a
+	// time. A second concurrent live trigger is rejected with 409 rather than
+	// racing the destructive pipeline against itself.
+	liveRun chan struct{}
+
 	// authState caches the "is any user registered" flag and the timestamp
 	// of the last DB check. Used by middleware.auth on every request to
 	// avoid a per-request SELECT COUNT(*).
@@ -112,10 +122,13 @@ func New(opts Options) *Server {
 		opts:     opts,
 		runRate:  buildRateLimiter(opts.RunsPerMinute, 60),
 		authRate: buildRateLimiter(opts.AuthPerMinute, 30),
+		baseCtx:  context.Background(),
+		liveRun:  make(chan struct{}, 1),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/runs", s.security(s.auth(s.runRateLimit(s.handlePostRun))))
+	mux.HandleFunc("GET /api/v1/runs/preview", s.security(s.auth(s.handlePreviewRun)))
 	mux.HandleFunc("GET /api/v1/runs", s.security(s.auth(s.handleListRuns)))
 	mux.HandleFunc("GET /api/v1/runs/{id}", s.security(s.auth(s.handleGetRun)))
 	mux.HandleFunc("GET /api/v1/runs/{id}/actions", s.security(s.auth(s.handleRunActions)))
@@ -193,6 +206,7 @@ func (s *Server) Handler() http.Handler { return s.srv.Handler }
 
 // Start serves until ctx is cancelled, then shuts down with a 5s grace.
 func (s *Server) Start(ctx context.Context) error {
+	s.baseCtx = ctx
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("http server listening", "bind", s.opts.Bind)

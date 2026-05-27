@@ -51,6 +51,7 @@ type runResponse struct {
 type runItemResponse struct {
 	Rank           int     `json:"rank"`
 	TorrentHash    string  `json:"torrent_hash"`
+	TorrentName    string  `json:"torrent_name,omitempty"`
 	Score          float64 `json:"score"`
 	SizeBytes      int64   `json:"size_bytes"`
 	WouldFreeBytes int64   `json:"would_free_bytes"`
@@ -72,6 +73,26 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mode := triagearr.ResolveRunMode(s.opts.DaemonLive, triagearr.RunTriggerHTTP, req.Mode == "live")
+	live := mode == triagearr.RunModeLive && s.opts.Actor != nil
+
+	// A live run executes asynchronously (see executeRunAsync); reserve the
+	// single-run slot before persisting anything so a concurrent trigger gets
+	// a clean 409 instead of a half-created run that never executes.
+	if live {
+		select {
+		case s.liveRun <- struct{}{}:
+		default:
+			writeError(w, http.StatusConflict, "a live run is already in progress")
+			return
+		}
+	}
+
+	// Live runs start "pending" and are driven to a terminal state by the
+	// background goroutine; dry-runs have no Actor and are terminal at once.
+	status := "completed"
+	if live {
+		status = "pending"
+	}
 	run := triagearr.Run{
 		TriggeredBy:         triagearr.RunTriggerHTTP,
 		TriggeredAt:         time.Now().UTC(),
@@ -80,31 +101,88 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		TargetFreePct:       vol.TargetFreePercent,
 		EstimatedFreedBytes: plan.EstimatedFreedBytes,
 		StopReason:          plan.StopReason,
-		Status:              "completed",
+		Status:              status,
 	}
 	id, err := s.opts.Store.InsertRun(r.Context(), run)
 	if err != nil {
+		if live {
+			<-s.liveRun
+		}
 		writeInternal(w, fmt.Errorf("persisting run: %w", err))
 		return
 	}
 	if err := s.opts.Store.InsertRunItems(r.Context(), id, plan.Items); err != nil {
+		if live {
+			<-s.liveRun
+		}
 		writeInternal(w, fmt.Errorf("persisting items: %w", err))
 		return
 	}
-	if mode == triagearr.RunModeLive && s.opts.Actor != nil {
-		if err := s.opts.Actor.Execute(r.Context(), id); err != nil {
-			slog.Warn("actor execute failed", "run_id", id, "err", err)
-		}
+	if live {
+		go s.executeRunAsync(id)
 	}
-	// Always re-read the run so the response carries persisted state
-	// (Actor may have updated status, freed_bytes, ordering).
+	// Re-read so the response carries persisted state. The live goroutine may
+	// not have started yet, so this typically returns the "pending" run plus
+	// its candidates — the UI polls /runs/{id} for the live progression.
 	refreshed, items, err := s.opts.Store.GetRun(r.Context(), id)
 	if err != nil {
 		run.ID = id
-		writeJSON(w, http.StatusOK, buildResponse(run, plan.Items))
+		names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), runItemHashes(plan.Items))
+		writeJSON(w, http.StatusOK, buildResponse(run, plan.Items, names))
 		return
 	}
-	writeJSON(w, http.StatusOK, buildResponse(refreshed, items))
+	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), runItemHashes(items))
+	writeJSON(w, http.StatusOK, buildResponse(refreshed, items, names))
+}
+
+// executeRunAsync drives a live run's destructive pipeline detached from the
+// HTTP request. It runs on the daemon-lifetime baseCtx so a long deletion
+// outlives the request, and always releases the single-run slot. On Actor
+// failure the run is marked "aborted" so the UI stops showing it in-flight.
+func (s *Server) executeRunAsync(id int64) {
+	defer func() { <-s.liveRun }()
+	if err := s.opts.Actor.Execute(s.baseCtx, id); err != nil {
+		slog.Warn("actor execute failed", "run_id", id, "err", err)
+		if mErr := s.opts.Store.MarkRunStatus(s.baseCtx, id, "aborted"); mErr != nil {
+			slog.Error("marking aborted run failed", "run_id", id, "err", mErr)
+		}
+	}
+}
+
+// handlePreviewRun returns the deletion plan the Decider would produce right
+// now, without persisting a run. It backs the live-confirmation modal so the
+// operator sees what a live run would delete before arming it. Read-only.
+func (s *Server) handlePreviewRun(w http.ResponseWriter, r *http.Request) {
+	vol := s.opts.Volume()
+	if vol.Path == "" {
+		writeError(w, http.StatusBadRequest, "no volume configured")
+		return
+	}
+	plan, err := s.opts.Decider.Plan(r.Context(), vol)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), runItemHashes(plan.Items))
+	candidates := make([]runItemResponse, 0, len(plan.Items))
+	for _, it := range plan.Items {
+		c := runItemResponse{
+			Rank:           it.Rank,
+			TorrentHash:    string(it.TorrentHash),
+			Score:          it.Score,
+			SizeBytes:      it.SizeBytes,
+			WouldFreeBytes: it.WouldFreeBytes,
+		}
+		if n, ok := names[it.TorrentHash]; ok {
+			c.TorrentName = n
+		}
+		candidates = append(candidates, c)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"estimated_freed_bytes": plan.EstimatedFreedBytes,
+		"stop_reason":           string(plan.StopReason),
+		"candidates":            candidates,
+	})
 }
 
 func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +194,7 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]runResponse, len(rows))
 	for i, r := range rows {
-		out[i] = buildResponse(r, nil)
+		out[i] = buildResponse(r, nil, nil)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"runs": out})
 }
@@ -135,10 +213,11 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, buildResponse(run, items))
+	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), runItemHashes(items))
+	writeJSON(w, http.StatusOK, buildResponse(run, items, names))
 }
 
-func buildResponse(r triagearr.Run, items []triagearr.RunItem) runResponse {
+func buildResponse(r triagearr.Run, items []triagearr.RunItem, names map[triagearr.Hash]string) runResponse {
 	out := runResponse{
 		RunID:               r.ID,
 		TriggeredBy:         string(r.TriggeredBy),
@@ -151,15 +230,27 @@ func buildResponse(r triagearr.Run, items []triagearr.RunItem) runResponse {
 		Status:              r.Status,
 	}
 	for _, it := range items {
-		out.Candidates = append(out.Candidates, runItemResponse{
+		c := runItemResponse{
 			Rank:           it.Rank,
 			TorrentHash:    string(it.TorrentHash),
 			Score:          it.Score,
 			SizeBytes:      it.SizeBytes,
 			WouldFreeBytes: it.WouldFreeBytes,
-		})
+		}
+		if n, ok := names[it.TorrentHash]; ok {
+			c.TorrentName = n
+		}
+		out.Candidates = append(out.Candidates, c)
 	}
 	return out
+}
+
+func runItemHashes(items []triagearr.RunItem) []triagearr.Hash {
+	h := make([]triagearr.Hash, len(items))
+	for i, it := range items {
+		h[i] = it.TorrentHash
+	}
+	return h
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

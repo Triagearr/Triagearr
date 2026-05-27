@@ -449,14 +449,15 @@ func (s *Server) buildArrViews(ctx context.Context) ([]arrView, error) {
 }
 
 type actionView struct {
-	ID          int64      `json:"id"`
-	RunID       int64      `json:"run_id"`
-	Rank        int        `json:"rank"`
-	TorrentHash string     `json:"torrent_hash"`
-	Status      string     `json:"status"`
-	StartedAt   time.Time  `json:"started_at"`
-	FinishedAt  *time.Time `json:"finished_at,omitempty"`
-	FreedBytes  int64      `json:"freed_bytes"`
+	ID           int64      `json:"id"`
+	RunID        int64      `json:"run_id"`
+	Rank         int        `json:"rank"`
+	TorrentHash  string     `json:"torrent_hash"`
+	TorrentName  string     `json:"torrent_name,omitempty"`
+	Status       string     `json:"status"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	FreedBytes   int64      `json:"freed_bytes"`
 }
 
 type actionListResponse struct {
@@ -480,16 +481,20 @@ func (s *Server) handleListActions(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
+	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), hashesFromActions(rows))
 	writeJSON(w, http.StatusOK, actionListResponse{
-		Actions: viewsFromActions(rows), Total: total, Limit: limit, Offset: offset,
+		Actions: viewsFromActions(rows, names), Total: total, Limit: limit, Offset: offset,
 	})
 }
 
-func actionToView(a triagearr.Action) actionView {
+func actionToView(a triagearr.Action, names map[triagearr.Hash]string) actionView {
 	v := actionView{
 		ID: a.ID, RunID: a.RunID, Rank: a.Rank,
 		TorrentHash: string(a.TorrentHash), Status: string(a.Status),
 		StartedAt: a.StartedAt, FreedBytes: a.FreedBytes,
+	}
+	if n, ok := names[a.TorrentHash]; ok {
+		v.TorrentName = n
 	}
 	if !a.FinishedAt.IsZero() {
 		finished := a.FinishedAt
@@ -498,12 +503,20 @@ func actionToView(a triagearr.Action) actionView {
 	return v
 }
 
-func viewsFromActions(rows []triagearr.Action) []actionView {
+func viewsFromActions(rows []triagearr.Action, names map[triagearr.Hash]string) []actionView {
 	out := make([]actionView, len(rows))
 	for i, a := range rows {
-		out[i] = actionToView(a)
+		out[i] = actionToView(a, names)
 	}
 	return out
+}
+
+func hashesFromActions(rows []triagearr.Action) []triagearr.Hash {
+	h := make([]triagearr.Hash, len(rows))
+	for i, a := range rows {
+		h[i] = a.TorrentHash
+	}
+	return h
 }
 
 func (s *Server) handleRunActions(w http.ResponseWriter, r *http.Request) {
@@ -516,7 +529,8 @@ func (s *Server) handleRunActions(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"actions": viewsFromActions(rows)})
+	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), hashesFromActions(rows))
+	writeJSON(w, http.StatusOK, map[string]any{"actions": viewsFromActions(rows, names)})
 }
 
 type auditView struct {
@@ -553,8 +567,9 @@ func (s *Server) handleGetAction(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
+	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), []triagearr.Hash{a.TorrentHash})
 	resp := actionDetailResponse{
-		Action: actionToView(a),
+		Action: actionToView(a, names),
 		Audit:  make([]auditView, len(audit)),
 	}
 	for i, e := range audit {
@@ -635,7 +650,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		}
 		lastRuns = make([]runResponse, len(runs))
 		for i, rn := range runs {
-			lastRuns[i] = buildResponse(rn, nil)
+			lastRuns[i] = buildResponse(rn, nil, nil)
 		}
 		return nil
 	})

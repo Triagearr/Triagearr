@@ -187,6 +187,7 @@ export const RunResponse = z.object({
       z.object({
         rank: z.number(),
         torrent_hash: z.string(),
+        torrent_name: z.string().optional(),
         score: z.number(),
         size_bytes: z.number(),
         would_free_bytes: z.number(),
@@ -196,6 +197,27 @@ export const RunResponse = z.object({
 });
 export type RunResponseT = z.infer<typeof RunResponse>;
 export const RunList = z.object({ runs: z.array(RunResponse) });
+
+// RunPreview mirrors GET /api/v1/runs/preview: the plan a live run would
+// execute right now, without persisting anything. Backs the live-confirm modal.
+export const RunPreview = z.object({
+  estimated_freed_bytes: z.number(),
+  stop_reason: z.string(),
+  candidates: z
+    .array(
+      z.object({
+        rank: z.number(),
+        torrent_hash: z.string(),
+        torrent_name: z.string().optional(),
+        score: z.number(),
+        size_bytes: z.number(),
+        would_free_bytes: z.number(),
+      }),
+    )
+    .nullable()
+    .optional(),
+});
+export type RunPreviewT = z.infer<typeof RunPreview>;
 
 // Keep aligned with internal/triagearr/types.go ActionStatus consts.
 // .catch("pending") preserves forward compatibility — newly added Go variants
@@ -219,6 +241,7 @@ export const ActionView = z.object({
   run_id: z.number(),
   rank: z.number(),
   torrent_hash: z.string(),
+  torrent_name: z.string().optional(),
   status: ActionStatus,
   started_at: ts,
   finished_at: ts.nullable().optional(),
