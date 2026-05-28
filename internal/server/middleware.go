@@ -27,10 +27,27 @@ const authEnabledTTL = 3 * time.Second
 // round-trip — and the writer pool serialises through a single connection.
 const touchInterval = 5 * time.Minute
 
+// handlerTimeout caps any single HTTP request. Long enough to cover scoring
+// fetches under disk pressure (a few seconds) and worst-case *arr fan-outs;
+// short enough that a stuck DB or hung upstream doesn't leak goroutines.
+const handlerTimeout = 30 * time.Second
+
+// withTimeout injects a per-request context deadline. It does not replace the
+// HTTP server's ReadHeaderTimeout — that one guards the read side; this one
+// caps the handler. Cancellation propagates to store + clients via r.Context().
+func (s *Server) withTimeout(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), handlerTimeout)
+		defer cancel()
+		h(w, r.WithContext(ctx))
+	}
+}
+
 // security emits the default security headers on every response.
 // CSP allows inline styles because Tailwind v4 emits some at runtime;
 // `img-src data:` is needed for shadcn icons embedded as base64.
 func (s *Server) security(h http.HandlerFunc) http.HandlerFunc {
+	wrapped := s.withTimeout(h)
 	return func(w http.ResponseWriter, r *http.Request) {
 		hd := w.Header()
 		hd.Set("X-Content-Type-Options", "nosniff")
@@ -38,7 +55,7 @@ func (s *Server) security(h http.HandlerFunc) http.HandlerFunc {
 		hd.Set("Permissions-Policy", "()")
 		hd.Set("Content-Security-Policy",
 			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'")
-		h(w, r)
+		wrapped(w, r)
 	}
 }
 

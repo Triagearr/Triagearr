@@ -250,7 +250,11 @@ func runItemHashes(items []triagearr.RunItem) []triagearr.Hash {
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		// Status is already on the wire; we can only log. Most callers don't
+		// observe writeJSON's outcome anyway.
+		slog.Warn("encoding HTTP response body failed", "status", status, "err", err)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
