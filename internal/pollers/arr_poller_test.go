@@ -38,6 +38,24 @@ func (f *fakeArr) DeleteMedia(_ context.Context, _ triagearr.MediaID, _ triagear
 	return errors.New("not used in test")
 }
 
+// fakeRichArr adds the optional FileLister + ImportLister capabilities so the
+// file-fanout and import-sync branches of pollOne/syncImports are exercised.
+type fakeRichArr struct {
+	fakeArr
+	filesByMedia map[triagearr.MediaID][]triagearr.MediaFile
+	imports      []triagearr.ImportRecord
+	gotSince     int64
+}
+
+func (f *fakeRichArr) ListMediaFiles(_ context.Context, id triagearr.MediaID) ([]triagearr.MediaFile, error) {
+	return f.filesByMedia[id], nil
+}
+
+func (f *fakeRichArr) ListImports(_ context.Context, since int64) ([]triagearr.ImportRecord, error) {
+	f.gotSince = since
+	return f.imports, nil
+}
+
 func openStoreForArrTest(t *testing.T) *store.Store {
 	t.Helper()
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -80,6 +98,52 @@ func TestArrPoller_HealthyInstancePersistsMedia(t *testing.T) {
 
 	cancel()
 	<-done
+}
+
+func TestArrPoller_SyncsFilesAndImports(t *testing.T) {
+	s := openStoreForArrTest(t)
+
+	// Pre-seed a higher history_id so we can prove syncImports asks for the delta.
+	require.NoError(t, s.UpsertArrImport(context.Background(), triagearr.ArrTypeSonarr,
+		triagearr.ImportRecord{HistoryID: 10, FileID: 1, DownloadID: "h0", ImportedAt: time.Now()}))
+
+	fa := &fakeRichArr{
+		fakeArr: fakeArr{
+			name: "sonarr", typ: triagearr.ArrTypeSonarr, healthy: true,
+			items: []triagearr.MediaItem{{ID: 7, ArrType: triagearr.ArrTypeSonarr, Title: "S"}},
+		},
+		filesByMedia: map[triagearr.MediaID][]triagearr.MediaFile{
+			7: {{ArrType: triagearr.ArrTypeSonarr, FileID: 100, MediaID: 7, Path: "/m/s.mkv", Size: 5}},
+		},
+		imports: []triagearr.ImportRecord{
+			{HistoryID: 11, FileID: 100, DownloadID: "habc", ImportedPath: "/m/s.mkv", ImportedAt: time.Now()},
+		},
+	}
+	p := &pollers.ArrPoller{
+		Instances: []triagearr.ArrInstance{fa},
+		URLs:      map[string]string{pollers.URLKey(triagearr.ArrTypeSonarr): "http://sonarr"},
+		Store:     s,
+		Interval:  time.Hour,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- p.Run(ctx) }()
+
+	require.Eventually(t, func() bool {
+		n, err := s.CountArrImports(context.Background(), triagearr.ArrTypeSonarr)
+		return err == nil && n == 2 // the seeded one + the new delta record
+	}, 2*time.Second, 10*time.Millisecond)
+
+	cancel()
+	<-done
+
+	require.Equal(t, int64(10), fa.gotSince, "ListImports is asked only for the delta past the stored max history_id")
+
+	mf, err := s.ListMediaFilesByMedia(context.Background(), triagearr.ArrTypeSonarr, 7)
+	require.NoError(t, err)
+	require.Len(t, mf, 1)
+	require.Equal(t, int64(100), mf[0].FileID)
 }
 
 func TestArrPoller_UnhealthyInstanceSkipsListMedia(t *testing.T) {
