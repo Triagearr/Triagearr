@@ -9,6 +9,7 @@ import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
 import {
   ConnectionKindTile,
+  noAutofillProps,
   type VisualTileStatus,
 } from "./ConnectionsCommon";
 
@@ -124,6 +125,7 @@ function CredentialField(p: CredentialFieldProps) {
         placeholder={p.placeholder}
         onChange={(e) => p.onChange(e.target.value)}
         className={p.dirty ? "ring-1 ring-amber-500/70 border-amber-500/70" : undefined}
+        {...noAutofillProps}
       />
     </div>
   );

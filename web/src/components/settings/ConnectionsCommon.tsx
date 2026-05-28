@@ -4,6 +4,18 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
 
+// Spread on credential/URL fields in connection drawers to keep password
+// managers (LastPass, 1Password, Bitwarden) from clobbering them on save —
+// they detect the *arr API-key field as a password and overwrite both it and
+// the public URL when refilling the page form.
+export const noAutofillProps = {
+  autoComplete: "off",
+  "data-lpignore": "true",
+  "data-1p-ignore": "true",
+  "data-bwignore": "true",
+  "data-form-type": "other",
+} as const;
+
 // ── Shared connection tile ──────────────────────────────────────────────────────
 
 export type ChipDef = {

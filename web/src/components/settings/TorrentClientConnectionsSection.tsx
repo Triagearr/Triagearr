@@ -21,6 +21,7 @@ import {
   validateConnUrl,
   validateTimeout,
   validatePublicUrl,
+  noAutofillProps,
   type ConnectionMutations,
   type VisualTileStatus,
 } from "./ConnectionsCommon";
@@ -81,7 +82,7 @@ function KindTile({
       connected={!!connection}
       status={VISUAL[status]}
       statusText={STATUS_TEXT[status]()}
-      url={connection?.url}
+      url={connection?.public_url || connection?.url}
       chips={connection ? [
         { label: m.settings_chip_enabled(),      on: connection.enabled },
         { label: m.settings_chip_delete_files(), on: connection.delete_with_files, danger: true },
@@ -215,19 +216,19 @@ function ConnectionDrawer({
         <div className="space-y-3">
           <FieldRow label={m.settings_field_url()}>
             <Input value={form.url} placeholder={meta.urlPlaceholder}
-              onChange={(e) => set("url", e.target.value)} />
+              onChange={(e) => set("url", e.target.value)} {...noAutofillProps} />
           </FieldRow>
           <FieldRow label={m.settings_field_public_url()} hint={m.settings_field_public_url_hint()}>
             <Input value={form.public_url} placeholder={`https://${meta.value}.example.com`}
-              onChange={(e) => set("public_url", e.target.value)} />
+              onChange={(e) => set("public_url", e.target.value)} {...noAutofillProps} />
           </FieldRow>
           <FieldRow label={m.settings_field_username()}>
             <Input value={form.username} placeholder="admin"
-              onChange={(e) => set("username", e.target.value)} />
+              onChange={(e) => set("username", e.target.value)} {...noAutofillProps} />
           </FieldRow>
           <FieldRow label={m.settings_field_password()}>
             <Input type="password" value={form.password} placeholder="••••••••"
-              onChange={(e) => set("password", e.target.value)} />
+              onChange={(e) => set("password", e.target.value)} {...noAutofillProps} />
           </FieldRow>
           <FieldRow label={m.settings_field_timeout()} hint={m.settings_field_timeout_hint()}>
             <Input type="number" min={0} className="w-28" value={form.timeout_seconds}
