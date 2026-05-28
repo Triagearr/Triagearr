@@ -1,32 +1,24 @@
 // Package sonarr is a minimal Sonarr v3 API client used by the observation poller.
 //
-// M1 scope: HealthCheck + ListMedia. DeleteMedia is declared by the interface
-// but returns "not implemented" — destructive ops land in M5.
+// HTTP plumbing (auth header, GET decoding, DELETE error wrapping) lives in
+// internal/clients/arrclient. This package keeps only what is Sonarr-specific:
+// the series/episodefile JSON shapes, the path conventions, and the
+// triagearr.ArrType identity.
 package sonarr
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
+	"github.com/Triagearr/Triagearr/internal/clients/arrclient"
 	"github.com/Triagearr/Triagearr/internal/clients/arrhistory"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
 // Client speaks Sonarr's v3 REST API.
 type Client struct {
-	name    string
-	baseURL string
-	apiKey  string
-	poll    bool
-	act     bool
-	http    *http.Client
+	*arrclient.BaseClient
 }
 
 // Options configures the client.
@@ -41,70 +33,23 @@ type Options struct {
 
 // New constructs a Sonarr client.
 func New(opts Options) (*Client, error) {
-	if opts.Name == "" {
-		return nil, errors.New("sonarr: Name is required")
+	base, err := arrclient.New(arrclient.Options{
+		Label: "sonarr", Name: opts.Name, BaseURL: opts.BaseURL, APIKey: opts.APIKey,
+		Poll: opts.Poll, Act: opts.Act, Timeout: opts.Timeout,
+	})
+	if err != nil {
+		return nil, err
 	}
-	if opts.BaseURL == "" {
-		return nil, errors.New("sonarr: BaseURL is required")
-	}
-	if opts.APIKey == "" {
-		return nil, errors.New("sonarr: APIKey is required")
-	}
-	timeout := opts.Timeout
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
-	return &Client{
-		name:    opts.Name,
-		baseURL: strings.TrimRight(opts.BaseURL, "/"),
-		apiKey:  opts.APIKey,
-		poll:    opts.Poll,
-		act:     opts.Act,
-		http:    &http.Client{Timeout: timeout},
-	}, nil
+	return &Client{BaseClient: base}, nil
 }
-
-// Name returns the configured instance name.
-func (c *Client) Name() string { return c.name }
 
 // Type identifies this client as a Sonarr instance.
 func (c *Client) Type() triagearr.ArrType { return triagearr.ArrTypeSonarr }
 
-// Poll reports whether this instance is configured for read access.
-func (c *Client) Poll() bool { return c.poll }
-
-// Act reports whether this instance is allowed to perform deletions.
-func (c *Client) Act() bool { return c.act }
-
-func (c *Client) get(ctx context.Context, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-	if err != nil {
-		return fmt.Errorf("sonarr: building request %s: %w", path, err)
-	}
-	req.Header.Set("X-Api-Key", c.apiKey)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("sonarr: GET %s: %w", path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("sonarr: GET %s: HTTP %d: %s", path, resp.StatusCode, string(body))
-	}
-	if out == nil {
-		return nil
-	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("sonarr: decoding %s: %w", path, err)
-	}
-	return nil
-}
-
-// HealthCheck pings GET /api/v3/health. The endpoint returns 200 with a (possibly
-// empty) array of health warnings — we don't surface those in M1.
+// HealthCheck pings GET /api/v3/health.
 func (c *Client) HealthCheck(ctx context.Context) error {
 	var ignored []any
-	return c.get(ctx, "/api/v3/health", &ignored)
+	return c.Get(ctx, "/api/v3/health", &ignored)
 }
 
 type seriesEntry struct {
@@ -118,31 +63,20 @@ type seriesEntry struct {
 	} `json:"statistics"`
 }
 
-type tagEntry struct {
-	ID    int    `json:"id"`
-	Label string `json:"label"`
-}
-
 // ListMedia returns the configured series. Tags are resolved to label strings
 // so downstream consumers don't need to know about Sonarr's numeric tag ids.
 func (c *Client) ListMedia(ctx context.Context) ([]triagearr.MediaItem, error) {
 	var series []seriesEntry
-	if err := c.get(ctx, "/api/v3/series", &series); err != nil {
+	if err := c.Get(ctx, "/api/v3/series", &series); err != nil {
 		return nil, err
 	}
-	tags, err := c.fetchTags(ctx)
+	tags, err := c.FetchTags(ctx)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
 	out := make([]triagearr.MediaItem, len(series))
 	for i, s := range series {
-		labels := make([]string, 0, len(s.Tags))
-		for _, id := range s.Tags {
-			if label, ok := tags[id]; ok {
-				labels = append(labels, label)
-			}
-		}
 		out[i] = triagearr.MediaItem{
 			ID:        triagearr.MediaID(s.ID),
 			ArrType:   triagearr.ArrTypeSonarr,
@@ -150,21 +84,9 @@ func (c *Client) ListMedia(ctx context.Context) ([]triagearr.MediaItem, error) {
 			TitleSlug: s.TitleSlug,
 			Path:      s.Path,
 			Size:      s.Statistics.SizeOnDisk,
-			Tags:      labels,
+			Tags:      arrclient.ResolveTags(s.Tags, tags),
 			LastSeen:  now,
 		}
-	}
-	return out, nil
-}
-
-func (c *Client) fetchTags(ctx context.Context) (map[int]string, error) {
-	var raw []tagEntry
-	if err := c.get(ctx, "/api/v3/tag", &raw); err != nil {
-		return nil, err
-	}
-	out := make(map[int]string, len(raw))
-	for _, t := range raw {
-		out[t.ID] = t.Label
 	}
 	return out, nil
 }
@@ -182,7 +104,7 @@ type episodeFile struct {
 // Implements triagearr.FileLister, type-asserted by the arr poller for fan-out.
 func (c *Client) ListMediaFiles(ctx context.Context, seriesID triagearr.MediaID) ([]triagearr.MediaFile, error) {
 	var raw []episodeFile
-	if err := c.get(ctx, fmt.Sprintf("/api/v3/episodefile?seriesId=%d", int64(seriesID)), &raw); err != nil {
+	if err := c.Get(ctx, fmt.Sprintf("/api/v3/episodefile?seriesId=%d", int64(seriesID)), &raw); err != nil {
 		return nil, err
 	}
 	out := make([]triagearr.MediaFile, len(raw))
@@ -200,50 +122,14 @@ func (c *Client) ListMediaFiles(ctx context.Context, seriesID triagearr.MediaID)
 
 // ListImports paginates Sonarr's history endpoint for `downloadFolderImported`
 // events (eventType=3) and returns records strictly newer than sinceHistoryID.
-// Sonarr returns history.id monotonically increasing; we stop paginating as
-// soon as we cross the cursor, keeping the delta-sync cost proportional to
-// the number of new imports.
 func (c *Client) ListImports(ctx context.Context, sinceHistoryID int64) ([]triagearr.ImportRecord, error) {
-	return arrhistory.Fetch(ctx, c.get, sinceHistoryID)
+	return arrhistory.Fetch(ctx, c.Get, sinceHistoryID)
 }
 
-// DeleteMediaFile removes one episode file from Sonarr's library. With
-// opts.DeleteFiles=true Sonarr unlinks the on-disk file (drops the *arr-side
-// hardlink reference); with opts.AddImportExclusion=true the release is added
-// to the import exclusion list so *arr won't re-grab the same release.
-//
-// 5xx and transport failures are wrapped with triagearr.ErrTransient so the
-// Actor's retry loop can distinguish them from hard failures (404, 401).
+// DeleteMediaFile removes one episode file from Sonarr's library. See
+// arrclient.BaseClient.DeleteFile for status-code and transient-error semantics.
 func (c *Client) DeleteMediaFile(ctx context.Context, fileID int64, opts triagearr.DeleteOpts) error {
-	path := fmt.Sprintf("/api/v3/episodefile/%d", fileID)
-	q := url.Values{}
-	if opts.DeleteFiles {
-		q.Set("deleteFiles", "true")
-	}
-	if opts.AddImportExclusion {
-		q.Set("addImportExclusion", "true")
-	}
-	if encoded := q.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
-	if err != nil {
-		return fmt.Errorf("sonarr: building DELETE %s: %w", path, err)
-	}
-	req.Header.Set("X-Api-Key", c.apiKey)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("sonarr: DELETE %s: %w: %w", path, triagearr.ErrTransient, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
-		return nil
-	}
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 500 {
-		return fmt.Errorf("sonarr: DELETE %s: HTTP %d: %s: %w", path, resp.StatusCode, string(body), triagearr.ErrTransient)
-	}
-	return fmt.Errorf("sonarr: DELETE %s: HTTP %d: %s", path, resp.StatusCode, string(body))
+	return c.DeleteFile(ctx, "/api/v3/episodefile", fileID, opts)
 }
 
 var (
