@@ -21,9 +21,21 @@ import (
 	"time"
 
 	"github.com/Triagearr/Triagearr/internal/triagearr"
+	"github.com/Triagearr/Triagearr/internal/x/retry"
 )
 
 const defaultTimeout = 30 * time.Second
+
+// isRetryableStatus reports the read-retry status set (ADR-0027): the codes that
+// signal a temporary upstream hiccup worth a re-GET. 500/501 are deliberately
+// excluded — a malformed request or a server bug won't fix itself on retry.
+func isRetryableStatus(code int) bool {
+	switch code {
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
+}
 
 // Options configures BaseClient. Each downstream package re-exports its own
 // Options that embeds these and adds nothing today; kept as a shared type
@@ -47,6 +59,7 @@ type BaseClient struct {
 	poll    bool
 	act     bool
 	http    *http.Client
+	sleep   func(time.Duration) // injected in tests to skip retry backoff
 }
 
 // New validates the common required fields and wires the HTTP client. Label
@@ -76,6 +89,7 @@ func New(opts Options) (*BaseClient, error) {
 		poll:    opts.Poll,
 		act:     opts.Act,
 		http:    &http.Client{Timeout: timeout},
+		sleep:   time.Sleep,
 	}, nil
 }
 
@@ -92,9 +106,18 @@ func (c *BaseClient) Act() bool { return c.act }
 // custom requests around our auth.
 func (c *BaseClient) BaseURL() string { return c.baseURL }
 
-// Get GETs path, decoding the body into out when non-nil. Non-200 responses
-// return a formatted error including the response body for diagnostics.
+// Get GETs path, decoding the body into out when non-nil. Transport failures
+// and retryable status codes (see isRetryableStatus) are re-tried with backoff
+// so a transient blip on a *arr instance doesn't sink a whole poll tick
+// (ADR-0027). Other non-200 responses return a formatted error including the
+// response body for diagnostics.
 func (c *BaseClient) Get(ctx context.Context, path string, out any) error {
+	return retry.Do(ctx, func() error {
+		return c.get(ctx, path, out)
+	}, retry.WithSleep(c.sleep))
+}
+
+func (c *BaseClient) get(ctx context.Context, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("%s: building request %s: %w", c.label, path, err)
@@ -102,11 +125,14 @@ func (c *BaseClient) Get(ctx context.Context, path string, out any) error {
 	req.Header.Set("X-Api-Key", c.apiKey)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s: GET %s: %w", c.label, path, err)
+		return fmt.Errorf("%s: GET %s: %w: %w", c.label, path, triagearr.ErrTransient, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if isRetryableStatus(resp.StatusCode) {
+			return fmt.Errorf("%s: GET %s: HTTP %d: %s: %w", c.label, path, resp.StatusCode, string(body), triagearr.ErrTransient)
+		}
 		return fmt.Errorf("%s: GET %s: HTTP %d: %s", c.label, path, resp.StatusCode, string(body))
 	}
 	if out == nil {

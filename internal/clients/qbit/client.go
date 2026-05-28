@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Triagearr/Triagearr/internal/triagearr"
+	"github.com/Triagearr/Triagearr/internal/x/retry"
 )
 
 // Client is a qBittorrent WebUI v2 client.
@@ -27,9 +28,21 @@ type Client struct {
 	username string
 	password string
 	http     *http.Client
+	sleep    func(time.Duration) // injected in tests to skip retry backoff
 
 	mu       sync.Mutex
 	loggedIn bool
+}
+
+// isRetryableStatus reports the read-retry status set (ADR-0027): codes that
+// signal a temporary upstream hiccup worth a re-GET. 500/501 are excluded —
+// they don't fix themselves on retry.
+func isRetryableStatus(code int) bool {
+	switch code {
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
 }
 
 // Options configures the client. Username/Password are optional (some setups
@@ -63,6 +76,7 @@ func New(opts Options) (*Client, error) {
 		username: opts.Username,
 		password: opts.Password,
 		http:     &http.Client{Jar: jar, Timeout: timeout},
+		sleep:    time.Sleep,
 	}, nil
 }
 
@@ -98,21 +112,31 @@ func (c *Client) ensureLogin(ctx context.Context) error {
 	return nil
 }
 
+// getJSON logs in once, then retries the GET on transport failures and
+// retryable status codes (ADR-0027) so a transient qBit blip doesn't sink a
+// poll tick. The Actor relies on this for its single-shot TorrentFiles read.
 func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	if err := c.ensureLogin(ctx); err != nil {
 		return err
 	}
+	return retry.Do(ctx, func() error {
+		return c.doGet(ctx, path, out)
+	}, retry.WithSleep(c.sleep))
+}
+
+func (c *Client) doGet(ctx context.Context, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("qbit: building request %s: %w", path, err)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("qbit: GET %s: %w", path, err)
+		return fmt.Errorf("qbit: GET %s: %w: %w", path, triagearr.ErrTransient, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusForbidden {
-		// Session expired — force re-login next call.
+		// Session expired — force re-login next call. Not retried here: ensureLogin
+		// already ran for this call, so a same-loop retry would re-fail identically.
 		c.mu.Lock()
 		c.loggedIn = false
 		c.mu.Unlock()
@@ -120,6 +144,9 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if isRetryableStatus(resp.StatusCode) {
+			return fmt.Errorf("qbit: GET %s: HTTP %d: %s: %w", path, resp.StatusCode, string(body), triagearr.ErrTransient)
+		}
 		return fmt.Errorf("qbit: GET %s: HTTP %d: %s", path, resp.StatusCode, string(body))
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
