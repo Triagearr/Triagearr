@@ -24,7 +24,14 @@ import (
 	"github.com/Triagearr/Triagearr/internal/x/retry"
 )
 
-const defaultTimeout = 30 * time.Second
+// defaultTimeout is the http.Client end-to-end guard (header + body). It's a
+// generous final backstop; perRequestTimeout is the real per-attempt budget so
+// a slow streaming response can't expire mid-decode (the global guard would).
+const defaultTimeout = 60 * time.Second
+
+// perRequestTimeout bounds one GET/DELETE attempt. Each retry attempt derives a
+// fresh deadline from the caller's ctx.
+const perRequestTimeout = 25 * time.Second
 
 // isRetryableStatus reports the read-retry status set (ADR-0027): the codes that
 // signal a temporary upstream hiccup worth a re-GET. 500/501 are deliberately
@@ -118,6 +125,8 @@ func (c *BaseClient) Get(ctx context.Context, path string, out any) error {
 }
 
 func (c *BaseClient) get(ctx context.Context, path string, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, perRequestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("%s: building request %s: %w", c.label, path, err)
@@ -159,6 +168,8 @@ func (c *BaseClient) DeleteFile(ctx context.Context, basePath string, fileID int
 	if encoded := q.Encode(); encoded != "" {
 		path += "?" + encoded
 	}
+	ctx, cancel := context.WithTimeout(ctx, perRequestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("%s: building DELETE %s: %w", c.label, path, err)

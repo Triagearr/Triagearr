@@ -34,6 +34,14 @@ type Client struct {
 	loggedIn bool
 }
 
+// httpGuardTimeout is the http.Client end-to-end backstop; perRequestTimeout is
+// the per-attempt budget derived from the caller's ctx so a slow streaming
+// response can't expire mid-decode.
+const (
+	httpGuardTimeout  = 60 * time.Second
+	perRequestTimeout = 25 * time.Second
+)
+
 // isRetryableStatus reports the read-retry status set (ADR-0027): codes that
 // signal a temporary upstream hiccup worth a re-GET. 500/501 are excluded —
 // they don't fix themselves on retry.
@@ -69,7 +77,7 @@ func New(opts Options) (*Client, error) {
 	}
 	timeout := opts.Timeout
 	if timeout == 0 {
-		timeout = 30 * time.Second
+		timeout = httpGuardTimeout
 	}
 	return &Client{
 		baseURL:  strings.TrimRight(opts.BaseURL, "/"),
@@ -125,6 +133,8 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 }
 
 func (c *Client) doGet(ctx context.Context, path string, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, perRequestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("qbit: building request %s: %w", path, err)
@@ -306,6 +316,8 @@ func (c *Client) Delete(ctx context.Context, h triagearr.Hash, opts triagearr.De
 	if opts.DeleteFiles {
 		form.Set("deleteFiles", "true")
 	}
+	ctx, cancel := context.WithTimeout(ctx, perRequestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v2/torrents/delete", strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("qbit: building DELETE request: %w", err)
