@@ -103,7 +103,6 @@
   "settings_disk_tip_threshold_free_percent": "Percentage of free space below which a deletion run is triggered. Example: 10 means a run starts when less than 10 % of the volume is free.",
   "settings_disk_tip_target_free_percent": "Free space percentage the deletion run aims to restore. The run stops once this level is reached. Must be higher than the threshold.",
   "settings_notif_telegram_enabled_status": "Enabled",
-  "settings_notif_telegram_empty_value": "{key}: empty value — use revert to clear",
   "settings_notif_test_success": "Test sent — check your Telegram chat.",
   "settings_notif_enable_telegram": "Enable Telegram notifications",
   "settings_notif_enable_telegram_hint": "Fires on disk-pressure deletes only — not on manual runs.",

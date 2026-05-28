@@ -54,6 +54,11 @@ export function SecuritySection() {
   );
 }
 
+function FormError({ error }: { error: unknown }) {
+  if (!error) return null;
+  return <div className="text-sm text-destructive">{String(error)}</div>;
+}
+
 function UserBadge({ username }: { username: string }) {
   const logout = useLogout();
   return (
@@ -114,9 +119,7 @@ function EnablePanel() {
           {m.comp_security_enable()}
         </Button>
       </form>
-      {enable.isError && (
-        <div className="text-sm text-destructive">{String(enable.error)}</div>
-      )}
+      <FormError error={enable.isError ? enable.error : null} />
       {generated && <GeneratedPasswordCard password={generated} />}
     </div>
   );
@@ -198,9 +201,7 @@ function ChangePasswordForm() {
           {m.comp_security_rotate()}
         </Button>
       </form>
-      {change.isError && (
-        <div className="text-sm text-destructive">{String(change.error)}</div>
-      )}
+      <FormError error={change.isError ? change.error : null} />
       {generated && <GeneratedPasswordCard password={generated} />}
     </div>
   );
@@ -234,9 +235,7 @@ function DisableAuthForm() {
           {m.comp_security_disable()}
         </Button>
       </form>
-      {disable.isError && (
-        <div className="text-sm text-destructive">{String(disable.error)}</div>
-      )}
+      <FormError error={disable.isError ? disable.error : null} />
     </div>
   );
 }

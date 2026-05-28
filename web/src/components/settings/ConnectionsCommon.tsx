@@ -4,6 +4,43 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
 
+// ConnectionsSectionShell wraps the outer scaffold (title, description, error
+// banner, tile grid) shared by ArrConnectionsSection and
+// TorrentClientConnectionsSection. Body holds the tiles; drawer holds the
+// editor portal so the open state stays adjacent to the grid.
+export function ConnectionsSectionShell({
+  title,
+  description,
+  error,
+  children,
+  drawer,
+}: {
+  title: string;
+  description: string;
+  error?: unknown;
+  children: ReactNode;
+  drawer?: ReactNode;
+}) {
+  return (
+    <>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{description}</p>
+        </div>
+
+        {error != null && error !== false && (
+          <div className="text-sm text-destructive">{String(error)}</div>
+        )}
+
+        <div className="arr-tile-grid">{children}</div>
+      </div>
+
+      {drawer}
+    </>
+  );
+}
+
 // Spread on credential/URL fields in connection drawers to keep password
 // managers (LastPass, 1Password, Bitwarden) from clobbering them on save —
 // they detect the *arr API-key field as a password and overwrite both it and

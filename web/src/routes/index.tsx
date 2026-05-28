@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, Lock, RefreshCw, Unlock, Zap } from "lucide-react";
+import { memo } from "react";
 import { useSummary, useArrs, useTriggerRun } from "@/api/hooks";
 import { PressureGauge } from "@/components/PressureGauge";
 import { ScoreCell } from "@/components/ScoreCell";
@@ -13,6 +14,23 @@ function ModeBadge({ mode }: { mode: string }) {
     ? <span className="badge badge-solid-danger">● {m.common_mode_live()}</span>
     : <span className="badge">{m.common_mode_dry_run()}</span>;
 }
+
+type StatCardProps = {
+  label: string;
+  value: React.ReactNode;
+  foot: string;
+  accent?: string;
+};
+
+const StatCard = memo(function StatCard({ label, value, foot, accent }: StatCardProps) {
+  return (
+    <div className="card" style={{ padding: 14 }}>
+      <div className="stat-label">{label}</div>
+      <div className="stat-value" style={accent ? { color: accent } : undefined}>{value}</div>
+      <div className="stat-foot">{foot}</div>
+    </div>
+  );
+});
 
 // ── *arr health tile — same visual as Settings tiles, uses real SVG logos ─────
 function ArrHealthCard({ arr }: { arr: ArrViewT }) {
@@ -107,23 +125,15 @@ function Dashboard() {
           <>
             {/* Stat cards */}
             <div className="grid-resp" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
-              {[
-                { label: m.dash_stat_torrents_tracked(), value: data.counts.torrents, foot: m.dash_stat_in_qbittorrent() },
-                { label: m.dash_stat_scored(), value: data.counts.scored, foot: m.dash_stat_last_cycle() },
-                { label: m.dash_stat_actions_all_time(), value: data.counts.actions, foot: m.dash_stat_deletions_executed() },
-                {
-                  label: m.dash_stat_arrs_healthy(),
-                  value: totalArrs > 0 ? `${healthyArrs}/${totalArrs}` : "—",
-                  foot: healthyArrs < totalArrs ? m.dash_stat_arrs_down({ count: totalArrs - healthyArrs }) : m.dash_stat_all_healthy(),
-                  accent: healthyArrs < totalArrs ? "var(--amber-2)" : undefined,
-                },
-              ].map(({ label, value, foot, accent }) => (
-                <div key={label} className="card" style={{ padding: 14 }}>
-                  <div className="stat-label">{label}</div>
-                  <div className="stat-value" style={accent ? { color: accent } : undefined}>{value}</div>
-                  <div className="stat-foot">{foot}</div>
-                </div>
-              ))}
+              <StatCard label={m.dash_stat_torrents_tracked()} value={data.counts.torrents} foot={m.dash_stat_in_qbittorrent()} />
+              <StatCard label={m.dash_stat_scored()} value={data.counts.scored} foot={m.dash_stat_last_cycle()} />
+              <StatCard label={m.dash_stat_actions_all_time()} value={data.counts.actions} foot={m.dash_stat_deletions_executed()} />
+              <StatCard
+                label={m.dash_stat_arrs_healthy()}
+                value={totalArrs > 0 ? `${healthyArrs}/${totalArrs}` : "—"}
+                foot={healthyArrs < totalArrs ? m.dash_stat_arrs_down({ count: totalArrs - healthyArrs }) : m.dash_stat_all_healthy()}
+                accent={healthyArrs < totalArrs ? "var(--amber-2)" : undefined}
+              />
             </div>
 
             {/* Disk + recent runs */}

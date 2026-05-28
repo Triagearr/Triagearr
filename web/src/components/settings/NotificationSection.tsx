@@ -12,6 +12,7 @@ import {
   noAutofillProps,
   type VisualTileStatus,
 } from "./ConnectionsCommon";
+import { parseValueForKey } from "./SettingsField";
 
 // ── Provider catalogue ────────────────────────────────────────────────────────
 
@@ -206,15 +207,12 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
         ops.push({ key, value: null });
         continue;
       }
-      if (key === "notifications.telegram.enabled") {
-        ops.push({ key, value: raw === "true" });
-      } else {
-        if (raw.trim() === "") {
-          setError(m.settings_notif_telegram_empty_value({ key }));
-          return;
-        }
-        ops.push({ key, value: raw });
+      const parsed = parseValueForKey(key, raw);
+      if (parsed instanceof Error) {
+        setError(`${key}: ${parsed.message}`);
+        return;
       }
+      ops.push({ key, value: parsed });
     }
     if (ops.length === 0) return;
     try {

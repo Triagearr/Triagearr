@@ -1,5 +1,5 @@
 import { ArrowUpRight, Lock, Shield, ShieldOff, Unlock, X } from "lucide-react";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { useSetTorrentProtected, useSnapshots, useTorrent } from "@/api/hooks";
 import { ArrLogo } from "@/components/ArrLogo";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
@@ -40,6 +40,43 @@ function arrDeepLink(arrType: string, arrUrl: string, titleSlug: string): string
   return arrUrl;
 }
 
+type ArrLinkProps = {
+  arrType: string;
+  arrUrl: string;
+  titleSlug: string;
+  size: number;
+};
+
+const ArrLink = memo(function ArrLink({ arrType, arrUrl, titleSlug, size }: ArrLinkProps) {
+  const href = arrDeepLink(arrType, arrUrl, titleSlug);
+  return (
+    <a
+      href={href || undefined}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "8px 10px",
+        background: "var(--card-2)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        textDecoration: "none",
+        color: "inherit",
+        cursor: href ? "pointer" : "default",
+      }}
+    >
+      <ArrLogo kind={arrType} size={16} />
+      <span style={{ fontSize: 12, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+        {arrType}
+      </span>
+      <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 11, color: "var(--fg-3)" }}>
+        {humanBytes(size)}
+      </span>
+      {href && <ArrowUpRight size={11} style={{ color: "var(--fg-3)", flexShrink: 0 }} />}
+    </a>
+  );
+});
+
 type Props = { hash: string | null; onClose: () => void };
 
 export function TorrentDrawer({ hash, onClose }: Props) {
@@ -50,7 +87,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
 
   const ratioSeries = useMemo(
     () => (snaps.data?.snapshots ?? []).map((p) => ({ ts: p.ts, value: p.ratio })),
-    [snaps.data],
+    [snaps.data?.snapshots],
   );
 
   const t = torrent.data;
@@ -162,36 +199,15 @@ export function TorrentDrawer({ hash, onClose }: Props) {
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {t.links.map((l) => {
-                    const href = arrDeepLink(l.arr_type, l.arr_url, l.title_slug);
-                    return (
-                      <a
-                        key={`${l.arr_type}-${l.file_id}`}
-                        href={href || undefined}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          display: "flex", alignItems: "center", gap: 8,
-                          padding: "8px 10px",
-                          background: "var(--card-2)",
-                          border: "1px solid var(--border)",
-                          borderRadius: 6,
-                          textDecoration: "none",
-                          color: "inherit",
-                          cursor: href ? "pointer" : "default",
-                        }}
-                      >
-                        <ArrLogo kind={l.arr_type} size={16} />
-                        <span style={{ fontSize: 12, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {l.arr_type}
-                        </span>
-                        <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 11, color: "var(--fg-3)" }}>
-                          {humanBytes(l.size)}
-                        </span>
-                        {href && <ArrowUpRight size={11} style={{ color: "var(--fg-3)", flexShrink: 0 }} />}
-                      </a>
-                    );
-                  })}
+                  {t.links.map((l) => (
+                    <ArrLink
+                      key={`${l.arr_type}-${l.file_id}`}
+                      arrType={l.arr_type}
+                      arrUrl={l.arr_url}
+                      titleSlug={l.title_slug}
+                      size={l.size}
+                    />
+                  ))}
                 </div>
               )}
             </div>

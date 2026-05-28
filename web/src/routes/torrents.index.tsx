@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, Lock, Search, Unlock } from "lucide-react";
-import { useDeferredValue, useState } from "react";
+import { memo, useCallback, useDeferredValue, useState } from "react";
 import { useTorrentCategories, useTorrents } from "@/api/hooks";
+import type { TorrentListItemT } from "@/api/schemas";
 import { ScoreCell } from "@/components/ScoreCell";
 import { TorrentCard } from "@/components/TorrentCard";
 import { TorrentDrawer } from "@/components/TorrentDrawer";
@@ -15,6 +16,94 @@ type Order = "asc" | "desc";
 function defaultOrder(field: string): Order {
   return field === "name" ? "asc" : "desc";
 }
+
+function SortIcon({ active, order }: { active: boolean; order: Order }) {
+  if (!active) return null;
+  return order === "asc" ? <ArrowUp size={10} /> : <ArrowDown size={10} />;
+}
+
+function SortTh({
+  field,
+  label,
+  sort,
+  order,
+  onSort,
+  style,
+}: {
+  field: string;
+  label: string;
+  sort: string;
+  order: Order;
+  onSort: (field: string) => void;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <th className="sortable" style={style} onClick={() => onSort(field)}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+        {label} <SortIcon active={sort === field} order={order} />
+      </span>
+    </th>
+  );
+}
+
+type RowProps = {
+  t: TorrentListItemT;
+  selected: boolean;
+  onSelect: (hash: string) => void;
+};
+
+const TorrentRow = memo(function TorrentRow({ t, selected, onSelect }: RowProps) {
+  return (
+    <tr
+      className={`clickable ${selected ? "row-selected" : ""}`}
+      onClick={() => onSelect(t.hash)}
+    >
+      <td className="name-cell">
+        <div className="name-text">{t.name}</div>
+        <div className="name-meta">
+          {t.private
+            ? <span className="badge"><Lock size={9} /> {m.torrents_badge_private()}</span>
+            : <span className="badge"><Unlock size={9} /> {m.torrents_badge_public()}</span>
+          }
+          {t.excluded && <span className="badge badge-warn">{m.torrents_badge_excluded()}</span>}
+          {t.any_tracker_alive === false && (
+            <span className="badge badge-danger">{m.torrents_badge_tracker_dead()}</span>
+          )}
+        </div>
+      </td>
+      <td style={{ fontSize: 12, color: "var(--fg-2)" }}>
+        <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 11.5 }}>
+          {t.category || "—"}
+        </span>
+      </td>
+      <td className="num">{humanBytes(t.size)}</td>
+      <td className="num">{t.ratio != null ? t.ratio.toFixed(3) : "—"}</td>
+      <td className="num">{t.seeders ?? "—"}</td>
+      <td style={{ textAlign: "right", paddingRight: 12 }}>
+        <ScoreCell score={t.score} />
+      </td>
+      <td>
+        {t.state
+          ? <span className="badge" style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 10.5 }}>{t.state}</span>
+          : <span style={{ color: "var(--fg-4)" }}>—</span>
+        }
+      </td>
+      <td style={{ color: "var(--fg-3)", fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+        {relativeTime(t.last_seen)}
+      </td>
+    </tr>
+  );
+});
+
+const PhoneCard = memo(function PhoneCard({ t, selected, onSelect }: RowProps) {
+  return (
+    <TorrentCard
+      torrent={t}
+      selected={selected}
+      onClick={() => onSelect(t.hash)}
+    />
+  );
+});
 
 function TorrentsPage() {
   const navigate = useNavigate();
@@ -33,38 +122,31 @@ function TorrentsPage() {
   const cats = useTorrentCategories();
   const isPhone = useIsPhone();
 
-  function onSort(field: string) {
-    if (sort === field) setOrder((o) => (o === "asc" ? "desc" : "asc"));
-    else { setSort(field); setOrder(defaultOrder(field)); }
+  const onSort = useCallback((field: string) => {
+    setSort((prevSort) => {
+      if (prevSort === field) {
+        setOrder((o) => (o === "asc" ? "desc" : "asc"));
+        return prevSort;
+      }
+      setOrder(defaultOrder(field));
+      return field;
+    });
     setOffset(0);
-  }
+  }, []);
 
-  function openDetail(hash: string) { navigate({ to: "/torrents", search: { detail: hash } }); }
-  function closeDetail() { navigate({ to: "/torrents", search: {} }); }
+  const openDetail = useCallback(
+    (hash: string) => navigate({ to: "/torrents", search: { detail: hash } }),
+    [navigate],
+  );
+  const closeDetail = useCallback(
+    () => navigate({ to: "/torrents", search: {} }),
+    [navigate],
+  );
 
   const total = list.data?.total ?? 0;
   const shown = list.data?.torrents.length ?? 0;
   const page = Math.floor(offset / limit) + 1;
   const totalPages = Math.max(1, Math.ceil(total / limit));
-
-  function SortIcon({ field }: { field: string }) {
-    if (sort !== field) return null;
-    return order === "asc" ? <ArrowUp size={10} /> : <ArrowDown size={10} />;
-  }
-
-  function sortTh(field: string, label: string, style?: React.CSSProperties) {
-    return (
-      <th
-        className={`sortable`}
-        style={style}
-        onClick={() => onSort(field)}
-      >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-          {label} <SortIcon field={field} />
-        </span>
-      </th>
-    );
-  }
 
   return (
     <div style={{ display: "contents" }}>
@@ -118,12 +200,7 @@ function TorrentsPage() {
         {isPhone ? (
           <div style={{ flex: 1, overflow: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
             {list.data?.torrents.map((t) => (
-              <TorrentCard
-                key={t.hash}
-                torrent={t}
-                selected={detail === t.hash}
-                onClick={() => openDetail(t.hash)}
-              />
+              <PhoneCard key={t.hash} t={t} selected={detail === t.hash} onSelect={openDetail} />
             ))}
             {list.data?.torrents.length === 0 && (
               <div style={{ textAlign: "center", padding: 24, color: "var(--fg-3)", fontSize: 12 }}>
@@ -137,56 +214,18 @@ function TorrentsPage() {
             <thead>
               <tr>
                 <th style={{ minWidth: 260 }}>{m.torrents_th_name()}</th>
-                {sortTh("category", m.torrents_th_category(), { width: 130 })}
-                {sortTh("size", m.torrents_th_size(), { width: 90, textAlign: "right" })}
-                {sortTh("ratio", m.torrents_th_ratio(), { width: 70, textAlign: "right" })}
-                {sortTh("seeders", m.torrents_th_seeders(), { width: 70, textAlign: "right" })}
-                {sortTh("score", m.torrents_th_reap_score(), { width: 120, textAlign: "right" })}
+                <SortTh field="category" label={m.torrents_th_category()} sort={sort} order={order} onSort={onSort} style={{ width: 130 }} />
+                <SortTh field="size" label={m.torrents_th_size()} sort={sort} order={order} onSort={onSort} style={{ width: 90, textAlign: "right" }} />
+                <SortTh field="ratio" label={m.torrents_th_ratio()} sort={sort} order={order} onSort={onSort} style={{ width: 70, textAlign: "right" }} />
+                <SortTh field="seeders" label={m.torrents_th_seeders()} sort={sort} order={order} onSort={onSort} style={{ width: 70, textAlign: "right" }} />
+                <SortTh field="score" label={m.torrents_th_reap_score()} sort={sort} order={order} onSort={onSort} style={{ width: 120, textAlign: "right" }} />
                 <th style={{ width: 100 }}>{m.torrents_th_state()}</th>
-                {sortTh("last_seen", m.torrents_th_last_seen(), { width: 90 })}
+                <SortTh field="last_seen" label={m.torrents_th_last_seen()} sort={sort} order={order} onSort={onSort} style={{ width: 90 }} />
               </tr>
             </thead>
             <tbody>
               {list.data?.torrents.map((t) => (
-                <tr
-                  key={t.hash}
-                  className={`clickable ${detail === t.hash ? "row-selected" : ""}`}
-                  onClick={() => openDetail(t.hash)}
-                >
-                  <td className="name-cell">
-                    <div className="name-text">{t.name}</div>
-                    <div className="name-meta">
-                      {t.private
-                        ? <span className="badge"><Lock size={9} /> {m.torrents_badge_private()}</span>
-                        : <span className="badge"><Unlock size={9} /> {m.torrents_badge_public()}</span>
-                      }
-                      {t.excluded && <span className="badge badge-warn">{m.torrents_badge_excluded()}</span>}
-                      {t.any_tracker_alive === false && (
-                        <span className="badge badge-danger">{m.torrents_badge_tracker_dead()}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td style={{ fontSize: 12, color: "var(--fg-2)" }}>
-                    <span style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 11.5 }}>
-                      {t.category || "—"}
-                    </span>
-                  </td>
-                  <td className="num">{humanBytes(t.size)}</td>
-                  <td className="num">{t.ratio != null ? t.ratio.toFixed(3) : "—"}</td>
-                  <td className="num">{t.seeders ?? "—"}</td>
-                  <td style={{ textAlign: "right", paddingRight: 12 }}>
-                    <ScoreCell score={t.score} />
-                  </td>
-                  <td>
-                    {t.state
-                      ? <span className="badge" style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", fontSize: 10.5 }}>{t.state}</span>
-                      : <span style={{ color: "var(--fg-4)" }}>—</span>
-                    }
-                  </td>
-                  <td style={{ color: "var(--fg-3)", fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
-                    {relativeTime(t.last_seen)}
-                  </td>
-                </tr>
+                <TorrentRow key={t.hash} t={t} selected={detail === t.hash} onSelect={openDetail} />
               ))}
               {list.data?.torrents.length === 0 && (
                 <tr>

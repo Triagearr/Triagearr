@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import { Callout } from "@/components/ui/Callout";
 import { Input } from "@/components/ui/Input";
 import { useTriggerRun } from "@/api/hooks";
 import { m } from "@/paraglide/messages";
@@ -48,9 +49,7 @@ export function RunTriggerDialog({ open, onClose, onSuccess, mode }: Props) {
       )}
 
       {trigger.isError && (
-        <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          {String(trigger.error)}
-        </div>
+        <Callout className="mb-3">{String(trigger.error)}</Callout>
       )}
 
       <div className="flex justify-end gap-2">

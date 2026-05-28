@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Lock, Unlock } from "lucide-react";
 import { ScoreCell } from "@/components/ScoreCell";
 import { humanBytes, relativeTime } from "@/lib/format";
@@ -10,7 +11,7 @@ type Props = {
   onClick: () => void;
 };
 
-export function TorrentCard({ torrent: t, selected, onClick }: Props) {
+function TorrentCardImpl({ torrent: t, selected, onClick }: Props) {
   return (
     <button
       type="button"
@@ -48,3 +49,6 @@ export function TorrentCard({ torrent: t, selected, onClick }: Props) {
     </button>
   );
 }
+
+export const TorrentCard = memo(TorrentCardImpl);
+

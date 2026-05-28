@@ -1,14 +1,6 @@
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { cn } from "@/lib/cn";
-
-function useEscapeKey(active: boolean, onEscape: () => void) {
-  useEffect(() => {
-    if (!active) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onEscape();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [active, onEscape]);
-}
+import { useEscapeKey } from "@/lib/useEscapeKey";
 
 type Props = {
   open: boolean;

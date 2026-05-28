@@ -103,7 +103,6 @@
   "settings_disk_tip_threshold_free_percent": "Pourcentage d'espace libre en dessous duquel une exécution de suppression se déclenche. Exemple : 10 signifie qu'une exécution démarre quand moins de 10 % du volume est libre.",
   "settings_disk_tip_target_free_percent": "Pourcentage d'espace libre que l'exécution vise à restaurer. L'exécution s'arrête dès que ce niveau est atteint. Doit être supérieur au seuil.",
   "settings_notif_telegram_enabled_status": "Activé",
-  "settings_notif_telegram_empty_value": "{key} : valeur vide — utilisez réinitialiser pour effacer",
   "settings_notif_test_success": "Test envoyé — vérifiez votre conversation Telegram.",
   "settings_notif_enable_telegram": "Activer les notifications Telegram",
   "settings_notif_enable_telegram_hint": "Se déclenche uniquement sur les suppressions par pression disque — pas sur les exécutions manuelles.",

@@ -18,6 +18,7 @@ import {
   useConnectionDrawer,
   DrawerActions,
   ConnectionKindTile,
+  ConnectionsSectionShell,
   validateConnUrl,
   validateTimeout,
   validatePublicUrl,
@@ -275,34 +276,11 @@ export function TorrentClientConnectionsSection() {
   const openMeta = KINDS.find((k) => k.value === open) ?? null;
 
   return (
-    <>
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-lg font-semibold">{m.settings_torrent_title()}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {m.settings_torrent_description()}
-          </p>
-        </div>
-
-        {connections.isError && (
-          <div className="text-sm text-destructive">
-            {String(connections.error ?? m.settings_arr_load_failed())}
-          </div>
-        )}
-
-        <div className="arr-tile-grid">
-          {KINDS.map((meta) => (
-            <KindTile
-              key={meta.value}
-              meta={meta}
-              connection={connectionByKind[meta.value]}
-              onClick={() => setOpen(meta.value)}
-            />
-          ))}
-        </div>
-      </div>
-
-      {openMeta && (
+    <ConnectionsSectionShell
+      title={m.settings_torrent_title()}
+      description={m.settings_torrent_description()}
+      error={connections.isError ? (connections.error ?? m.settings_arr_load_failed()) : undefined}
+      drawer={openMeta && (
         <ConnectionDrawer
           key={open}
           meta={openMeta}
@@ -311,6 +289,15 @@ export function TorrentClientConnectionsSection() {
           onClose={() => setOpen(null)}
         />
       )}
-    </>
+    >
+      {KINDS.map((meta) => (
+        <KindTile
+          key={meta.value}
+          meta={meta}
+          connection={connectionByKind[meta.value]}
+          onClick={() => setOpen(meta.value)}
+        />
+      ))}
+    </ConnectionsSectionShell>
   );
 }

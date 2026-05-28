@@ -188,6 +188,7 @@ export function useTorrents(params: TorrentsQuery) {
     queryKey: queryKeys.torrents({ ...params }),
     queryFn: () => apiFetch(`/api/v1/torrents?${search.toString()}`, TorrentList),
     refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -209,7 +210,9 @@ export function useTorrent(hash: string) {
 
 // PUT /api/v1/torrents/{hash}/protected — toggles the user-driven protection
 // flag. Server triggers a single-hash rescore so the excluded badge updates
-// immediately; we invalidate the torrent + scores queries to reflect that.
+// immediately. We patch the cached list rows optimistically (flip `excluded`
+// to match `protected`) instead of invalidating ["torrents"], which would
+// refetch every cached pagination. The 30s polling reconciles any drift.
 export function useSetTorrentProtected() {
   const qc = useQueryClient();
   return useMutation({
@@ -218,10 +221,22 @@ export function useSetTorrentProtected() {
         method: "PUT",
         body: JSON.stringify({ protected: prot }),
       }),
-    onSuccess: (_data, { hash }) => {
+    onSuccess: (_data, { hash, protected: prot }) => {
+      qc.setQueriesData<z.infer<typeof TorrentList>>(
+        { queryKey: ["torrents"] },
+        (old) => {
+          if (!old) return old;
+          let touched = false;
+          const torrents = old.torrents.map((t) => {
+            if (t.hash !== hash || t.excluded === prot) return t;
+            touched = true;
+            return { ...t, excluded: prot };
+          });
+          return touched ? { ...old, torrents } : old;
+        },
+      );
       qc.invalidateQueries({ queryKey: queryKeys.torrent(hash) });
       qc.invalidateQueries({ queryKey: queryKeys.scores });
-      qc.invalidateQueries({ queryKey: ["torrents"] });
     },
   });
 }
@@ -246,6 +261,7 @@ export function useRuns() {
     queryKey: queryKeys.runs,
     queryFn: () => apiFetch("/api/v1/runs?limit=50", RunList),
     refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -289,6 +305,7 @@ export function useActions(limit = 50, offset = 0) {
     queryKey: queryKeys.actions(limit, offset),
     queryFn: () => apiFetch(`/api/v1/actions?limit=${limit}&offset=${offset}`, ActionList),
     refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -324,6 +341,27 @@ export function useSettings() {
 
 export type SettingsOverrideInput = { key: string; value: unknown | null };
 
+// scheduleReloadInvalidate defers invalidation until after the daemon's SIGHUP
+// has had time to rebuild. We keep one pending timer per logical bucket and
+// cancel any in-flight timer for the same bucket — without this, two rapid
+// mutations would race: the first timer would fire after the second mutation
+// and clobber a fresh fetch with stale invalidations.
+const reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function scheduleReloadInvalidate(
+  bucket: string,
+  qc: ReturnType<typeof useQueryClient>,
+  keys: readonly (readonly unknown[])[],
+  delayMs = 1500,
+) {
+  const prev = reloadTimers.get(bucket);
+  if (prev) clearTimeout(prev);
+  const t = setTimeout(() => {
+    reloadTimers.delete(bucket);
+    for (const k of keys) qc.invalidateQueries({ queryKey: k });
+  }, delayMs);
+  reloadTimers.set(bucket, t);
+}
+
 // PUT /api/v1/settings — sends one or more override changes. Passing
 // value:null deletes the key (reverts to YAML default). The server returns
 // 202 and triggers a self-SIGHUP; callers should wait ~1s and re-fetch.
@@ -336,13 +374,11 @@ export function useUpdateSettings() {
         body: JSON.stringify({ overrides }),
       }),
     onSuccess: () => {
-      // Refresh after the daemon's reload window. 1.5s is generous on the
-      // local sqlite + in-process restart path.
-      setTimeout(() => {
-        qc.invalidateQueries({ queryKey: queryKeys.settings });
-        qc.invalidateQueries({ queryKey: queryKeys.config });
-        qc.invalidateQueries({ queryKey: queryKeys.summary });
-      }, 1500);
+      scheduleReloadInvalidate("settings", qc, [
+        queryKeys.settings,
+        queryKeys.config,
+        queryKeys.summary,
+      ]);
     },
   });
 }
@@ -389,12 +425,7 @@ function createConnectionHooks<TList, TItem, TInput extends { kind: string }, TT
 
   const invalidate = (qc: ReturnType<typeof useQueryClient>) => {
     qc.invalidateQueries({ queryKey });
-    setTimeout(() => {
-      qc.invalidateQueries({ queryKey });
-      for (const k of extraInvalidateKeys) {
-        qc.invalidateQueries({ queryKey: k });
-      }
-    }, 1500);
+    scheduleReloadInvalidate(`conn:${basePath}`, qc, [queryKey, ...extraInvalidateKeys]);
   };
 
   const upsert = (kind: string, body: Omit<TInput, "kind">) =>

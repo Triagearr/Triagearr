@@ -252,7 +252,7 @@ export function Field(p: FieldProps) {
 // polling/cron fields go as JSON strings, everything else as numbers. The
 // backend re-validates via config.LoadWithOverrides — so this is just a
 // best-effort serialization, not a security boundary.
-function parseValueForKey(key: string, raw: string): unknown | Error {
+export function parseValueForKey(key: string, raw: string): unknown | Error {
   // Boolean toggle — value is always "true"/"false", never empty.
   if (key === "notifications.telegram.enabled") return raw === "true";
   if (raw.trim() === "") {

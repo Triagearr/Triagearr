@@ -103,7 +103,6 @@
   "settings_disk_tip_threshold_free_percent": "Porcentaje de espacio libre por debajo del cual se dispara una ejecución de eliminación. Ejemplo: 10 significa que una ejecución comienza cuando menos del 10 % del volumen está libre.",
   "settings_disk_tip_target_free_percent": "Porcentaje de espacio libre que la ejecución pretende restaurar. La ejecución se detiene una vez alcanzado este nivel. Debe ser superior al umbral.",
   "settings_notif_telegram_enabled_status": "Activado",
-  "settings_notif_telegram_empty_value": "{key}: valor vacío — use restablecer para borrar",
   "settings_notif_test_success": "Prueba enviada — revise su chat de Telegram.",
   "settings_notif_enable_telegram": "Activar notificaciones de Telegram",
   "settings_notif_enable_telegram_hint": "Se dispara solo en eliminaciones por presión de disco — no en ejecuciones manuales.",

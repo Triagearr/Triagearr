@@ -103,7 +103,6 @@
   "settings_disk_tip_threshold_free_percent": "Prozentualer freier Speicher, unterhalb dessen ein Löschlauf ausgelöst wird. Beispiel: 10 bedeutet, ein Lauf startet, wenn weniger als 10 % des Volumes frei sind.",
   "settings_disk_tip_target_free_percent": "Prozentualer freier Speicher, den der Löschlauf wiederherstellen soll. Der Lauf stoppt, sobald dieser Wert erreicht ist. Muss höher als der Schwellenwert sein.",
   "settings_notif_telegram_enabled_status": "Aktiviert",
-  "settings_notif_telegram_empty_value": "{key}: leerer Wert — zum Löschen zurücksetzen verwenden",
   "settings_notif_test_success": "Test gesendet — prüfen Sie Ihren Telegram-Chat.",
   "settings_notif_enable_telegram": "Telegram-Benachrichtigungen aktivieren",
   "settings_notif_enable_telegram_hint": "Wird nur bei Löschungen wegen Speicherauslastung ausgelöst — nicht bei manuellen Läufen.",

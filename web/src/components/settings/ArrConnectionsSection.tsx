@@ -21,6 +21,7 @@ import {
   useConnectionDrawer,
   DrawerActions,
   ConnectionKindTile,
+  ConnectionsSectionShell,
   validateConnUrl,
   validateTimeout,
   validatePublicUrl,
@@ -306,35 +307,11 @@ export function ArrConnectionsSection() {
   const openMeta = KINDS.find((k) => k.value === open) ?? null;
 
   return (
-    <>
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-lg font-semibold">{m.settings_arr_title()}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {m.settings_arr_description()}
-          </p>
-        </div>
-
-        {connections.isError && (
-          <div className="text-sm text-destructive">
-            {String(connections.error ?? m.settings_arr_load_failed())}
-          </div>
-        )}
-
-        <div className="arr-tile-grid">
-          {KINDS.map((meta) => (
-            <KindTile
-              key={meta.value}
-              meta={meta}
-              connection={connectionByKind[meta.value]}
-              arrView={arrViewByKind[meta.value]}
-              onClick={() => setOpen(meta.value)}
-            />
-          ))}
-        </div>
-      </div>
-
-      {openMeta && (
+    <ConnectionsSectionShell
+      title={m.settings_arr_title()}
+      description={m.settings_arr_description()}
+      error={connections.isError ? (connections.error ?? m.settings_arr_load_failed()) : undefined}
+      drawer={openMeta && (
         <ConnectionDrawer
           key={open}
           meta={openMeta}
@@ -344,6 +321,16 @@ export function ArrConnectionsSection() {
           onClose={() => setOpen(null)}
         />
       )}
-    </>
+    >
+      {KINDS.map((meta) => (
+        <KindTile
+          key={meta.value}
+          meta={meta}
+          connection={connectionByKind[meta.value]}
+          arrView={arrViewByKind[meta.value]}
+          onClick={() => setOpen(meta.value)}
+        />
+      ))}
+    </ConnectionsSectionShell>
   );
 }
