@@ -106,14 +106,41 @@ Number sequentially. Don't edit accepted ADRs — write a new one that supersede
 
 ## Releasing
 
-(For maintainers.) Tag and push:
+(For maintainers.)
+
+### Stable release
 
 ```bash
 git tag -s vX.Y.Z -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-GitHub Actions takes care of the rest (build, publish, release notes draft).
+GitHub Actions builds the multi-arch binary + container, signs everything
+keyless with cosign (OIDC), generates a CycloneDX SBOM per archive, and
+publishes SLSA build provenance attestations. Verification commands are in
+the project README under "Verify a release".
+
+### Release candidates
+
+Use a `-rc.N` suffix to validate the pipeline or stage breaking changes
+without affecting the stable channel:
+
+```bash
+git tag -s vX.Y.Z-rc.0 -m "vX.Y.Z-rc.0"
+git push origin vX.Y.Z-rc.0
+```
+
+Goreleaser detects the pre-release suffix automatically (`prerelease: auto`)
+and:
+
+- marks the GitHub release as **Pre-release** (hidden from "Latest release");
+- pushes the container as `ghcr.io/triagearr/triagearr:rc` instead of `:latest`,
+  while the explicit `:vX.Y.Z-rc.0` tag stays addressable.
+
+`:latest` always points to the last stable; `docker pull …:rc` is the opt-in
+channel. Use rc tags whenever a release reshapes the release pipeline
+itself (cosign, SBOM, attestation changes), to catch regressions on real
+OIDC + GHCR before cutting a stable tag.
 
 ## Code of conduct
 
