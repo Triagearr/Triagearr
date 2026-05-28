@@ -49,6 +49,32 @@ checksum:
   name_template: "checksums.txt"
   algorithm: sha256
 
+# CycloneDX SBOM per archive (consumed by Trivy/Grype). Source SBOM omitted —
+# the archive SBOM already lists the Go module tree.
+sboms:
+  - artifacts: archive
+    cmd: syft
+    args: ["$artifact", "--output", "cyclonedx-json=$document"]
+    documents: ["${artifact}.cyclonedx.json"]
+
+# Sign the checksum file only — every archive + SBOM is listed inside, so the
+# signature covers them transitively (sha256sum -c then cosign verify-blob).
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+docker_signs:
+  - cmd: cosign
+    args: ["sign", "${artifact}", "--yes"]
+    output: true
+
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 

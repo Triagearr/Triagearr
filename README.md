@@ -86,6 +86,31 @@ Auth is Sonarr-style: a loopback bind needs none (pair with TinyAuth/Authelia/Ca
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones M0 → v1.0 |
 | [docs/adr/](docs/adr/) | Architectural Decision Records |
 
+## Verify a release
+
+Releases are signed with [cosign](https://github.com/sigstore/cosign) keyless
+(OIDC) and ship with a CycloneDX SBOM per archive plus SLSA build provenance
+attestations.
+
+```bash
+# 1. Verify the signed checksum (covers every archive + SBOM by transitivity)
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp "https://github.com/Triagearr/Triagearr/.+" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  checksums.txt
+sha256sum -c checksums.txt --ignore-missing
+
+# 2. Verify the container image
+cosign verify ghcr.io/triagearr/triagearr:vX.Y.Z \
+  --certificate-identity-regexp "https://github.com/Triagearr/Triagearr/.+" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+
+# 3. Verify SLSA build provenance (requires gh CLI)
+gh attestation verify --owner Triagearr -- triagearr_*.tar.gz
+gh attestation verify --owner Triagearr -- oci://ghcr.io/triagearr/triagearr:vX.Y.Z
+```
+
 ## Design pillars
 
 1. **Safe by default.** Dry-run mode is the default. Every destructive action requires explicit opt-in per *arr instance.
