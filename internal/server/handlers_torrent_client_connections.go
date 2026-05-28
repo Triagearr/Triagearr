@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Triagearr/Triagearr/internal/clients/torrentregistry"
+	"github.com/Triagearr/Triagearr/internal/clients/torrent/torrentregistry"
 	"github.com/Triagearr/Triagearr/internal/store"
 )
 

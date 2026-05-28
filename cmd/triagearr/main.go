@@ -17,9 +17,9 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/Triagearr/Triagearr/internal/actor"
-	"github.com/Triagearr/Triagearr/internal/clients/qbit"
-	"github.com/Triagearr/Triagearr/internal/clients/registry"
-	"github.com/Triagearr/Triagearr/internal/clients/torrentregistry"
+	"github.com/Triagearr/Triagearr/internal/clients/arr/registry"
+	"github.com/Triagearr/Triagearr/internal/clients/torrent/qbit"
+	"github.com/Triagearr/Triagearr/internal/clients/torrent/torrentregistry"
 	"github.com/Triagearr/Triagearr/internal/config"
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/linker"
@@ -623,4 +623,3 @@ func httpDiskSampler(url string) pollers.Sampler {
 		}, nil
 	}
 }
-

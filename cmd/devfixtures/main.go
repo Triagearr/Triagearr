@@ -26,10 +26,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	radarrfake "github.com/Triagearr/Triagearr/internal/clients/arr/radarr/fake"
+	sonarrfake "github.com/Triagearr/Triagearr/internal/clients/arr/sonarr/fake"
+	qbitfake "github.com/Triagearr/Triagearr/internal/clients/torrent/qbit/fake"
 	"github.com/Triagearr/Triagearr/internal/devtools/fakedisk"
-	qbitfake "github.com/Triagearr/Triagearr/internal/clients/qbit/fake"
-	radarrfake "github.com/Triagearr/Triagearr/internal/clients/radarr/fake"
-	sonarrfake "github.com/Triagearr/Triagearr/internal/clients/sonarr/fake"
 )
 
 // Scenario is the on-disk YAML shape that seeds the four fakes.

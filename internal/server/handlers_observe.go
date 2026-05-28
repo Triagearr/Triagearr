@@ -17,7 +17,6 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-
 type scoreListItem struct {
 	Hash             string          `json:"hash"`
 	Name             string          `json:"name"`
