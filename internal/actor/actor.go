@@ -17,13 +17,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/Triagearr/Triagearr/internal/pollers"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
+	"github.com/Triagearr/Triagearr/internal/x/retry"
 )
 
 // Source is the subset of *store.Store the Actor reads and writes. Tests
@@ -44,7 +44,9 @@ type Source interface {
 // TorrentClient is the download-client subset the Actor uses: enumerating the
 // torrent's files (for the T3.5 stat sweep) and the destructive whole-torrent
 // delete. Implemented by *qbit.Client today; any future client (Deluge, etc.)
-// must satisfy the same interface.
+// must satisfy the same interface. Per ADR-0027 the Actor retries only its own
+// writes (Delete); reads (TorrentFiles) must self-retry transient failures
+// inside the client, so the Actor calls them once.
 type TorrentClient interface {
 	TorrentFiles(ctx context.Context, h triagearr.Hash) ([]triagearr.TorrentFile, error)
 	Delete(ctx context.Context, h triagearr.Hash, opts triagearr.DeleteOpts) error
@@ -206,9 +208,9 @@ func (a *Actor) processCandidate(ctx context.Context, runID int64, item triagear
 	}
 
 	delOpts := triagearr.DeleteOpts{DeleteFiles: true, AddImportExclusion: a.opts.AddImportExclusion}
-	if err := withRetry(ctx, a.opts.sleep, func() error {
+	if err := retry.Do(ctx, func() error {
 		return a.opts.Client.Delete(ctx, item.TorrentHash, delOpts)
-	}); err != nil {
+	}, retry.WithSleep(a.opts.sleep)); err != nil {
 		a.audit(ctx, actionID, triagearr.AuditStepQbitDelete, triagearr.AuditOutcomeFailed, "", 0, truncate(err.Error()))
 		return a.finish(ctx, actionID, triagearr.ActionFailedQbit, 0, err)
 	}
@@ -230,12 +232,10 @@ func (a *Actor) checkNlink(ctx context.Context, actionID int64, hash triagearr.H
 		a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeFailed, "", 0, fmt.Sprintf("save_path: %v", err))
 		return false, fmt.Errorf("save_path %s: %w", hash, err)
 	}
-	var files []triagearr.TorrentFile
-	if err := withRetry(ctx, a.opts.sleep, func() error {
-		var ferr error
-		files, ferr = a.opts.Client.TorrentFiles(ctx, hash)
-		return ferr
-	}); err != nil {
+	// The client self-retries transient read failures (ADR-0027), so this is a
+	// single call here.
+	files, err := a.opts.Client.TorrentFiles(ctx, hash)
+	if err != nil {
 		a.audit(ctx, actionID, triagearr.AuditStepNlinkCheck, triagearr.AuditOutcomeFailed, "", 0, fmt.Sprintf("qbit files: %v", err))
 		return false, fmt.Errorf("qbit files %s: %w", hash, err)
 	}
@@ -292,9 +292,9 @@ func (a *Actor) fanoutArr(ctx context.Context, actionID int64, links []triagearr
 	delOpts := triagearr.DeleteOpts{DeleteFiles: true, AddImportExclusion: a.opts.AddImportExclusion}
 	for i, lk := range links {
 		kind := string(lk.ArrType)
-		err := withRetry(ctx, a.opts.sleep, func() error {
+		err := retry.Do(ctx, func() error {
 			return deleters[i].DeleteMediaFile(ctx, lk.FileID, delOpts)
-		})
+		}, retry.WithSleep(a.opts.sleep))
 		if err != nil {
 			a.audit(ctx, actionID, triagearr.AuditStepArrDelete, triagearr.AuditOutcomeFailed, kind, lk.FileID, truncate(err.Error()))
 			a.markRemaining(ctx, actionID, links[i+1:])
@@ -322,44 +322,6 @@ func (a *Actor) finish(ctx context.Context, actionID int64, status triagearr.Act
 		return errors.Join(cause, fmt.Errorf("persisting terminal status %s: %w", status, err))
 	}
 	return cause
-}
-
-// withRetry runs op with exponential backoff (+ jitter) for triagearr.ErrTransient
-// errors. Hard failures (4xx without 408/429, etc.) return immediately. Total
-// budget capped at ~10s to keep a run from stalling on one bad torrent.
-func withRetry(ctx context.Context, sleep func(time.Duration), op func() error) error {
-	const maxAttempts = 3
-	const baseDelay = 500 * time.Millisecond
-	var lastErr error
-	delay := baseDelay
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		lastErr = op()
-		if lastErr == nil {
-			return nil
-		}
-		if !errors.Is(lastErr, triagearr.ErrTransient) {
-			return lastErr
-		}
-		if attempt == maxAttempts-1 {
-			break
-		}
-		sleep(delay + jitter(delay/2))
-		delay *= 2
-		if delay > 4*time.Second {
-			delay = 4 * time.Second
-		}
-	}
-	return lastErr
-}
-
-func jitter(max time.Duration) time.Duration {
-	if max <= 0 {
-		return 0
-	}
-	return time.Duration(rand.Int64N(int64(max))) //nolint:gosec // G404: jitter is timing noise, not security-sensitive
 }
 
 func truncate(s string) string {

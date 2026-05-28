@@ -105,14 +105,26 @@ func (f *fakeSource) TorrentSavePath(_ context.Context, _ triagearr.Hash) (strin
 // fakeQbit records every Delete call and can be programmed to fail N times.
 // Per-hash file lists drive the T3.5 stat sweep.
 type fakeQbit struct {
-	mu      sync.Mutex
-	calls   []triagearr.Hash
-	files   map[triagearr.Hash][]triagearr.TorrentFile
-	failN   int   // first N calls fail with the given error
-	failErr error // if nil, errors.New("boom") wrapped with ErrTransient when transient=true
+	mu         sync.Mutex
+	calls      []triagearr.Hash
+	files      map[triagearr.Hash][]triagearr.TorrentFile
+	failN      int   // first N calls fail with the given error
+	failErr    error // if nil, errors.New("boom") wrapped with ErrTransient when transient=true
+	filesFailN int   // first N TorrentFiles calls fail with filesErr
+	filesErr   error
+	filesCalls int
 }
 
 func (q *fakeQbit) TorrentFiles(_ context.Context, h triagearr.Hash) ([]triagearr.TorrentFile, error) {
+	q.mu.Lock()
+	q.filesCalls++
+	if q.filesFailN > 0 {
+		q.filesFailN--
+		err := q.filesErr
+		q.mu.Unlock()
+		return nil, err
+	}
+	q.mu.Unlock()
 	if files, ok := q.files[h]; ok {
 		return files, nil
 	}
@@ -449,6 +461,24 @@ func TestActor_T35_EnoentProceeds(t *testing.T) {
 	require.NoError(t, a.Execute(context.Background(), 1))
 	require.Equal(t, []triagearr.Hash{"h"}, q.calls)
 	require.Equal(t, triagearr.ActionSucceeded, src.actions[1].Status)
+}
+
+// TestActor_TorrentFilesNotRetried pins ADR-0027: the Actor retries only its
+// own writes, not the TorrentFiles read. A transient failure there is surfaced
+// after a single call (the client owns read retries), aborting on the nlink step.
+func TestActor_TorrentFilesNotRetried(t *testing.T) {
+	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h", SizeBytes: 1000}}
+	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
+		"h": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
+	})
+	q := &fakeQbit{filesFailN: 1, filesErr: errTransient(errors.New("503"))}
+	d := newFakeDeleter("sonarr")
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d)})
+
+	require.NoError(t, a.Execute(context.Background(), 1))
+	require.Equal(t, 1, q.filesCalls, "Actor must not retry the TorrentFiles read")
+	require.Empty(t, q.calls, "qBit delete must not run when the nlink read failed")
+	require.Equal(t, triagearr.ActionAbortedNlinkCheck, src.actions[1].Status)
 }
 
 func TestActor_ActFalse_Skips(t *testing.T) {
