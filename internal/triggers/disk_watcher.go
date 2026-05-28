@@ -134,7 +134,11 @@ func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error 
 		Path:              r.Path,
 		TargetFreePercent: r.TargetFreePercent,
 	}
-	plan, err := w.Decider.Plan(ctx, v)
+	// Cap planning so a stalled store/clients can't freeze the poll tick.
+	// The Decider scans candidates from SQLite; 30s is generous for 5k+ rows.
+	planCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	plan, err := w.Decider.Plan(planCtx, v)
 	if err != nil {
 		return fmt.Errorf("planning: %w", err)
 	}

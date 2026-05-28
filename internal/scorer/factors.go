@@ -276,7 +276,9 @@ func factorTrackerDead(trackers []trackerView, now time.Time, grace time.Duratio
 // Per the user's decision, the scorer still computes all factors for excluded
 // torrents (UI visibility); the Decider (M4) filters them out.
 func evaluateExclusions(t store.ScoringTorrent, linkedMedia []store.LinkedMedia, qb config.TorrentClientInstanceConfig, arrs config.ArrsConfig) []string {
-	var reasons []string
+	// Pre-cap at the observed maximum (protected + category + per-tag + per-arr-tag),
+	// so the common case of zero or one reason doesn't trigger reallocations.
+	reasons := make([]string, 0, 4)
 
 	if t.Protected {
 		reasons = append(reasons, "triagearr_protected")

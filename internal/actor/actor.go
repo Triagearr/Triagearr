@@ -314,9 +314,12 @@ func (a *Actor) markRemaining(ctx context.Context, actionID int64, rest []triage
 func (a *Actor) finish(ctx context.Context, actionID int64, status triagearr.ActionStatus, freed int64, cause error) error {
 	finishedAt := a.opts.now()
 	if err := a.opts.Source.FinishAction(ctx, actionID, status, finishedAt, freed); err != nil {
-		// Persistence failure is logged but we still return the original cause
-		// (if any) — the caller already knows the action's terminal state.
+		// Persistence failure is logged so an oncall hits it in slog before the
+		// caller does. We surface it alongside the original cause so a panicked
+		// status in the audit log can be traced back: errors.Join(nil, x) == x,
+		// so the cause-less path keeps the same shape.
 		slog.Error("actor: finishing action", "action_id", actionID, "status", status, "err", err)
+		return errors.Join(cause, fmt.Errorf("persisting terminal status %s: %w", status, err))
 	}
 	return cause
 }
