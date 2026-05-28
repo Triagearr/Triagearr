@@ -125,7 +125,7 @@ Deploy on real homelab. Let it run for a week. Inspect the SQLite DB manually. V
 - [x] `POST /api/v1/runs` accepts a `mode` field; without it the run stays dry-run even on a live daemon
 - [x] `triagearr run --live` unlocked (errors out clearly when daemon mode is dry-run)
 - [x] `arr-then-qbit` deletion pipeline per `docs/HARDLINK_TOPOLOGY.md` (T3 per `arr_file_id`, T4 whole-torrent)
-- [ ] ~~Cross-seed conflict handling (T3.5 nlink stat + skip/warn_only/force_delete)~~ — **deferred to M8**; ADR-0023's TRaSH mount + UID contract removes the FS-access blocker ADR-0012 cited
+- [x] Cross-seed conflict handling: two layers — (a) decider pre-filter using `MaxAllowedNlink` (2 for arr-linked, 1 for qbit-only) backed by the `files` poller's per-file nlink samples, exposed as `RunPlan.FilteredCrossSeed`; (b) Actor T3.5 `nlink_check` step between *arr DELETE and qBit DELETE → `ActionSkippedCrossSeed` if a sibling survives, `ActionAbortedNlinkCheck` on stat errors. ADR-0023's TRaSH mount + UID contract unblocks the FS access ADR-0012 had to defer.
 - [x] Partial *arr failure handling: hard fail aborts candidate, no rollback, audit_log narrates
 - [x] `actions` + `audit_log` tables — per-file granularity (case "8 OK + 1 failed + 1 not-attempted" reconstructible from `SELECT … WHERE action_id = ?`)
 - [x] Rate limiting (`max_deletions_per_run`, `inter_action_delay`)
