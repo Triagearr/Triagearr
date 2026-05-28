@@ -195,13 +195,13 @@ executed — manual HTTP/CLI runs stay silent. One event, not four.
 - [x] Tracker poller hybrid (event + periodic): qBit poller signals on `trackerCatchup` after each tick; tracker poller catches up `HashesWithoutTrackers` (2s debounce) instead of waiting for the next 6h sweep. Periodic sweep kept for alive→dead transitions (Factor 7).
 - [x] Optional `public_url` per connection (arr + torrent client): the internal URL keeps serving API calls, but deep links in the UI (today: `arr_url` returned by `GET /api/v1/torrents/{hash}`) prefer `public_url` when set so users land on `https://sonarr.example.com/series/...` instead of `http://gluetun:8989/...`. `arrBaseURL` now reads the DB-owned `arr_connections` row (ADR-0022 alignment). `public_url` is also persisted on `torrent_client_connections` for a future "Open client" link; no per-torrent deep link is exposed today since qBit WebUI has no canonical per-torrent route.
 - [ ] Test coverage ≥70% on `scorer`, `linker`, `decider`, `actor`
-- [ ] `govulncheck` clean (and added to CI `test` workflow, not just release)
+- [x] `govulncheck` clean (added to `.github/workflows/test.yml` after the coverage step; currently 0 vulns in app code, 13 in transitive deps not called)
 - [ ] Goreleaser produces signed artifacts (cosign)
 - [ ] SBOM generation via `syft` in the goreleaser pipeline (CycloneDX + SPDX)
 - [ ] SLSA build provenance attestation via `actions/attest-build-provenance`
 - [x] Container image: distroless or `scratch` base, runs as non-root (`USER 65532:65532`), read-only root filesystem
-- [ ] `SECURITY.md` at repo root: supported versions, disclosure policy, contact
-- [ ] Renovate (or Dependabot) configured for weekly dep bumps, grouped by ecosystem
+- [x] `SECURITY.md` at repo root: supported versions, GitHub private advisory + email fallback, scope, built-in safety contract, auth/secret storage, ADR cross-refs
+- [x] Dependabot configured for weekly dep bumps grouped by ecosystem (gomod, npm/web, github-actions, docker) — `.github/dependabot.yml`. Renovate considered but Dependabot is GitHub-native and sufficient for the dep surface.
 - [ ] Documentation reviewed for accuracy against final code
 - [ ] Demo GIF in README
 - [ ] Announcement post drafted (r/sonarr, r/Plex, Discord communities)
