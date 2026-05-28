@@ -45,7 +45,7 @@ func TestTrackerPoller_CatchupOnSignal(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
 
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
@@ -91,7 +91,7 @@ func TestTrackerPoller_CatchupFetchesMissingOnly(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
 
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)

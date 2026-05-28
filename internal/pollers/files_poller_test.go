@@ -51,7 +51,7 @@ func TestFilesPoller_PersistsRealNlink(t *testing.T) {
 	s, err := store.Open(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
 
 	require.NoError(t, s.UpsertTorrent(context.Background(), triagearr.Torrent{
 		Hash: "h1", Name: "Show", SavePath: filepath.Join(dir, "torrents"),
@@ -112,7 +112,7 @@ func TestFilesPoller_TransientStatErrorPreservesNlink(t *testing.T) {
 	s, err := store.Open(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
 
 	require.NoError(t, s.UpsertTorrent(context.Background(), triagearr.Torrent{
 		Hash: "h1", Name: "Show", SavePath: dir, Size: 4, AddedOn: time.Now().UTC(),

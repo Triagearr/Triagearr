@@ -18,14 +18,14 @@ func openTestStore(t *testing.T) *store.Store {
 	s, err := store.Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
 	return s
 }
 
 func TestMigrate_Idempotent(t *testing.T) {
 	s := openTestStore(t)
-	require.NoError(t, s.Migrate())
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
+	require.NoError(t, s.Migrate(context.Background()))
 
 	var count int
 	require.NoError(t, s.DB().Get(&count, `SELECT COUNT(*) FROM schema_migrations`))

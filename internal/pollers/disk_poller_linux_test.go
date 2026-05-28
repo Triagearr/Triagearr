@@ -18,7 +18,7 @@ func TestDiskPoller_PersistsRealStatfs(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
 
 	dir := t.TempDir()
 	p := &pollers.DiskPoller{
@@ -58,7 +58,7 @@ func TestDiskPoller_BadPathIsLoggedNotFatal(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
 
 	p := &pollers.DiskPoller{
 		Volume:   pollers.Volume{Path: "/this/path/does/not/exist/at/all"},

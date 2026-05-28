@@ -153,24 +153,24 @@ func loadConfigFromCmd(cmd *cli.Command) (*config.Config, error) {
 	return cfg, nil
 }
 
-func openStoreAndMigrate(cfg *config.Config) (*store.Store, error) {
+func openStoreAndMigrate(ctx context.Context, cfg *config.Config) (*store.Store, error) {
 	s, err := store.Open(cfg.Storage.SQLitePath)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.Migrate(); err != nil {
+	if err := s.Migrate(ctx); err != nil {
 		_ = s.Close()
 		return nil, fmt.Errorf("applying migrations: %w", err)
 	}
 	return s, nil
 }
 
-func migrateAction(_ context.Context, cmd *cli.Command) error {
+func migrateAction(ctx context.Context, cmd *cli.Command) error {
 	cfg, err := loadConfigFromCmd(cmd)
 	if err != nil {
 		return err
 	}
-	s, err := openStoreAndMigrate(cfg)
+	s, err := openStoreAndMigrate(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("loading config from %q: %w", path, err)
 	}
-	s, err := openStoreAndMigrate(cfg)
+	s, err := openStoreAndMigrate(ctx, cfg)
 	if err != nil {
 		return err
 	}

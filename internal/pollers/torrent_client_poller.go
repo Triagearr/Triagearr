@@ -11,8 +11,8 @@ import (
 
 // TorrentClientStore is the subset of store operations the torrent client poller needs.
 type TorrentClientStore interface {
-	UpsertTorrent(ctx context.Context, t triagearr.Torrent) error
-	InsertSnapshot(ctx context.Context, snap triagearr.Snapshot) error
+	UpsertTorrents(ctx context.Context, torrents []triagearr.Torrent) error
+	InsertSnapshots(ctx context.Context, snaps []triagearr.Snapshot) error
 }
 
 // TorrentClientPoller polls a torrent client instance and persists torrents + snapshots.
@@ -45,12 +45,9 @@ func (p *TorrentClientPoller) tick(ctx context.Context) error {
 		return fmt.Errorf("listing torrents: %w", err)
 	}
 	now := time.Now().UTC()
-	for _, t := range torrents {
-		if err := p.Store.UpsertTorrent(ctx, t); err != nil {
-			slog.Warn("upsert torrent failed", "hash", t.Hash, "err", err)
-			continue
-		}
-		snap := triagearr.Snapshot{
+	snaps := make([]triagearr.Snapshot, len(torrents))
+	for i, t := range torrents {
+		snaps[i] = triagearr.Snapshot{
 			Hash:         t.Hash,
 			Timestamp:    now,
 			Ratio:        t.Ratio,
@@ -60,9 +57,12 @@ func (p *TorrentClientPoller) tick(ctx context.Context) error {
 			State:        t.State,
 			LastActivity: t.LastActivity,
 		}
-		if err := p.Store.InsertSnapshot(ctx, snap); err != nil {
-			slog.Warn("insert snapshot failed", "hash", t.Hash, "err", err)
-		}
+	}
+	if err := p.Store.UpsertTorrents(ctx, torrents); err != nil {
+		return fmt.Errorf("batch upserting torrents: %w", err)
+	}
+	if err := p.Store.InsertSnapshots(ctx, snaps); err != nil {
+		slog.Warn("batch insert snapshots failed", "err", err)
 	}
 	slog.Info("torrent-client tick complete", "torrents", len(torrents))
 	notifyNonBlocking(p.Notify)

@@ -26,7 +26,7 @@ func testStore(t *testing.T) *store.Store {
 	s, err := store.Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
 	return s
 }
 

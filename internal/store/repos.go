@@ -94,6 +94,55 @@ func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 	return nil
 }
 
+// UpsertTorrents batches UpsertTorrent for a whole qBit tick in a single
+// transaction with one prepared statement, removing per-row round-trips on the
+// hot polling path (~5k torrents per tick).
+func (s *Store) UpsertTorrents(ctx context.Context, torrents []triagearr.Torrent) error {
+	if len(torrents) == 0 {
+		return nil
+	}
+	tx, err := s.writer.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for torrents batch: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	stmt, err := tx.PreparexContext(ctx, `
+		INSERT INTO torrents(hash, name, category, save_path, size, added_on, completion_on, private, tags, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(hash) DO UPDATE SET
+			name=excluded.name,
+			category=excluded.category,
+			save_path=excluded.save_path,
+			size=excluded.size,
+			added_on=excluded.added_on,
+			completion_on=excluded.completion_on,
+			private=excluded.private,
+			tags=excluded.tags,
+			last_seen=excluded.last_seen
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare torrents upsert: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+	now := ts(time.Now().UTC())
+	for _, t := range torrents {
+		var completion any
+		if !t.CompletionOn.IsZero() {
+			completion = ts(t.CompletionOn)
+		}
+		if _, err := stmt.ExecContext(ctx,
+			string(t.Hash), t.Name, t.Category, t.SavePath, t.Size,
+			ts(t.AddedOn), completion, t.Private, t.Tags, now,
+		); err != nil {
+			return fmt.Errorf("upserting torrent %s: %w", t.Hash, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit torrents batch: %w", err)
+	}
+	return nil
+}
+
 // SetTorrentProtected toggles the user-driven protection flag for one torrent.
 // Protecting stamps protected_at = now; unprotecting clears it. Returns
 // sql.ErrNoRows when the hash is unknown so callers can map to 404.
@@ -273,6 +322,39 @@ func (s *Store) InsertSnapshot(ctx context.Context, snap triagearr.Snapshot) err
 	`, string(snap.Hash), ts(snap.Timestamp), snap.Ratio, snap.Uploaded, snap.Seeders, snap.Leechers, string(snap.State), ts(snap.LastActivity))
 	if err != nil {
 		return fmt.Errorf("inserting snapshot %s@%s: %w", snap.Hash, snap.Timestamp, err)
+	}
+	return nil
+}
+
+// InsertSnapshots batches InsertSnapshot for the qBit-tick fanout. Same
+// trade-off as UpsertTorrents: one tx + one prepared statement per tick.
+func (s *Store) InsertSnapshots(ctx context.Context, snaps []triagearr.Snapshot) error {
+	if len(snaps) == 0 {
+		return nil
+	}
+	tx, err := s.writer.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for snapshots batch: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	stmt, err := tx.PreparexContext(ctx, `
+		INSERT OR REPLACE INTO snapshots_raw(torrent_hash, ts, ratio, uploaded, seeders, leechers, state, last_activity)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare snapshots insert: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+	for _, snap := range snaps {
+		if _, err := stmt.ExecContext(ctx,
+			string(snap.Hash), ts(snap.Timestamp), snap.Ratio, snap.Uploaded,
+			snap.Seeders, snap.Leechers, string(snap.State), ts(snap.LastActivity),
+		); err != nil {
+			return fmt.Errorf("inserting snapshot %s@%s: %w", snap.Hash, snap.Timestamp, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit snapshots batch: %w", err)
 	}
 	return nil
 }

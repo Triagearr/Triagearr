@@ -34,7 +34,7 @@ func TestTorrentClientPoller_PersistsTickThenExits(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	require.NoError(t, s.Migrate())
+	require.NoError(t, s.Migrate(context.Background()))
 
 	now := time.Now().UTC()
 	fake := &fakeTorrentClient{

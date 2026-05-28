@@ -24,8 +24,7 @@ type migration struct {
 // Migrate applies any pending embedded migrations in version order.
 // Each migration runs inside a transaction; partial failures roll back.
 // Safe to call repeatedly — already-applied versions are skipped.
-func (s *Store) Migrate() error {
-	ctx := context.Background()
+func (s *Store) Migrate(ctx context.Context) error {
 	if _, err := s.writer.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version    INTEGER PRIMARY KEY,
 		name       TEXT NOT NULL,
@@ -34,7 +33,7 @@ func (s *Store) Migrate() error {
 		return fmt.Errorf("creating schema_migrations: %w", err)
 	}
 
-	applied, err := s.appliedVersions()
+	applied, err := s.appliedVersions(ctx)
 	if err != nil {
 		return err
 	}
@@ -48,15 +47,15 @@ func (s *Store) Migrate() error {
 		if applied[m.version] {
 			continue
 		}
-		if err := s.applyMigration(m); err != nil {
+		if err := s.applyMigration(ctx, m); err != nil {
 			return fmt.Errorf("applying migration %04d_%s: %w", m.version, m.name, err)
 		}
 	}
 	return nil
 }
 
-func (s *Store) appliedVersions() (map[int]bool, error) {
-	rows, err := s.writer.QueryContext(context.Background(), `SELECT version FROM schema_migrations`)
+func (s *Store) appliedVersions(ctx context.Context) (map[int]bool, error) {
+	rows, err := s.writer.QueryContext(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
 		return nil, fmt.Errorf("reading schema_migrations: %w", err)
 	}
@@ -75,9 +74,8 @@ func (s *Store) appliedVersions() (map[int]bool, error) {
 	return out, nil
 }
 
-func (s *Store) applyMigration(m migration) error {
-	ctx := context.Background()
-	tx, err := s.writer.Beginx()
+func (s *Store) applyMigration(ctx context.Context, m migration) error {
+	tx, err := s.writer.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}

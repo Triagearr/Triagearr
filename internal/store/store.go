@@ -43,7 +43,11 @@ const (
 //   - synchronous(NORMAL) — durable enough for WAL, faster than FULL.
 //   - foreign_keys(1) — explicit ON DELETE CASCADE on actions/run_items.
 //   - temp_store(MEMORY) — sort/group temp tables stay in RAM.
-const commonPragmas = "_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)"
+//   - cache_size(-65536) — 64 MiB page cache per connection (negative = KiB).
+//     The scoring + observe paths stream the whole torrents+snapshots set; the
+//     stock ~2 MiB cache forces page churn under 5k+ torrents.
+//   - mmap_size(64 MiB) — memory-mapped reads for the same scans, cuts syscalls.
+const commonPragmas = "_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)&_pragma=cache_size(-65536)&_pragma=mmap_size(67108864)"
 
 // Open creates the writer + reader pools backed by the same SQLite file.
 // Callers must invoke (*Store).Close.
