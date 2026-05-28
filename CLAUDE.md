@@ -36,7 +36,7 @@ Go 1.26+ · urfave/cli/v3 · koanf/v2 · modernc.org/sqlite · chi/v5 · log/slo
 
 - `cmd/triagearr/main.go` — CLI entry
 - `internal/store/` — SQLite + migrations
-- `internal/clients/{sonarr,radarr,lidarr,readarr,whisparr_v2,whisparr_v3,qbit,maintainerr}/` — one per provider
+- `internal/clients/{sonarr,radarr,lidarr,readarr,whisparr_v2,whisparr_v3,qbit}/` — one per provider
 - `internal/scorer/` — DeleteScore
 - `internal/actor/` — destructive ops only
 - `web/` — Vite + React UI, embedded via `embed.FS`

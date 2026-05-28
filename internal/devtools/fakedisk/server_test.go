@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Triagearr/Triagearr/internal/clients/fakedisk"
+	"github.com/Triagearr/Triagearr/internal/devtools/fakedisk"
 )
 
 func TestFakeDisk_GetSetFillFree(t *testing.T) {

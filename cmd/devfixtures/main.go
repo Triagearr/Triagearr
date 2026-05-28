@@ -26,7 +26,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/Triagearr/Triagearr/internal/clients/fakedisk"
+	"github.com/Triagearr/Triagearr/internal/devtools/fakedisk"
 	qbitfake "github.com/Triagearr/Triagearr/internal/clients/qbit/fake"
 	radarrfake "github.com/Triagearr/Triagearr/internal/clients/radarr/fake"
 	sonarrfake "github.com/Triagearr/Triagearr/internal/clients/sonarr/fake"
