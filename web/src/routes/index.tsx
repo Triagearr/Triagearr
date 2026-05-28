@@ -106,7 +106,7 @@ function Dashboard() {
         {data && (
           <>
             {/* Stat cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
+            <div className="grid-resp" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
               {[
                 { label: m.dash_stat_torrents_tracked(), value: data.counts.torrents, foot: m.dash_stat_in_qbittorrent() },
                 { label: m.dash_stat_scored(), value: data.counts.scored, foot: m.dash_stat_last_cycle() },
@@ -127,7 +127,7 @@ function Dashboard() {
             </div>
 
             {/* Disk + recent runs */}
-            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginBottom: 14 }}>
+            <div className="grid-resp" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginBottom: 14 }}>
               {/* Disk pressure */}
               <div className="card">
                 <div className="card-head">

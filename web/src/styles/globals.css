@@ -780,3 +780,188 @@ input[type=range] { accent-color: var(--primary); }
 
 /* ── Sparkline ────────────────────────────────────────────────────────────── */
 .sparkline { width: 100%; display: block; }
+
+/* ── Action / candidate card (phone view, Actions page) ─────────────────── */
+.action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  width: 100%;
+  text-align: left;
+}
+.action-card-row1 { display: flex; align-items: center; gap: 8px; }
+.action-card-rank { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; color: var(--fg-3); }
+.action-card-name { font-size: 12.5px; font-weight: 500; flex: 1; min-width: 0; word-break: break-word; }
+.action-card-meta {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 11px; color: var(--fg-3);
+}
+.action-card-meta .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+.action-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.action-card.clickable { cursor: pointer; }
+.action-card.clickable:hover { background: var(--hover); }
+
+/* ── Torrent card (phone view) ────────────────────────────────────────────── */
+.torrent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--fg);
+  width: 100%;
+}
+.torrent-card:hover { background: var(--hover); }
+.torrent-card.selected { box-shadow: inset 3px 0 0 var(--primary); }
+.torrent-card-row1 { display: flex; align-items: flex-start; gap: 8px; justify-content: space-between; }
+.torrent-card-name {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.torrent-card-meta, .torrent-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+.torrent-card-foot { font-size: 11px; }
+.torrent-card-sep { color: var(--fg-4); }
+.torrent-card .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+
+/* ── Responsive overrides ─────────────────────────────────────────────────── */
+/* Mobile topbar visibility: shown only when the desktop sidebar is hidden. */
+.sidebar-desktop { display: contents; }
+.mobile-topbar { display: none; }
+
+/* Burger-opened drawer: own its own width, fully reset by the inner .sidebar.
+   Animates in from the left, shadowed so it floats above the page. */
+.sidebar-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(260px, 86vw);
+  z-index: 40;
+  background: var(--bg-2);
+  box-shadow: 4px 0 24px rgba(0,0,0,.18);
+  animation: drawer-slide-in 180ms ease-out;
+}
+.sidebar-drawer .sidebar { width: 100%; height: 100%; border-right: none; }
+@keyframes drawer-slide-in {
+  from { transform: translateX(-12px); opacity: 0.6; }
+  to   { transform: none; opacity: 1; }
+}
+[data-theme="dark"] .sidebar-drawer { box-shadow: 4px 0 32px rgba(0,0,0,.5); }
+
+@media (max-width: 1023px) {
+  .sidebar-desktop { display: none; }
+  .mobile-topbar { display: flex; }
+}
+
+/* Phones (< 640px) */
+@media (max-width: 639px) {
+  /* Burger drawer goes full-screen on phones */
+  .sidebar-drawer { width: 100vw; box-shadow: none; }
+
+  .topbar { height: auto; padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
+  .topbar-title { font-size: 13px; }
+  .topbar-sub { font-size: 11px; }
+  .topbar-right { width: 100%; margin-left: 0; justify-content: flex-end; }
+  .page { padding: 12px; }
+
+  /* Drawer goes full-screen */
+  .ds-drawer { width: 100vw !important; max-width: 100vw; border-left: none; }
+
+  /* Modal margins so it doesn't kiss the edges */
+  .modal-scrim { padding: 8px; }
+  .modal-card { width: 100%; }
+
+  /* Master-detail: stacked, controlled by data attrs on .split */
+  .split { flex-direction: column; }
+  .split-list,
+  .split-detail { width: 100%; flex: 1 1 auto; border-right: none; }
+  .split[data-mobile-view="list"] .split-detail { display: none; }
+  .split[data-mobile-view="detail"] .split-list { display: none; }
+
+  /* Filters bar: tighter padding so inputs can stretch */
+  .filters-bar { padding: 8px 10px; gap: 6px; }
+  .filters-bar > * { flex: 1 1 100%; }
+  .filters-bar > .input-wrap { flex: 1 1 100% !important; }
+  .filters-bar > .input-wrap .ds-input,
+  .filters-bar > .ds-select { width: 100% !important; }
+  .filters-bar > .filter-checkbox { flex: 1 1 auto; }
+  /* Hide the keyboard-shortcut hint on phones */
+  .filters-bar > .kbd-hint { display: none; }
+
+  /* Pagination wraps */
+  .pagination { flex-wrap: wrap; padding: 8px 10px; }
+
+  /* Generic grids declared inline with repeat(N, 1fr) — collapse via a class */
+  .grid-resp { grid-template-columns: 1fr !important; }
+
+  /* Metric grid clamps to 2 columns max on phone */
+  .metric-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* arr-tile-grid: single column on phones (otherwise 235px min would overflow) */
+  .arr-tile-grid { grid-template-columns: 1fr; }
+
+  /* Settings tabs already use overflow-x: auto; nudge padding */
+  .ds-tabs { padding: 0 8px; }
+  .ds-tab { padding: 10px 10px; font-size: 12.5px; }
+
+  /* Drawer head stays readable */
+  .drawer-head { padding: 12px 12px; }
+  .drawer-body { padding: 12px; }
+
+  /* Drawer tables can be wide (trackers, audit) — let them scroll horizontally
+     without breaking the table layout. Card-body tables on the dashboard are
+     narrow and should keep width:100% so they fill the card. */
+  .drawer-body table.tbl { display: block; overflow-x: auto; white-space: nowrap; width: 100%; }
+
+  /* Run detail (Actions page): tighter spacing on phones. Tables in this
+     panel render as cards instead — see .action-card. */
+  .run-detail { padding: 12px !important; gap: 14px !important; }
+
+  /* Disk gauge editor: stack head vertically so labels never collide */
+  .disk-editor-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .disk-editor-head > div:last-child {
+    margin-left: 0 !important;
+    gap: 16px !important;
+    justify-content: flex-start;
+  }
+  .disk-editor-head > div:last-child > div { text-align: left !important; }
+  .disk-editor-current { font-size: 24px; }
+  .disk-editor-bar-region { margin: 0 8px; padding-top: 28px; padding-bottom: 28px; }
+}
+
+/* Tablets (640–1023px) */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .grid-resp { grid-template-columns: repeat(2, 1fr) !important; }
+  .ds-drawer { width: min(520px, 92vw); }
+}
+

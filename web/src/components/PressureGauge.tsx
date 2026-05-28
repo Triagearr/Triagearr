@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { VolumeViewT } from "@/api/schemas";
 import { humanBytes, pct } from "@/lib/format";
+import { useIsPhone } from "@/lib/useMediaQuery";
 import { m } from "@/paraglide/messages";
 
 // Shared marker label for the disk gauges: a colored dot centered on the mark at
@@ -141,6 +142,8 @@ export function DiskGaugeEditor({
   const [dragging, setDragging] = useState<"threshold" | "target" | null>(null);
   const thresholdUsed = 100 - thresholdFree;
   const targetUsed    = 100 - targetFree;
+  const isPhone = useIsPhone();
+  const ticks = isPhone ? [0, 50, 100] : [0, 25, 50, 75, 100];
 
   const xToPctUsed = (clientX: number) => {
     const r = barRef.current?.getBoundingClientRect();
@@ -148,10 +151,11 @@ export function DiskGaugeEditor({
     return Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100));
   };
 
-  function startDrag(which: "threshold" | "target") {
+  function startDrag(which: "threshold" | "target", e: React.PointerEvent<HTMLButtonElement>) {
     setDragging(which);
-    const onMove = (e: MouseEvent) => {
-      const used = xToPctUsed(e.clientX);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const onMove = (ev: PointerEvent) => {
+      const used = xToPctUsed(ev.clientX);
       const free = Math.round(100 - used);
       if (which === "threshold") {
         onThreshold(Math.max(1, Math.min(targetFree - 1, free)));
@@ -161,11 +165,13 @@ export function DiskGaugeEditor({
     };
     const onUp = () => {
       setDragging(null);
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   }
 
   const isCritical = usedPct >= thresholdUsed;
@@ -217,18 +223,25 @@ export function DiskGaugeEditor({
         <div className="disk-editor-handle-layer">
           <MarkLabel pct={thresholdUsed} color="var(--red)" side="above"
             bumpUp={Math.abs(thresholdUsed - targetUsed) < 18}>
-            {m.comp_gauge_trigger_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{thresholdFree}%</strong>
+            {isPhone
+              ? <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{thresholdFree}%</strong>
+              : <>{m.comp_gauge_trigger_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{thresholdFree}%</strong></>
+            }
           </MarkLabel>
-          <MarkLabel pct={targetUsed} color="var(--green)" side="above">
-            {m.comp_gauge_stop_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{targetFree}%</strong>
+          <MarkLabel pct={targetUsed} color="var(--green)" side="above"
+            bumpUp={isPhone && Math.abs(thresholdUsed - targetUsed) < 18}>
+            {isPhone
+              ? <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{targetFree}%</strong>
+              : <>{m.comp_gauge_stop_when()} <strong style={{ fontFamily: "'Geist Mono',ui-monospace,monospace" }}>{targetFree}%</strong></>
+            }
           </MarkLabel>
 
           {/* Threshold handle */}
           <button
             type="button"
             className={`disk-handle threshold${dragging === "threshold" ? " active" : ""}`}
-            style={{ left: `${thresholdUsed}%` }}
-            onMouseDown={() => startDrag("threshold")}
+            style={{ left: `${thresholdUsed}%`, touchAction: "none" }}
+            onPointerDown={(e) => startDrag("threshold", e)}
           >
             <div className="disk-handle-line" />
             <div className="disk-handle-pip" />
@@ -238,8 +251,8 @@ export function DiskGaugeEditor({
           <button
             type="button"
             className={`disk-handle target${dragging === "target" ? " active" : ""}`}
-            style={{ left: `${targetUsed}%` }}
-            onMouseDown={() => startDrag("target")}
+            style={{ left: `${targetUsed}%`, touchAction: "none" }}
+            onPointerDown={(e) => startDrag("target", e)}
           >
             <div className="disk-handle-line" />
             <div className="disk-handle-pip" />
@@ -248,14 +261,14 @@ export function DiskGaugeEditor({
 
         {/* Tick labels — expressed as % free (right = empty = most free) */}
         <div style={{ position: "relative", marginTop: 6, height: 14 }}>
-          {[0, 25, 50, 75, 100].map((usedT) => (
+          {ticks.map((usedT) => (
             <span key={usedT} style={{
               position: "absolute",
               transform: usedT === 0 ? "none" : usedT === 100 ? "translateX(-100%)" : "translateX(-50%)",
               fontSize: 10.5, color: "var(--fg-4)",
               left: `${usedT}%`, fontFamily: "'Geist Mono',ui-monospace,monospace",
             }}>
-              {m.comp_gauge_pct_free({ pct: 100 - usedT })}
+              {isPhone ? `${100 - usedT}%` : m.comp_gauge_pct_free({ pct: 100 - usedT })}
             </span>
           ))}
         </div>

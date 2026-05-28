@@ -135,8 +135,8 @@ function Layout() {
 
   return (
     <div className="app-shell">
-      {/* Desktop sidebar (hidden on small screens via CSS) */}
-      <div style={{ display: "contents" }} className="sidebar-desktop">
+      {/* Desktop sidebar (hidden below lg via CSS .sidebar-desktop rule) */}
+      <div className="sidebar-desktop">
         <Sidebar />
       </div>
 
@@ -144,7 +144,7 @@ function Layout() {
       {drawerOpen && (
         <>
           <div className="scrim" style={{ zIndex: 35 }} onClick={() => setDrawerOpen(false)} />
-          <div style={{ position: "fixed", top: 0, left: 0, bottom: 0, width: 240, zIndex: 40 }}>
+          <div className="sidebar-drawer">
             <Sidebar onClose={() => setDrawerOpen(false)} />
           </div>
         </>
@@ -152,17 +152,10 @@ function Layout() {
 
       {/* Main content */}
       <main className="main">
-        {/* Mobile topbar */}
+        {/* Mobile topbar — visibility driven by .mobile-topbar in globals.css */}
         <div
-          className="topbar"
-          style={{
-            display: "none",
-            position: "sticky",
-            top: 0,
-            zIndex: 20,
-            paddingLeft: 10,
-          }}
-          id="mobile-topbar"
+          className="topbar mobile-topbar"
+          style={{ position: "sticky", top: 0, zIndex: 20, paddingLeft: 10 }}
         >
           <button
             onClick={() => setDrawerOpen(true)}
@@ -175,12 +168,6 @@ function Layout() {
           <Logo size={22} />
           <span style={{ fontWeight: 600, fontSize: 13, letterSpacing: "-0.01em" }}>Triagearr</span>
         </div>
-        <style>{`
-          @media (max-width: 768px) {
-            .sidebar-desktop { display: none !important; }
-            #mobile-topbar { display: flex !important; }
-          }
-        `}</style>
         <Outlet />
       </main>
     </div>

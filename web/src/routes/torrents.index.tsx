@@ -3,8 +3,10 @@ import { ArrowDown, ArrowUp, Lock, Search, Unlock } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { useTorrentCategories, useTorrents } from "@/api/hooks";
 import { ScoreCell } from "@/components/ScoreCell";
+import { TorrentCard } from "@/components/TorrentCard";
 import { TorrentDrawer } from "@/components/TorrentDrawer";
 import { humanBytes, relativeTime } from "@/lib/format";
+import { useIsPhone } from "@/lib/useMediaQuery";
 import { m } from "@/paraglide/messages";
 
 type TorrentsSearch = { detail?: string };
@@ -29,6 +31,7 @@ function TorrentsPage() {
 
   const list = useTorrents({ q: deferredQ, sort, order, category, privateOnly, excludedOnly, limit, offset });
   const cats = useTorrentCategories();
+  const isPhone = useIsPhone();
 
   function onSort(field: string) {
     if (sort === field) setOrder((o) => (o === "asc" ? "desc" : "asc"));
@@ -106,12 +109,29 @@ function TorrentsPage() {
             <input type="checkbox" checked={excludedOnly} onChange={(e) => { setExcludedOnly(e.target.checked); setOffset(0); }} />
             {m.torrents_excluded_only()}
           </label>
-          <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--fg-3)" }}>
+          <span className="kbd-hint" style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--fg-3)" }}>
             <kbd>/</kbd> {m.torrents_kbd_search()} · <kbd>↵</kbd> {m.torrents_kbd_open()}
           </span>
         </div>
 
-        {/* Scrollable table */}
+        {/* Phone: card list */}
+        {isPhone ? (
+          <div style={{ flex: 1, overflow: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            {list.data?.torrents.map((t) => (
+              <TorrentCard
+                key={t.hash}
+                torrent={t}
+                selected={detail === t.hash}
+                onClick={() => openDetail(t.hash)}
+              />
+            ))}
+            {list.data?.torrents.length === 0 && (
+              <div style={{ textAlign: "center", padding: 24, color: "var(--fg-3)", fontSize: 12 }}>
+                {m.torrents_empty()}
+              </div>
+            )}
+          </div>
+        ) : (
         <div style={{ flex: 1, overflow: "auto" }}>
           <table className="tbl">
             <thead>
@@ -178,6 +198,7 @@ function TorrentsPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         {/* Pagination */}
         <div className="pagination">

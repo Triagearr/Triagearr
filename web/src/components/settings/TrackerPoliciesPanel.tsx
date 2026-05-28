@@ -282,7 +282,7 @@ function PolicyEditor({
   setDraft: (d: TrackerPolicyInput) => void;
 }) {
   return (
-    <div className="grid grid-cols-[auto_5rem_auto_5rem_auto_5rem_auto] items-center gap-1 text-xs">
+    <div className="grid grid-cols-[auto_1fr] sm:grid-cols-[auto_5rem_auto_5rem_auto_5rem_auto] items-center gap-1 text-xs">
       <TipLabel
         text={m.settings_tracker_editor_ratio()}
         tip={m.settings_tracker_tip_min_ratio()}

@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, Play, X, Zap } from "lucide-react";
+import { AlertTriangle, ChevronLeft, Play, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   useAction, useActions, usePreviewRun, useRun, useRunActions, useRuns, useTriggerRun,
 } from "@/api/hooks";
 import { ApiError } from "@/api/client";
 import { humanBytes, relativeTime, shortHash } from "@/lib/format";
+import { useIsPhone } from "@/lib/useMediaQuery";
 import { Tooltip } from "@/components/ui/Tooltip";
 import type { ActionStatusT, ActionViewT, AuditOutcomeT, RunResponseT } from "@/api/schemas";
 import { m } from "@/paraglide/messages";
@@ -349,9 +350,10 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
   const inFlight = isInFlight(run);
   const actions = useRunActions(run.run_id, inFlight ? 2_000 : undefined);
   const actionList = actions.data?.actions ?? [];
+  const isPhone = useIsPhone();
 
   return (
-    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
+    <div className="run-detail" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
       {/* Run header */}
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -381,6 +383,25 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
           <div style={{ fontSize: 11, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600, marginBottom: 8 }}>
             {m.actions_candidates_count({ count: run.candidates.length })}
           </div>
+          {isPhone ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {run.candidates.map((c) => (
+                <div key={c.torrent_hash} className="action-card">
+                  <div className="action-card-row1">
+                    <span className="action-card-rank">#{c.rank}</span>
+                    <span className="action-card-name">{torrentLabel(c.torrent_name, c.torrent_hash)}</span>
+                  </div>
+                  <div className="action-card-meta">
+                    <span>{m.actions_th_score()} <span className="mono">{c.score.toFixed(1)}</span></span>
+                    <span>·</span>
+                    <span><span className="mono">{humanBytes(c.size_bytes)}</span></span>
+                    <span>·</span>
+                    <span>{m.actions_th_would_free()} <span className="mono">{humanBytes(c.would_free_bytes)}</span></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <table className="tbl" style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
             <thead>
               <tr>
@@ -403,6 +424,7 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
               ))}
             </tbody>
           </table>
+          )}
         </div>
       )}
 
@@ -415,6 +437,28 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
           <div style={{ color: "var(--fg-3)", fontSize: 12 }}>
             {inFlight ? m.actions_waiting_first_action() : m.actions_none_recorded()}
           </div>
+        ) : isPhone ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {actionList.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                className="action-card clickable"
+                onClick={() => onAudit(a.id)}
+              >
+                <div className="action-card-row1">
+                  <span className="action-card-rank">#{a.rank}</span>
+                  <span className="action-card-name">{torrentLabel(a.torrent_name, a.torrent_hash)}</span>
+                  <ActionStatusBadge status={a.status} />
+                </div>
+                <div className="action-card-meta">
+                  <span><span className="mono">{humanBytes(a.freed_bytes)}</span></span>
+                  <span>·</span>
+                  <span>{relativeTime(a.started_at)}</span>
+                </div>
+              </button>
+            ))}
+          </div>
         ) : (
           <table className="tbl" style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
             <thead>
@@ -424,20 +468,16 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
                 <th>{m.actions_th_status()}</th>
                 <th style={{ textAlign: "right", width: 90 }}>{m.actions_th_freed()}</th>
                 <th style={{ width: 90 }}>{m.actions_th_started()}</th>
-                <th style={{ width: 50 }}></th>
               </tr>
             </thead>
             <tbody>
               {actionList.map((a) => (
-                <tr key={a.id}>
+                <tr key={a.id} className="clickable" onClick={() => onAudit(a.id)}>
                   <td className="mono" style={{ color: "var(--fg-3)" }}>#{a.rank}</td>
                   <td>{torrentLabel(a.torrent_name, a.torrent_hash)}</td>
                   <td><ActionStatusBadge status={a.status} /></td>
                   <td className="num">{humanBytes(a.freed_bytes)}</td>
                   <td style={{ fontSize: 11.5, color: "var(--fg-3)" }}>{relativeTime(a.started_at)}</td>
-                  <td>
-                    <button className="btn btn-ghost btn-sm" onClick={() => onAudit(a.id)}>{m.actions_audit_btn()}</button>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -453,6 +493,47 @@ function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: number) 
 function AllDeletionsTable({ actions, onSelectRun, onAudit }: {
   actions: ActionViewT[]; onSelectRun: (id: number) => void; onAudit: (id: number) => void;
 }) {
+  const isPhone = useIsPhone();
+  if (isPhone) {
+    if (actions.length === 0) {
+      return (
+        <div style={{ textAlign: "center", color: "var(--fg-3)", padding: "16px 14px", fontSize: 12 }}>
+          {m.actions_no_live_deletions()}
+        </div>
+      );
+    }
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 12 }}>
+        {actions.map((a) => (
+          <div
+            key={a.id}
+            role="button"
+            tabIndex={0}
+            className="action-card clickable"
+            onClick={() => onAudit(a.id)}
+            onKeyDown={(e) => { if (e.key === "Enter") onAudit(a.id); }}
+          >
+            <div className="action-card-row1">
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", padding: "0 4px" }}
+                onClick={(e) => { e.stopPropagation(); onSelectRun(a.run_id); }}
+              >
+                #{a.run_id}
+              </button>
+              <span className="action-card-name">{torrentLabel(a.torrent_name, a.torrent_hash)}</span>
+              <ActionStatusBadge status={a.status} />
+            </div>
+            <div className="action-card-meta">
+              <span><span className="mono">{humanBytes(a.freed_bytes)}</span></span>
+              <span>·</span>
+              <span>{relativeTime(a.started_at)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <table className="tbl">
       <thead>
@@ -462,17 +543,16 @@ function AllDeletionsTable({ actions, onSelectRun, onAudit }: {
           <th>{m.actions_th_status()}</th>
           <th style={{ textAlign: "right", width: 90 }}>{m.actions_th_freed()}</th>
           <th style={{ width: 90 }}>{m.actions_th_when()}</th>
-          <th style={{ width: 50 }}></th>
         </tr>
       </thead>
       <tbody>
         {actions.map((a) => (
-          <tr key={a.id}>
+          <tr key={a.id} className="clickable" onClick={() => onAudit(a.id)}>
             <td>
               <button
                 className="btn btn-ghost btn-sm"
                 style={{ fontFamily: "'Geist Mono',ui-monospace,monospace", padding: "0 4px" }}
-                onClick={() => onSelectRun(a.run_id)}
+                onClick={(e) => { e.stopPropagation(); onSelectRun(a.run_id); }}
               >
                 #{a.run_id}
               </button>
@@ -481,14 +561,11 @@ function AllDeletionsTable({ actions, onSelectRun, onAudit }: {
             <td><ActionStatusBadge status={a.status} /></td>
             <td className="num">{humanBytes(a.freed_bytes)}</td>
             <td style={{ fontSize: 11.5, color: "var(--fg-3)" }}>{relativeTime(a.started_at)}</td>
-            <td>
-              <button className="btn btn-ghost btn-sm" onClick={() => onAudit(a.id)}>{m.actions_audit_btn()}</button>
-            </td>
           </tr>
         ))}
         {actions.length === 0 && (
           <tr>
-            <td colSpan={6} style={{ textAlign: "center", color: "var(--fg-3)", padding: "10px 14px", fontSize: 12 }}>
+            <td colSpan={5} style={{ textAlign: "center", color: "var(--fg-3)", padding: "10px 14px", fontSize: 12 }}>
               {m.actions_no_live_deletions()}
             </td>
           </tr>
@@ -507,6 +584,7 @@ function ActionsPage() {
   const [confirmLive, setConfirmLive] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(runParam ?? null);
   const [auditId, setAuditId] = useState<number | undefined>();
+  const isPhone = useIsPhone();
 
   // Sync selection when the ?run= param changes (e.g. navigating in from the
   // dashboard's recent-runs list while this page is already mounted).
@@ -567,7 +645,7 @@ function ActionsPage() {
       )}
 
       {/* Master-detail split */}
-      <div className="split">
+      <div className="split" data-mobile-view={isPhone && selectedRun ? "detail" : "list"}>
         {/* Runs list */}
         <div className="split-list">
           <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
@@ -616,6 +694,13 @@ function ActionsPage() {
 
         {/* Detail — selected run, or the cross-run deletions landing view */}
         <div className="split-detail">
+          {isPhone && selectedRun && (
+            <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", flex: "none" }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setSelectedRunId(null)}>
+                <ChevronLeft size={13} /> {m.common_back()}
+              </button>
+            </div>
+          )}
           {selectedRun ? (
             <RunDetail run={selectedRun} onAudit={setAuditId} />
           ) : (
