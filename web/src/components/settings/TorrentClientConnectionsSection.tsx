@@ -5,9 +5,10 @@ import {
   useUpdateTorrentClientConnection,
   useDeleteTorrentClientConnection,
   useTestTorrentClientConnection,
+  useSummary,
   type TorrentClientConnectionInput,
 } from "@/api/hooks";
-import type { TorrentClientConnectionT } from "@/api/schemas";
+import type { TorrentClientConnectionT, ClientViewT } from "@/api/schemas";
 import { Drawer } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { TorrentClientLogo } from "@/components/TorrentClientLogo";
@@ -19,6 +20,7 @@ import {
   DrawerActions,
   ConnectionKindTile,
   ConnectionsSectionShell,
+  ReachabilityBanner,
   validateConnUrl,
   validateTimeout,
   validatePublicUrl,
@@ -174,11 +176,13 @@ function clientValidate(f: Form): string | null {
 function ConnectionDrawer({
   meta,
   connection,
+  clientView,
   open,
   onClose,
 }: {
   meta: KindMeta;
   connection: TorrentClientConnectionT | undefined;
+  clientView: ClientViewT | undefined;
   open: boolean;
   onClose: () => void;
 }) {
@@ -200,7 +204,7 @@ function ConnectionDrawer({
     mutations,
     onClose,
   });
-  const { form, set } = state;
+  const { form, set, isDraft } = state;
 
   return (
     <Drawer
@@ -214,6 +218,10 @@ function ConnectionDrawer({
       }
     >
       <div className="space-y-5" key={open ? "open" : "closed"} onFocus={undefined}>
+        {!isDraft && clientView && (
+          <ReachabilityBanner healthy={clientView.healthy} lastError={clientView.last_error} />
+        )}
+
         <div className="space-y-3">
           <FieldRow label={m.settings_field_url()}>
             <Input value={form.url} placeholder={meta.urlPlaceholder}
@@ -248,7 +256,8 @@ function ConnectionDrawer({
               <Toggle label={m.settings_toggle_enabled()} checked={form.enabled} onChange={(v) => set("enabled", v)} />
               <Toggle label={m.settings_toggle_delete_with_files()}
                 checked={form.delete_with_files}
-                onChange={(v) => set("delete_with_files", v)} />
+                onChange={(v) => set("delete_with_files", v)}
+                danger />
             </div>
           </FieldRow>
         </div>
@@ -268,10 +277,14 @@ function ConnectionDrawer({
 
 export function TorrentClientConnectionsSection() {
   const connections = useTorrentClientConnections();
+  const summary = useSummary();
   const [open, setOpen] = useState<string | null>(null);
 
   const connectionByKind = Object.fromEntries(
     (connections.data?.connections ?? []).map((c) => [c.kind, c]),
+  );
+  const clientViewByKind = Object.fromEntries(
+    (summary.data?.torrent_clients ?? []).map((c) => [c.kind, c]),
   );
   const openMeta = KINDS.find((k) => k.value === open) ?? null;
 
@@ -285,6 +298,7 @@ export function TorrentClientConnectionsSection() {
           key={open}
           meta={openMeta}
           connection={connectionByKind[openMeta.value]}
+          clientView={clientViewByKind[openMeta.value]}
           open={open === openMeta.value}
           onClose={() => setOpen(null)}
         />

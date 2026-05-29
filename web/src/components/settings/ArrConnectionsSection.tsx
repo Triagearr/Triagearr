@@ -12,7 +12,6 @@ import type { ArrConnectionT, ArrViewT } from "@/api/schemas";
 import { Drawer } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { ArrLogo as SharedArrLogo } from "@/components/ArrLogo";
-import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
 import {
   FieldRow,
@@ -22,6 +21,7 @@ import {
   DrawerActions,
   ConnectionKindTile,
   ConnectionsSectionShell,
+  ReachabilityBanner,
   validateConnUrl,
   validateTimeout,
   validatePublicUrl,
@@ -228,19 +228,7 @@ function ConnectionDrawer({
     >
       <div className="space-y-5" key={open ? "open" : "closed"} onFocus={undefined}>
         {!isDraft && arrView && (
-          <div
-            className={cn(
-              "flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm",
-              arrView.healthy
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-            )}
-          >
-            <span className="font-medium">{arrView.healthy ? m.settings_arr_reachable() : m.settings_status_unreachable()}</span>
-            {arrView.last_error && (
-              <span className="text-xs opacity-80 truncate">— {arrView.last_error}</span>
-            )}
-          </div>
+          <ReachabilityBanner healthy={arrView.healthy} lastError={arrView.last_error} />
         )}
 
         <div className="space-y-3">

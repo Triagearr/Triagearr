@@ -196,21 +196,45 @@ export function Toggle({
   checked,
   onChange,
   label,
+  danger = false,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
+  danger?: boolean;
 }) {
+  // Only flag the destructive tint while the flag is actually on — an unchecked
+  // destructive toggle is harmless and shouldn't read as a warning.
+  const hot = danger && checked;
   return (
-    <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+    <label className={cn("inline-flex items-center gap-2 text-sm cursor-pointer", hot && "text-rose-700 dark:text-rose-300 font-medium")}>
       <input
         type="checkbox"
-        className="h-4 w-4 accent-primary"
+        className={cn("h-4 w-4", hot ? "accent-rose-600" : "accent-primary")}
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />
       {label}
     </label>
+  );
+}
+
+// ReachabilityBanner shows the live health of a configured connection at the top
+// of its drawer. Shared by the *arr and torrent-client sections so the status
+// styling (and its light-mode contrast) stays in one place.
+export function ReachabilityBanner({ healthy, lastError }: { healthy: boolean; lastError?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm",
+        healthy
+          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+          : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+      )}
+    >
+      <span className="font-medium">{healthy ? m.settings_arr_reachable() : m.settings_status_unreachable()}</span>
+      {lastError && <span className="text-xs opacity-80 truncate">— {lastError}</span>}
+    </div>
   );
 }
 
