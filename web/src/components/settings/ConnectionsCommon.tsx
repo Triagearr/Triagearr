@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
@@ -450,13 +451,14 @@ export function DrawerActions<Form, TInput extends { kind: string }, TTest>({
         {testResult && (
           <div
             className={cn(
-              "text-sm rounded-md border p-2",
+              "flex items-center gap-2 text-sm rounded-md border p-2",
               testResult.ok
-                ? "text-foreground border-border"
-                : "text-destructive border-destructive/50",
+                ? "text-emerald-700 dark:text-emerald-300 border-emerald-500/30 bg-emerald-500/10"
+                : "text-destructive border-destructive/50 bg-destructive/10",
             )}
           >
-            {testResult.msg}
+            {testResult.ok ? <Check size={14} className="shrink-0" /> : <X size={14} className="shrink-0" />}
+            <span>{testResult.msg}</span>
           </div>
         )}
       </div>
