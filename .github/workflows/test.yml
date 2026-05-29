@@ -63,11 +63,19 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: go mod tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum \
+            || { echo "::error::go.mod/go.sum not tidy — run 'go mod tidy'"; exit 1; }
+
       - name: go test
         run: go test -race -count=1 -coverprofile=coverage.out ./...
 
-      - name: coverage summary
-        run: go tool cover -func=coverage.out | tail -n 1
+      - name: coverage gate
+        uses: vladopajic/go-test-coverage@v2
+        with:
+          config: ./.testcoverage.yml
 
       - name: govulncheck
         run: |

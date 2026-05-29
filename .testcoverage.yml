@@ -1,0 +1,23 @@
+# Coverage gate (go-test-coverage). Measures product logic only — entrypoints,
+# embed glue and test doubles are excluded so the number reflects "is the
+# testable code tested", not "are the mocks exercised".
+profile: coverage.out
+local-prefix: github.com/Triagearr/Triagearr
+
+threshold:
+  # No new internal package ships below this floor; a single total would let a
+  # critical package rot while others mask it in the average.
+  package: 65
+  total: 75
+
+override:
+  # Destructive paths must not regress (file-level floor). scorer is omitted
+  # until internal/scorer/scorer.go clears 80% — its ScoreAll error paths are
+  # still light; add it here once they're covered.
+  - { path: ^internal/(actor|decider), threshold: 80 }
+
+exclude:
+  paths:
+    - ^cmd/        # CLI entrypoint + devfixtures dev tooling
+    - ^web/        # embed.FS glue, no logic
+    - /fake/       # test doubles, not product code

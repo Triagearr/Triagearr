@@ -68,6 +68,30 @@ func TestListMedia(t *testing.T) {
 	require.Equal(t, triagearr.ArrTypeSonarr, items[0].ArrType)
 }
 
+func TestType(t *testing.T) {
+	c := newClient(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	require.Equal(t, triagearr.ArrTypeSonarr, c.Type())
+}
+
+func TestListMediaFiles(t *testing.T) {
+	c := newClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v3/episodefile", r.URL.Path)
+		require.Equal(t, "1", r.URL.Query().Get("seriesId"))
+		_, _ = w.Write([]byte(`[
+			{"id":10,"seriesId":1,"path":"/tv/S1/e01.mkv","size":500},
+			{"id":11,"seriesId":1,"path":"/tv/S1/e02.mkv","size":700}
+		]`))
+	}))
+	files, err := c.ListMediaFiles(context.Background(), triagearr.MediaID(1))
+	require.NoError(t, err)
+	require.Len(t, files, 2)
+	require.Equal(t, int64(10), files[0].FileID)
+	require.Equal(t, triagearr.MediaID(1), files[0].MediaID)
+	require.Equal(t, "/tv/S1/e02.mkv", files[1].Path)
+	require.Equal(t, int64(700), files[1].Size)
+	require.Equal(t, triagearr.ArrTypeSonarr, files[0].ArrType)
+}
+
 func TestDeleteMediaFile_OK(t *testing.T) {
 	var seen struct {
 		method string
