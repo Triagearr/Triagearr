@@ -445,22 +445,24 @@ export function DrawerActions<Form, TInput extends { kind: string }, TTest>({
 
       <div className="space-y-2 pt-2 border-t border-border">
         <div className="text-xs text-muted-foreground">{testHint}</div>
-        <Button variant="outline" onClick={onTest} disabled={mutations.test.isPending || testDisabled}>
-          {mutations.test.isPending ? m.settings_conn_testing() : m.settings_conn_test_connection()}
-        </Button>
-        {testResult && (
-          <div
-            className={cn(
-              "flex items-center gap-2 text-sm rounded-md border p-2",
-              testResult.ok
-                ? "text-emerald-700 dark:text-emerald-300 border-emerald-500/30 bg-emerald-500/10"
-                : "text-destructive border-destructive/50 bg-destructive/10",
-            )}
-          >
-            {testResult.ok ? <Check size={14} className="shrink-0" /> : <X size={14} className="shrink-0" />}
-            <span>{testResult.msg}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <Button variant="outline" className="shrink-0" onClick={onTest} disabled={mutations.test.isPending || testDisabled}>
+            {mutations.test.isPending ? m.settings_conn_testing() : m.settings_conn_test_connection()}
+          </Button>
+          {testResult && (
+            <div
+              className={cn(
+                "flex items-center gap-2 text-sm rounded-md border px-2.5 py-1.5 flex-1 min-w-0",
+                testResult.ok
+                  ? "text-emerald-700 dark:text-emerald-300 border-emerald-500/30 bg-emerald-500/10"
+                  : "text-destructive border-destructive/50 bg-destructive/10",
+              )}
+            >
+              {testResult.ok ? <Check size={14} className="shrink-0" /> : <X size={14} className="shrink-0" />}
+              <span>{testResult.msg}</span>
+            </div>
+          )}
+        </div>
       </div>
     </>
   );
