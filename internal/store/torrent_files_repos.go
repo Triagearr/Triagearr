@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Triagearr/Triagearr/internal/triagearr"
@@ -66,15 +65,10 @@ func (s *Store) MaxNlinkByHashes(ctx context.Context, hashes []triagearr.Hash) (
 	if len(hashes) == 0 {
 		return out, nil
 	}
-	placeholders := make([]string, len(hashes))
-	args := make([]any, len(hashes))
-	for i, h := range hashes {
-		placeholders[i] = "?"
-		args[i] = string(h)
-	}
+	placeholders, args := hashPlaceholders(hashes)
 	q := `SELECT torrent_hash, MAX(nlink) AS m
 	      FROM torrent_files
-	      WHERE nlink IS NOT NULL AND torrent_hash IN (` + strings.Join(placeholders, ",") + `)
+	      WHERE nlink IS NOT NULL AND torrent_hash IN (` + placeholders + `)
 	      GROUP BY torrent_hash`
 	rows, err := s.reader.QueryContext(ctx, q, args...)
 	if err != nil {

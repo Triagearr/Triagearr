@@ -238,17 +238,12 @@ func (s *Store) TorrentNamesByHashes(ctx context.Context, hashes []triagearr.Has
 	if len(hashes) == 0 {
 		return out, nil
 	}
-	placeholders := make([]string, len(hashes))
-	args := make([]any, len(hashes))
-	for i, h := range hashes {
-		placeholders[i] = "?"
-		args[i] = string(h)
-	}
+	placeholders, args := hashPlaceholders(hashes)
 	var rows []struct {
 		Hash string `db:"hash"`
 		Name string `db:"name"`
 	}
-	q := "SELECT hash, name FROM torrents WHERE hash IN (" + strings.Join(placeholders, ",") + ")"
+	q := "SELECT hash, name FROM torrents WHERE hash IN (" + placeholders + ")"
 	if err := s.reader.SelectContext(ctx, &rows, q, args...); err != nil {
 		return nil, fmt.Errorf("resolving torrent names: %w", err)
 	}
