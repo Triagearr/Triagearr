@@ -4,19 +4,11 @@ import type { ScoringSimResultT, SimFactorT } from "@/api/schemas";
 import type { SectionHelpers } from "./SettingsField";
 import { Badge } from "@/components/ui/Badge";
 import { m } from "@/paraglide/messages";
+import { FACTOR_LABEL } from "@/lib/scoringFactors";
 
-// FACTOR_LABEL / ARCH_LABEL / ARCH_DESC map the backend's stable identifiers to
-// localized strings. Paraglide generates one function per message key, so a
-// static map is the idiomatic way to resolve one from a runtime string.
-const FACTOR_LABEL: Record<string, () => string> = {
-  ratio_obligation_met: m.settings_scoring_factor_ratio_obligation_met,
-  upload_velocity_inv: m.settings_scoring_factor_upload_velocity_inv,
-  age_days: m.settings_scoring_factor_age_days,
-  seeders_low_guard: m.settings_scoring_factor_seeders_low_guard,
-  swarm_health_bonus: m.settings_scoring_factor_swarm_health_bonus,
-  hnr_window_veto: m.settings_scoring_factor_hnr_window_veto,
-  tracker_dead_bonus: m.settings_scoring_factor_tracker_dead_bonus,
-};
+// ARCH_LABEL / ARCH_DESC map the backend's stable identifiers to localized
+// strings. Paraglide generates one function per message key, so a static map is
+// the idiomatic way to resolve one from a runtime string.
 const ARCH_LABEL: Record<string, () => string> = {
   public_well_seeded: m.settings_scoring_arch_public_well_seeded,
   private_obligation_met: m.settings_scoring_arch_private_obligation_met,

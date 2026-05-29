@@ -13,11 +13,17 @@ import (
 type TorrentClientStore interface {
 	UpsertTorrents(ctx context.Context, torrents []triagearr.Torrent) error
 	InsertSnapshots(ctx context.Context, snaps []triagearr.Snapshot) error
+	UpsertTorrentClientInstance(ctx context.Context, kind, url string, healthy bool, lastErr string) error
 }
 
 // TorrentClientPoller polls a torrent client instance and persists torrents + snapshots.
 type TorrentClientPoller struct {
-	Client   triagearr.TorrentClient
+	Client triagearr.TorrentClient
+	// Kind and URL identify the client for the torrent_client_instances health
+	// row (mirror of arr_instances). When Kind is empty the health probe is
+	// skipped — used by tests that only exercise the torrent ingestion path.
+	Kind     string
+	URL      string
 	Store    TorrentClientStore
 	Interval time.Duration
 	// Notify, when non-nil, is signalled after each successful tick so the
@@ -40,6 +46,7 @@ func (p *TorrentClientPoller) Run(ctx context.Context) error {
 }
 
 func (p *TorrentClientPoller) tick(ctx context.Context) error {
+	p.recordHealth(ctx)
 	torrents, err := p.Client.ListTorrents(ctx)
 	if err != nil {
 		return fmt.Errorf("listing torrents: %w", err)
@@ -68,6 +75,27 @@ func (p *TorrentClientPoller) tick(ctx context.Context) error {
 	notifyNonBlocking(p.Notify)
 	notifyNonBlocking(p.TrackerCatchup)
 	return nil
+}
+
+// recordHealth probes the client and persists the result into
+// torrent_client_instances, mirroring arr_poller.pollOne. Skipped when Kind is
+// unset (test wiring) so the ingestion-only path needs no health row.
+func (p *TorrentClientPoller) recordHealth(ctx context.Context) {
+	if p.Kind == "" {
+		return
+	}
+	healthErr := p.Client.HealthCheck(ctx)
+	healthy := healthErr == nil
+	lastErr := ""
+	if healthErr != nil {
+		lastErr = healthErr.Error()
+	}
+	if err := p.Store.UpsertTorrentClientInstance(ctx, p.Kind, p.URL, healthy, lastErr); err != nil {
+		slog.Warn("upsert torrent_client_instance failed", "err", err)
+	}
+	if !healthy {
+		slog.Info("torrent client unhealthy", "kind", p.Kind, "err", healthErr)
+	}
 }
 
 func notifyNonBlocking(c chan<- struct{}) {

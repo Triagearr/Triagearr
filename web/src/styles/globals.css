@@ -330,6 +330,7 @@
   z-index: 1;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 .tbl th.sortable { cursor: pointer; user-select: none; }
 .tbl th.sortable:hover { color: var(--fg); }
@@ -590,8 +591,10 @@
 .runrow-bot { display: flex; gap: 4px; font-size: 11px; color: var(--fg-3); flex-wrap: wrap; }
 
 /* ── Tabs ─────────────────────────────────────────────────────────────────── */
-.ds-tabs    { display: flex; border-bottom: 1px solid var(--border); padding: 0 20px; background: var(--bg); flex: none; overflow-x: auto; scrollbar-width: none; }
-.ds-tabs::-webkit-scrollbar { display: none; }
+/* Wrap to a second row rather than scroll-hiding tabs: with longer-language
+   labels (e.g. German) the row overflows and hidden tabs have no scroll
+   affordance on desktop, leaving them unreachable. */
+.ds-tabs    { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding: 0 20px; background: var(--bg); flex: none; }
 .ds-tab {
   padding: 10px 14px;
   font-size: 13px;

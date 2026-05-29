@@ -2,6 +2,7 @@ package pollers_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,7 +15,8 @@ import (
 )
 
 type fakeTorrentClient struct {
-	torrents []triagearr.Torrent
+	torrents  []triagearr.Torrent
+	healthErr error
 }
 
 func (f *fakeTorrentClient) ListTorrents(_ context.Context) ([]triagearr.Torrent, error) {
@@ -29,6 +31,7 @@ func (f *fakeTorrentClient) ListTrackers(_ context.Context, _ triagearr.Hash) ([
 func (f *fakeTorrentClient) Delete(_ context.Context, _ triagearr.Hash, _ triagearr.DeleteOpts) error {
 	return nil
 }
+func (f *fakeTorrentClient) HealthCheck(_ context.Context) error { return f.healthErr }
 
 func TestTorrentClientPoller_PersistsTickThenExits(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -62,4 +65,31 @@ func TestTorrentClientPoller_PersistsTickThenExits(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("poller did not stop within 2s of cancellation")
 	}
+}
+
+func TestTorrentClientPoller_PersistsHealth(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	require.NoError(t, s.Migrate(context.Background()))
+
+	fake := &fakeTorrentClient{healthErr: errors.New("connection refused")}
+	p := &pollers.TorrentClientPoller{
+		Client: fake, Kind: "qbittorrent", URL: "http://qbit:8080",
+		Store: s, Interval: time.Hour,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = p.Run(ctx) }()
+
+	require.Eventually(t, func() bool {
+		rows, err := s.ListTorrentClientInstances(context.Background())
+		return err == nil && len(rows) == 1 && !rows[0].Healthy
+	}, 2*time.Second, 10*time.Millisecond)
+
+	rows, err := s.ListTorrentClientInstances(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "qbittorrent", rows[0].Kind)
+	require.NotNil(t, rows[0].LastError)
+	require.Contains(t, *rows[0].LastError, "connection refused")
 }

@@ -18,6 +18,35 @@ type arrView struct {
 	LastError       string     `json:"last_error,omitempty"`
 }
 
+type clientView struct {
+	Kind            string     `json:"kind"`
+	URL             string     `json:"url"`
+	Healthy         bool       `json:"healthy"`
+	LastHealthCheck *time.Time `json:"last_health_check,omitempty"`
+	LastError       string     `json:"last_error,omitempty"`
+}
+
+// buildClientViews reads the torrent_client_instances health table (mirror of
+// buildArrViews) so the dashboard can surface the torrent client's state.
+func (s *Server) buildClientViews(ctx context.Context) ([]clientView, error) {
+	rows, err := s.opts.Store.ListTorrentClientInstances(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]clientView, len(rows))
+	for i, row := range rows {
+		v := clientView{
+			Kind: row.Kind, URL: row.URL,
+			Healthy: row.Healthy, LastHealthCheck: row.LastHealthCheck,
+		}
+		if row.LastError != nil {
+			v.LastError = *row.LastError
+		}
+		out[i] = v
+	}
+	return out, nil
+}
+
 func (s *Server) handleListArrs(w http.ResponseWriter, r *http.Request) {
 	out, err := s.buildArrViews(r.Context())
 	if err != nil {

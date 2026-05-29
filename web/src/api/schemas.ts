@@ -169,6 +169,15 @@ export const ArrView = z.object({
 export type ArrViewT = z.infer<typeof ArrView>;
 export const ArrList = z.object({ arrs: z.array(ArrView) });
 
+export const ClientView = z.object({
+  kind: z.string(),
+  url: z.string(),
+  healthy: z.boolean(),
+  last_health_check: ts.nullable().optional(),
+  last_error: z.string().optional(),
+});
+export type ClientViewT = z.infer<typeof ClientView>;
+
 export const RunMode = z.enum(["live", "dry-run"]).catch("dry-run");
 export type RunModeT = z.infer<typeof RunMode>;
 
@@ -283,6 +292,7 @@ export const ScoreList = z.object({ scores: z.array(ScoreListItem) });
 export const Summary = z.object({
   volume: VolumeView,
   arrs: z.array(ArrView).nullable(),
+  torrent_clients: z.array(ClientView).nullable(),
   counts: z.object({
     torrents: z.number(),
     scored: z.number(),

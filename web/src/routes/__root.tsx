@@ -23,6 +23,8 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
   const arrs = data?.arrs ?? [];
   const healthyCount = arrs.filter((a) => a.healthy).length;
   const totalCount = arrs.length;
+  const torrentClients = data?.torrent_clients ?? [];
+  const torrentClientOk = torrentClients.length > 0 && torrentClients.every((c) => c.healthy);
   const volume = data?.volume;
   const usedPct =
     volume && Number(volume.total_bytes) > 0
@@ -81,6 +83,10 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
         <div className="sidebar-foot-row">
           <span>{m.sidebar_arrs_healthy()}</span>
           <strong>{totalCount > 0 ? `${healthyCount}/${totalCount}` : "—"}</strong>
+        </div>
+        <div className="sidebar-foot-row">
+          <span>{m.sidebar_torrent_client()}</span>
+          <span className={`dot ${torrentClientOk ? "green" : "red"}`} />
         </div>
         {data?.last_runs?.[0] && (
           <div className="sidebar-foot-row">

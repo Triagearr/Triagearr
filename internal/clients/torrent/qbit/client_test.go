@@ -96,6 +96,45 @@ func TestLogin_Failure(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestHealthCheck_OK(t *testing.T) {
+	var versionHits int
+	srv := newServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			http.SetCookie(w, &http.Cookie{Name: "SID", Value: "fake", Path: "/"})
+			_, _ = w.Write([]byte("Ok."))
+		case "/api/v2/app/version":
+			if _, err := r.Cookie("SID"); err != nil {
+				http.Error(w, "no cookie", http.StatusForbidden)
+				return
+			}
+			versionHits++
+			_, _ = w.Write([]byte("v4.6.5"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	c, err := qbit.New(qbit.Options{BaseURL: srv.URL, Username: "admin", Password: "secret"})
+	require.NoError(t, err)
+	require.NoError(t, c.HealthCheck(context.Background()))
+	require.Equal(t, 1, versionHits)
+}
+
+func TestHealthCheck_Error(t *testing.T) {
+	srv := newServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/app/version" {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	c, err := qbit.New(qbit.Options{BaseURL: srv.URL})
+	require.NoError(t, err)
+	err = c.HealthCheck(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "qbit health")
+}
+
 func TestTorrentFiles(t *testing.T) {
 	srv := newServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/api/v2/torrents/files", r.URL.Path)

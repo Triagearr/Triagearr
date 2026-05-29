@@ -142,7 +142,7 @@ func TestFake_UnknownEndpointReturns501(t *testing.T) {
 	httpSrv := httptest.NewServer(srv.Handler())
 	t.Cleanup(httpSrv.Close)
 
-	resp, err := httpSrv.Client().Get(httpSrv.URL + "/api/v2/app/version")
+	resp, err := httpSrv.Client().Get(httpSrv.URL + "/api/v2/app/preferences")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, 501, resp.StatusCode)

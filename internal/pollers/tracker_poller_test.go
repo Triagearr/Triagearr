@@ -40,6 +40,7 @@ func (f *fakeTrackerClient) ListTrackers(_ context.Context, h triagearr.Hash) ([
 func (f *fakeTrackerClient) Delete(_ context.Context, _ triagearr.Hash, _ triagearr.DeleteOpts) error {
 	return nil
 }
+func (f *fakeTrackerClient) HealthCheck(_ context.Context) error { return nil }
 
 func TestTrackerPoller_CatchupOnSignal(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))

@@ -15,6 +15,7 @@ const sessionCookieName = "SID"
 func (s *Server) mux() *http.ServeMux {
 	m := http.NewServeMux()
 	m.HandleFunc("POST /api/v2/auth/login", s.handleLogin)
+	m.HandleFunc("GET /api/v2/app/version", s.requireSession(s.handleAppVersion))
 	m.HandleFunc("GET /api/v2/torrents/info", s.requireSession(s.handleTorrentsInfo))
 	m.HandleFunc("GET /api/v2/torrents/files", s.requireSession(s.handleTorrentsFiles))
 	m.HandleFunc("GET /api/v2/torrents/trackers", s.requireSession(s.handleTorrentsTrackers))
@@ -62,6 +63,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 	_, _ = w.Write([]byte("Ok."))
+}
+
+// handleAppVersion mirrors qBit's /api/v2/app/version, which returns the
+// version as plain text behind the session cookie. The real client's
+// HealthCheck only inspects the status code.
+func (s *Server) handleAppVersion(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	_, _ = w.Write([]byte("v4.6.5"))
 }
 
 func (s *Server) handleTorrentsInfo(w http.ResponseWriter, _ *http.Request) {

@@ -77,6 +77,10 @@ function Dashboard() {
   const arrs = data?.arrs ?? arrsQuery.data?.arrs ?? [];
   const lastRuns = data?.last_runs ?? [];
   const topScore = data?.top_score ?? [];
+  // Only positive scores are genuine reap candidates — negative scores are
+  // vetoed/guard-protected and would never be deleted, so showing them under
+  // "would be deleted first in a live run" misrepresents what a run does.
+  const reapCandidates = topScore.filter((t) => t.score > 0).slice(0, 10);
   const volume = data?.volume;
 
   const healthyArrs = arrs.filter((a) => a.healthy).length;
@@ -91,11 +95,6 @@ function Dashboard() {
       {/* Topbar */}
       <div className="topbar">
         <div className="topbar-title">{m.dash_title()}</div>
-        {data && (
-          <div className="topbar-sub">
-            {topScore.length > 0 ? m.dash_scored_count({ count: topScore.length }) : m.dash_no_scores_yet()}
-          </div>
-        )}
         <div className="topbar-right">
           <button className="btn btn-sm" onClick={() => summary.refetch()}>
             <RefreshCw size={12} /> {m.common_refresh()}
@@ -190,7 +189,7 @@ function Dashboard() {
             </div>
 
             {/* Top reap candidates */}
-            {topScore.length > 0 && (
+            {reapCandidates.length > 0 && (
               <div className="card" style={{ marginBottom: 14 }}>
                 <div className="card-head">
                   <span className="card-title">{m.dash_top_reap_candidates()}</span>
@@ -206,7 +205,7 @@ function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {topScore.slice(0, 10).map((t, i) => (
+                      {reapCandidates.map((t, i) => (
                         <tr key={t.hash} className="clickable" onClick={() => navigate({ to: "/torrents", search: { detail: t.hash } })}>
                           <td className="mono" style={{ color: "var(--fg-3)" }}>{i + 1}</td>
                           <td className="name-cell">

@@ -155,6 +155,17 @@ CREATE TABLE arr_instances (
     last_error        TEXT
 );
 
+-- Last-known torrent client health. Mirror of arr_instances: distinct from
+-- torrent_client_connections (ADR-0025) which owns the config; this is just
+-- the most recent probe. One row per kind (one client per deployment).
+CREATE TABLE torrent_client_instances (
+    kind              TEXT NOT NULL PRIMARY KEY,
+    url               TEXT NOT NULL,
+    healthy           INTEGER NOT NULL DEFAULT 0,
+    last_health_check TIMESTAMP,
+    last_error        TEXT
+);
+
 ------------------------------------------------------------------------------
 -- Disk pressure
 ------------------------------------------------------------------------------

@@ -9,11 +9,12 @@ import (
 )
 
 type summaryResponse struct {
-	Volume   volumeView      `json:"volume"`
-	Arrs     []arrView       `json:"arrs"`
-	Counts   summaryCounts   `json:"counts"`
-	LastRuns []runResponse   `json:"last_runs"`
-	TopScore []scoreListItem `json:"top_score"`
+	Volume         volumeView      `json:"volume"`
+	Arrs           []arrView       `json:"arrs"`
+	TorrentClients []clientView    `json:"torrent_clients"`
+	Counts         summaryCounts   `json:"counts"`
+	LastRuns       []runResponse   `json:"last_runs"`
+	TopScore       []scoreListItem `json:"top_score"`
 }
 
 type summaryCounts struct {
@@ -25,12 +26,13 @@ type summaryCounts struct {
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Fan out the seven independent reads across the reader pool. Each goroutine
+	// Fan out the eight independent reads across the reader pool. Each goroutine
 	// owns its slot in the response struct, so no mutex is needed.
 	var (
 		wg       sync.WaitGroup
 		volume   volumeView
 		arrs     []arrView
+		clients  []clientView
 		counts   summaryCounts
 		lastRuns []runResponse
 		top      []scoreListItem
@@ -52,6 +54,11 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	run("arrs", func() error {
 		a, err := s.buildArrViews(ctx)
 		arrs = a
+		return err
+	})
+	run("torrent clients", func() error {
+		c, err := s.buildClientViews(ctx)
+		clients = c
 		return err
 	})
 	run("count torrents", func() error {
@@ -94,7 +101,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 
 	writeJSON(w, http.StatusOK, summaryResponse{
-		Volume: volume, Arrs: arrs, Counts: counts,
+		Volume: volume, Arrs: arrs, TorrentClients: clients, Counts: counts,
 		LastRuns: lastRuns, TopScore: top,
 	})
 }

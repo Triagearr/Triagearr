@@ -1,5 +1,6 @@
 import { m } from "@/paraglide/messages";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { FACTOR_LABEL, FACTOR_TIP } from "@/lib/scoringFactors";
 
 type Factor = {
   name?: string;
@@ -10,15 +11,6 @@ type Factor = {
   note?: string;
   reason?: string;
   [k: string]: unknown;
-};
-
-const FACTOR_TIP: Record<string, () => string> = {
-  ratio_obligation_met: m.settings_scoring_tip_ratio_obligation_met,
-  upload_velocity_inv:  m.settings_scoring_tip_upload_velocity_inv,
-  age_days:             m.settings_scoring_tip_age_days,
-  seeders_low_guard:    m.settings_scoring_tip_seeders_low_guard,
-  swarm_health_bonus:   m.settings_scoring_tip_swarm_health_bonus,
-  tracker_dead_bonus:   m.settings_scoring_tip_tracker_dead_bonus,
 };
 
 export function ScoreBreakdown({ factors, total }: { factors: unknown; total?: number }) {
@@ -41,11 +33,12 @@ export function ScoreBreakdown({ factors, total }: { factors: unknown; total?: n
         {rows.map((r, i) => {
           const key = r.name ?? r.factor;
           const tip = key ? FACTOR_TIP[key] : undefined;
+          const label = key ? FACTOR_LABEL[key]?.() ?? key : m.comp_score_factor_n({ n: i + 1 });
           const nameEl = (
             <span
               className={`font-medium${tip ? " cursor-help underline decoration-dotted decoration-muted-foreground/60 underline-offset-2" : ""}`}
             >
-              {key ?? m.comp_score_factor_n({ n: i + 1 })}
+              {label}
             </span>
           );
           return (

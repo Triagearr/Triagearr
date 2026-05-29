@@ -28,6 +28,23 @@ fi
 
 mkdir -p .dev
 
+# Refuse to start if any of our fixed ports is already bound — a stale stack is
+# still up. Starting anyway spawns a duplicate whose fakes/daemon can't bind and
+# whose vite slides to another port, leaving two stacks fighting silently.
+PORTS="5173 9494 18989 17878 18090 18091"
+busy=""
+for port in $PORTS; do
+  if (echo > /dev/tcp/127.0.0.1/"$port") 2>/dev/null; then
+    busy="$busy $port"
+  fi
+done
+if [ -n "$busy" ]; then
+  echo "[dev-ui] port(s) already in use:$busy" >&2
+  echo "[dev-ui] a dev stack is probably still running — stop it first:" >&2
+  echo "[dev-ui]   pkill -f 'dev-ui.sh|cmd/devfixtures|triagearr serve|web.*vite'" >&2
+  exit 1
+fi
+
 # Stub directories that the fake qBit save_paths reference (dev fixture uses
 # /tmp/triagearr-dev/ so the preflight mount check passes without Docker).
 mkdir -p /tmp/triagearr-dev/torrents/tv \

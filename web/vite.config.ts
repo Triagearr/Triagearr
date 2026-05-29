@@ -28,6 +28,10 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     port: 5173,
+    // Fail loudly on a port clash instead of silently sliding to 5174 — a
+    // slid port means a second dev stack is already running and the two fight
+    // over the daemon/fixture ports.
+    strictPort: true,
     proxy: {
       "/api": { target: "http://127.0.0.1:9494", changeOrigin: true },
       "/healthz": { target: "http://127.0.0.1:9494", changeOrigin: true },

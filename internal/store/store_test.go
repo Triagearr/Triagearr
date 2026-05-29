@@ -52,6 +52,22 @@ func TestUpsertArrInstance(t *testing.T) {
 	require.Equal(t, "boom", *rows[0].LastError)
 }
 
+func TestUpsertTorrentClientInstance(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	require.NoError(t, s.UpsertTorrentClientInstance(ctx, "qbittorrent", "http://qbit:8080", true, ""))
+	require.NoError(t, s.UpsertTorrentClientInstance(ctx, "qbittorrent", "http://qbit:8080", false, "boom"))
+
+	rows, err := s.ListTorrentClientInstances(ctx)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "qbittorrent", rows[0].Kind)
+	require.False(t, rows[0].Healthy)
+	require.NotNil(t, rows[0].LastError)
+	require.Equal(t, "boom", *rows[0].LastError)
+}
+
 func TestUpsertTorrentAndSnapshot(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

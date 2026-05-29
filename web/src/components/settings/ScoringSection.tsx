@@ -2,6 +2,7 @@ import { Field, SectionShell, Subsection } from "./SettingsField";
 import { TrackerPoliciesPanel } from "./TrackerPoliciesPanel";
 import { ScoringSimulator } from "./ScoringSimulator";
 import { m } from "@/paraglide/messages";
+import { FACTOR_LABEL, FACTOR_TIP } from "@/lib/scoringFactors";
 
 const WEIGHTS = [
   "ratio_obligation_met",
@@ -11,17 +12,6 @@ const WEIGHTS = [
   "swarm_health_bonus",
   "tracker_dead_bonus",
 ] as const;
-
-// WEIGHT_TIP maps each weight to its short hover explanation. Paraglide emits
-// one function per message key, so a static map resolves one by runtime name.
-const WEIGHT_TIP: Record<(typeof WEIGHTS)[number], () => string> = {
-  ratio_obligation_met: m.settings_scoring_tip_ratio_obligation_met,
-  upload_velocity_inv: m.settings_scoring_tip_upload_velocity_inv,
-  age_days: m.settings_scoring_tip_age_days,
-  seeders_low_guard: m.settings_scoring_tip_seeders_low_guard,
-  swarm_health_bonus: m.settings_scoring_tip_swarm_health_bonus,
-  tracker_dead_bonus: m.settings_scoring_tip_tracker_dead_bonus,
-};
 
 export function ScoringSection() {
   return (
@@ -52,11 +42,11 @@ export function ScoringSection() {
                     return (
                       <Field
                         key={k}
-                        label={w}
+                        label={FACTOR_LABEL[w]()}
                         keyName={k}
                         type="number"
                         compact
-                        tooltip={WEIGHT_TIP[w]()}
+                        tooltip={FACTOR_TIP[w]()}
                         value={h.fieldValue(k, sc.weights?.[w])}
                         onChange={(v) => h.setField(k, v)}
                         overridden={h.isOverridden(k)}

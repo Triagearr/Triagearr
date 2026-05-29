@@ -51,3 +51,6 @@ coverage.html
 
 # dev-ui scratch dir (sqlite db, etc.)
 /.dev/
+
+# Playwright MCP browser-session artifacts
+/.playwright-mcp/

@@ -294,9 +294,11 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
             <Button onClick={onSave} disabled={dirtyCount === 0 || update.isPending}>
               {update.isPending
                 ? m.common_saving()
-                : dirtyCount === 1
-                  ? m.settings_notif_save_changes({ count: dirtyCount })
-                  : m.settings_notif_save_changes_plural({ count: dirtyCount })}
+                : dirtyCount === 0
+                  ? m.settings_shell_no_changes()
+                  : dirtyCount === 1
+                    ? m.settings_notif_save_changes({ count: dirtyCount })
+                    : m.settings_notif_save_changes_plural({ count: dirtyCount })}
             </Button>
             {dirtyCount > 0 && (
               <Button variant="outline" onClick={() => setPending({})} disabled={update.isPending}>

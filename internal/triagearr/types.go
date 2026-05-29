@@ -216,6 +216,7 @@ type TorrentClient interface {
 	TorrentFiles(ctx context.Context, h Hash) ([]TorrentFile, error)
 	ListTrackers(ctx context.Context, h Hash) ([]TrackerInfo, error)
 	Delete(ctx context.Context, h Hash, opts DeleteOpts) error
+	HealthCheck(ctx context.Context) error
 }
 
 // FileLister is the optional capability for *arr clients that expose per-file

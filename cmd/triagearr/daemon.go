@@ -135,7 +135,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 		// for now (their fields are typed against it).
 		if qc, isQbit := active.(*qbit.Client); isQbit {
 			qb = qc
-			ps = append(ps, &pollers.TorrentClientPoller{Client: qb, Store: s, Interval: cfg.Polling.TorrentClientInterval, Notify: scoreSignal, TrackerCatchup: trackerCatchup})
+			ps = append(ps, &pollers.TorrentClientPoller{Client: qb, Kind: string(torrentregistry.KindQbittorrent), URL: cfg.TorrentClients.Qbittorrent.URL, Store: s, Interval: cfg.Polling.TorrentClientInterval, Notify: scoreSignal, TrackerCatchup: trackerCatchup})
 			ps = append(ps, &pollers.TrackerPoller{Client: qb, Store: s, Interval: cfg.Polling.TrackerInterval, Signal: trackerCatchup, Notify: scoreSignal})
 		}
 	}

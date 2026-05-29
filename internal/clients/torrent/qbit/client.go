@@ -165,6 +165,39 @@ func (c *Client) doGet(ctx context.Context, path string, out any) error {
 	return nil
 }
 
+// HealthCheck proves reachability + auth in one round-trip: it logs in (a
+// no-op under auth-bypass) and GETs /api/v2/app/version, which qBit gates
+// behind the session. A 200 is healthy; anything else (transport error,
+// 403, non-2xx) surfaces as the error the poller persists.
+func (c *Client) HealthCheck(ctx context.Context) error {
+	if err := c.ensureLogin(ctx); err != nil {
+		return fmt.Errorf("qbit health: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, perRequestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v2/app/version", nil)
+	if err != nil {
+		return fmt.Errorf("qbit health: building request: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("qbit health: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusForbidden {
+		// Session expired — force re-login on the next call.
+		c.mu.Lock()
+		c.loggedIn = false
+		c.mu.Unlock()
+		return fmt.Errorf("qbit health: HTTP 403 (session expired)")
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("qbit health: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 // torrentInfo mirrors the fields we consume from /api/v2/torrents/info.
 // See https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API
 type torrentInfo struct {
