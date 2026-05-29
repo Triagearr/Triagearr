@@ -14,7 +14,7 @@ Two rules:
 
 Why: Triagearr matches qBittorrent's `save_path` against your configured `volume.path` to decide which torrents sit on the pressured disk, and `statfs()`-es the same path for disk usage. With an inconsistent mount those strings never line up. The convention removes the problem instead of translating around it.
 
-> **Naming clash:** the default `sqlite_path` is `/data/triagearr.db`. If your stack's shared mount is the TRaSH-canonical `/data`, point `sqlite_path` at Triagearr's own private volume instead (e.g. `/config/triagearr.db`) so the database and the media root do not collide. The examples below do this.
+> **Keep the DB off the shared mount.** The default `sqlite_path` is `/config/triagearr.db` — Triagearr's own private volume, deliberately *not* on the shared `/data` root. Leave it there (or any private path) so the database never lives next to your media tree. The examples below keep this default.
 
 ## Image variants
 
@@ -39,11 +39,14 @@ docker run -d \
   -v /opt/triagearr/config:/config \
   -v /mnt/user/data:/data:ro \
   -e TZ=Europe/Paris \
-  -e TRIAGEARR_API_KEY=$(openssl rand -hex 32) \
   -e SONARR_API_KEY=... \
   -e RADARR_API_KEY=... \
   ghcr.io/triagearr/triagearr:latest
 ```
+
+There is no `TRIAGEARR_API_KEY` to set: the HTTP API key is auto-generated to
+`/config/api_key` (Sonarr-style, `0600`) on first boot. Only the *arr/qBit/Telegram
+secrets your `config.yml` interpolates with `${VAR}` need to be passed in.
 
 `--user 1000:1000` and the `/data` container path must match the rest of your
 *arr stack — see the [Mount & UID contract](#mount--uid-contract--read-this-first)
@@ -72,7 +75,6 @@ services:
     user: "${PUID}:${PGID}"
     environment:
       TZ: ${TZ}
-      TRIAGEARR_API_KEY: ${TRIAGEARR_API_KEY}
       SONARR_API_KEY: ${SONARR_API_KEY}
       RADARR_API_KEY: ${RADARR_API_KEY}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
@@ -88,23 +90,20 @@ services:
       - sonarr
       - radarr
       - qbittorrent
-    healthcheck:
-      test: ["CMD", "/triagearr", "health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
 
 networks:
   arr-net:
     external: true
 ```
 
-The `/data` container path and `${PUID}:${PGID}` here are **not arbitrary** —
-they must be identical to what `qbittorrent`, `sonarr` and `radarr` use in the
-same compose file. That is the whole point of the [mount & UID
-contract](#mount--uid-contract--read-this-first): one shared mount, one path,
-one UID across the stack.
+> **Healthcheck:** the image is distroless (no shell, no `wget`/`curl`), and the
+> binary has no `health` subcommand, so a Compose `healthcheck:` block can't probe
+> from inside the container. Probe `GET http://<host>:9494/healthz` (200 = live)
+> from your orchestrator or reverse proxy instead.
+
+The `/data` container path and `${PUID}:${PGID}` here must be **identical** to
+what `qbittorrent`, `sonarr` and `radarr` use in the same compose file — see the
+[mount & UID contract](#mount--uid-contract--read-this-first).
 
 ## Integration with the reference homelab (Traefik + tinyauth)
 
@@ -120,7 +119,6 @@ services:
     user: "${PUID}:${PGID}"
     environment:
       TZ: Europe/Paris
-      TRIAGEARR_API_KEY: ${TRIAGEARR_API_KEY}
       SONARR_API_KEY: ${SONARR_API_KEY}
       RADARR_API_KEY: ${RADARR_API_KEY}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
@@ -196,8 +194,8 @@ The config validator refuses to start if a referenced `${VAR}` is unset and has 
 
 1. Write the config file (`config.yml`), starting with `mode: dry-run` and at most a few *arr instances with `act: false`.
 2. Run the container. Watch logs: `docker logs -f triagearr`.
-3. Hit `http://localhost:9494/api/v1/health` to confirm liveness.
-4. Open the UI: `http://localhost:9494/`. The first page is a setup wizard if no usable config is detected.
+3. Hit `http://localhost:9494/healthz` to confirm liveness.
+4. Open the UI: `http://localhost:9494/`. *arr / torrent-client connections seeded from YAML are managed from Settings thereafter (ADR-0022/0025).
 5. Let it observe for at least 24-48 hours. The scoring table won't be useful until `snapshots_raw` has enough data.
 6. Inspect the UI's "Would-have-deleted" list. Are the candidates sensible? Adjust scoring weights if not.
 7. When confident: flip one *arr instance to `act: true` and set `mode: live`. Watch the next run.

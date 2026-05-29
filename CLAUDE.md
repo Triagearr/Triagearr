@@ -13,7 +13,7 @@ Pitch + niche: [`README.md`](README.md). Architecture: [`docs/ARCHITECTURE.md`](
 
 ## Stack pinned
 
-Go 1.26+ · urfave/cli/v3 · koanf/v2 · modernc.org/sqlite · chi/v5 · log/slog · React 19 + Vite + shadcn/ui. Full pins in [`docs/STACK.md`](docs/STACK.md).
+Go 1.26+ · urfave/cli/v3 · koanf/v2 · modernc.org/sqlite · sqlx · net/http ServeMux (Go 1.22 routing) · log/slog · React 19 + Vite + shadcn/ui. Full pins in [`docs/STACK.md`](docs/STACK.md).
 
 ## Conventions
 

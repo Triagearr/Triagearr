@@ -116,7 +116,7 @@ volume:
     enabled: true
     threshold_free_percent: 15   # fire if free < 15%
     target_free_percent: 25      # aim to restore to 25% free
-    max_run_size_gb: 50          # cap deletions per run
+                                 # per-run cap is action.max_deletions_per_run (a count)
 
 # -----------------------------------------------------------------------------
 # Polling cadences

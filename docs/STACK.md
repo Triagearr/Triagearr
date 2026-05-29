@@ -29,8 +29,8 @@ This document captures every dependency Triagearr commits to, the version pin, a
 
 | | Choice | Version | Alternatives considered |
 |---|---|---|---|
-| Embedded SQL DB | `modernc.org/sqlite` | **v1.50.1** (SQLite 3.53.1) | `ncruces/go-sqlite3` v0.34.1, `mattn/go-sqlite3` (dormant since 2022), DuckDB, BadgerDB, bbolt |
-| SQL ergonomics | `github.com/jmoiron/sqlx` | latest | std `database/sql` only |
+| Embedded SQL DB | `modernc.org/sqlite` | **v1.51.0** | `ncruces/go-sqlite3`, `mattn/go-sqlite3` (dormant since 2022), DuckDB, BadgerDB, bbolt |
+| SQL ergonomics | `github.com/jmoiron/sqlx` | **v1.4.0** | std `database/sql` only |
 | Migrations | `embedded /store/migrations/*.sql` + runner | n/a | `goose`, `migrate` |
 
 **Why modernc/sqlite:** see [ADR-0002](adr/0002-sqlite-for-storage.md). Pure Go (no CGO), allowing `go install` to work universally and trivial cross-compile for QNAP. ncruces is a credible WASM-based alternative kept as fallback.
@@ -49,10 +49,21 @@ This document captures every dependency Triagearr commits to, the version pin, a
 
 | | Choice | Version | Alternatives considered |
 |---|---|---|---|
-| Router | `github.com/go-chi/chi/v5` | **v5.2.5** | std `net/http` + `http.ServeMux` (Go 1.22+), `labstack/echo` v5.1.1, `gin-gonic/gin` v1.12.0 |
+| Router | `net/http` `ServeMux` (stdlib) | Go 1.22+ | `go-chi/chi/v5`, `labstack/echo`, `gin-gonic/gin` |
 | HTTP client | `net/http` (stdlib) | n/a | resty, hashicorp/go-cleanhttp |
 
-**Why chi:** light, idiomatic, sub-routers, middleware composition close to net/http. Echo/Gin add their own context type which makes integration with `slog` and `context.Context` slightly awkward.
+**Why stdlib `ServeMux`:** since Go 1.22 the standard `http.ServeMux` supports method-aware patterns (`"POST /api/v1/runs"`) and path wildcards (`/torrents/{hash}`), which covers Triagearr's flat route surface without a third-party router. Middleware is plain handler-wrapping (`s.security(s.auth(h))`). Staying on the stdlib honours ADR-0001 (stdlib-first) and drops a dependency chi would otherwise pull in. Echo/Gin were rejected for the same reason plus their bespoke context type, which makes `slog`/`context.Context` integration awkward.
+
+## Auth, secrets & system
+
+| | Choice | Version | Why |
+|---|---|---|---|
+| Password hashing | `golang.org/x/crypto/bcrypt` | **v0.52.0** | Built-in opt-in auth (ADR-0019) — bcrypt cost 10 for `auth_users` |
+| Rate limiting | `golang.org/x/time/rate` | **v0.15.0** | Token-bucket limiter on `POST /api/v1/runs` (1/min) and auth-mutating endpoints (5/min) |
+| Disk stats | `golang.org/x/sys/unix` | **v0.45.0** | `Statfs_t` for the disk poller |
+| TTY / password prompt | `golang.org/x/term` | **v0.43.0** | Non-echo password entry in the CLI |
+
+These are all `golang.org/x` packages — stdlib-adjacent, maintained by the Go team, no third-party transitive surface. They satisfy ADR-0001's "justify every dep" bar by being feature-scoped (auth, rate limiting, syscalls).
 
 ## Web UI
 
@@ -71,7 +82,7 @@ This document captures every dependency Triagearr commits to, the version pin, a
 | Schema validation | zod | **4.4.x** | yup, valibot |
 | Embedding | `embed.FS` (stdlib) | n/a | http.FileSystem from disk |
 
-**Why React 19 + shadcn:** ecosystem alignment (Sonarr, Radarr, Maintainerr, Bazarr are all React-based), the highest visual ceiling (shadcn produces "this looks professional" UIs with minimal effort), and the largest contributor pool. See [ADR-0008](adr/0008-react-shadcn-ui.md) and [ADR-0017](adr/0017-frontend-stack.md) for the M6-era tightening.
+**Why React 19 + shadcn:** ecosystem alignment (Sonarr, Radarr, Maintainerr, Bazarr are all React-based), the highest visual ceiling (shadcn produces "this looks professional" UIs with minimal effort), and the largest contributor pool. See [ADR-0008](adr/0008-react-shadcn-ui.md) and [ADR-0018](adr/0018-m6-frontend-stack.md) for the M6-era tightening.
 
 **Why bundled inside the Go binary:** zero second deployment, no CORS, single image to ship. The Vite build outputs to `web/dist/`, which `embed.FS` slurps into the binary.
 

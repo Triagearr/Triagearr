@@ -2,7 +2,80 @@
 
 ## Overview
 
-Triagearr is a single-binary Go daemon that orchestrates media deletion across a Plex + *arr + qBittorrent stack. It is built as a collection of decoupled components communicating through Go interfaces, with SQLite as the source of truth for both relational data (torrents ↔ media ↔ actions) and time-series snapshots (ratio, seeders, velocity over time).
+Triagearr is a single-binary Go daemon that orchestrates media deletion across a Plex + *arr + torrent-client stack (qBittorrent is the first — and currently only — supported client; the `TorrentClient` interface keeps the rest of the system client-agnostic, see ADR-0025). It is built as a collection of decoupled components communicating through Go interfaces, with SQLite as the source of truth for both relational data (torrents ↔ media ↔ actions) and time-series snapshots (ratio, seeders, velocity over time).
+
+## Where Triagearr fits in the stack
+
+Triagearr does not replace any part of a normal *arr setup — it plugs in alongside it, **observes everything read-only**, and is the **only** component allowed to delete. It writes to its own `/config` (SQLite) but never to the shared media mount; every destructive operation goes through the *arr and torrent-client APIs, never the filesystem.
+
+```mermaid
+flowchart TB
+    user["👤 Operator"]
+    plex["Plex / Jellyfin / Emby<br/>(streaming — not touched)"]
+    notify["Notifier<br/>(Telegram today)"]
+
+    subgraph stack["Typical *arr stack"]
+        tc["Torrent client<br/>(qBittorrent today)"]
+        arrs["Sonarr · Radarr · Lidarr<br/>Readarr · Whisparr"]
+    end
+
+    subgraph mount["Shared /data mount — TRaSH layout, hardlinks"]
+        tor["/data/torrents"]
+        med["/data/media"]
+        tor <-->|"one inode · nlink ≥ 2"| med
+    end
+
+    subgraph tri["TRIAGEARR — single Go daemon (:9494)"]
+        store["Pollers → SQLite (/config)"]
+        brain["Scorer + Decider"]
+        actor["Actor (only destructive stage)"]
+        ui["Dashboard + API"]
+    end
+
+    tc -->|writes| tor
+    arrs -->|imports via hardlink| med
+    plex -->|reads| med
+
+    tc -.->|"READ: torrents, trackers, files"| store
+    arrs -.->|"READ: history, media, files"| store
+    mount -.->|"READ-ONLY: statfs + nlink"| store
+
+    store --> brain --> actor
+
+    actor ==>|"① DELETE file (*arr API)"| arrs
+    actor ==>|"② DELETE torrent (client API)"| tc
+
+    ui -->|sends| notify
+    user -->|HTTPS| ui
+```
+
+### The critical interaction: ordered deletion (ADR-0003)
+
+Because the torrent copy and the *arr library copy are the **same inode** (hardlink), the order of deletion is what makes space reclaim deterministic and seed-safe. The Actor always deletes the *arr-side file first, then re-checks `nlink` before touching the torrent client.
+
+```mermaid
+sequenceDiagram
+    participant D as Decider
+    participant A as Actor
+    participant Arr as *arr API
+    participant FS as /data (stat)
+    participant T as Torrent client API
+
+    D->>A: candidate (hash + arr_file_ids)
+    A->>Arr: DELETE episodeFile/movieFile (deleteFiles=true)
+    Arr-->>A: ok — *arr hardlink removed
+    A->>FS: stat save_path → nlink?
+    alt nlink == 1 (only the client's copy remains)
+        A->>T: delete torrent + files
+    else nlink == 0 (file already gone)
+        A->>T: delete torrent (metadata only)
+    else nlink > 1 (cross-seed: a peer survives)
+        A-->>A: SKIP client delete — don't break the peer
+    end
+    A->>A: persist actions + audit_log
+```
+
+The internal component breakdown below zooms *inside* the Triagearr box.
 
 ## High-level diagram
 
@@ -63,7 +136,7 @@ Triagearr is a single-binary Go daemon that orchestrates media deletion across a
 │                └──────────────────────────┘  └───────────────┘  │
 │                                                                  │
 │   ┌──────────────────────────────────────────────────────────┐  │
-│   │         HTTP Server (chi) — read-only + control plane    │  │
+│   │   HTTP Server (net/http ServeMux) — read + control plane │  │
 │   │   /api/v1/...  +  embedded React UI (shadcn/ui)          │  │
 │   └──────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────┘
@@ -86,8 +159,8 @@ The pollers never block each other and never trigger actions. They are purely ob
 
 A background job once per day:
 - Aggregates `snapshots_raw` from D-2 into `snapshots_daily` (avg/min/max per torrent per day)
-- Deletes `snapshots_raw` older than `retention.snapshots_raw` (default 30d)
-- Keeps `snapshots_daily` for `retention.snapshots_daily` (default 1y)
+- Deletes `snapshots_raw` older than `retention.snapshots_raw` (default 7d / `168h`)
+- Keeps `snapshots_daily` for `retention.snapshots_daily` (default 1y / `8760h`)
 - Runs `VACUUM` if space reclaim threshold crossed
 
 This keeps the DB lean indefinitely (~50 MB steady state for a 500-torrent library).
@@ -158,30 +231,38 @@ The dashboard renders these as a timeline.
 
 ## Key interfaces
 
-All cross-component coupling goes through Go interfaces defined in `internal/triagearr/types.go`:
+All cross-component coupling goes through Go interfaces defined in `internal/triagearr/types.go`. Reading is mandatory; the destructive and per-file capabilities are **optional** interfaces a client type-asserts into — stubs (lidarr/readarr/whisparr) satisfy only the read contract:
 
 ```go
-// ArrInstance is the contract every *arr client implements.
+// ArrInstance is the read contract every *arr client implements.
 // Exactly one instance per kind (sonarr, radarr, …) — the kind is the identity.
 type ArrInstance interface {
-    Kind() ArrType        // sonarr | radarr | lidarr | readarr | whisparr_v2 | whisparr_v3
+    Name() string
+    Type() ArrType        // sonarr | radarr | lidarr | readarr | whisparr_v2 | whisparr_v3
     Poll() bool           // is read-allowed
     Act()  bool           // is delete-allowed
     ListMedia(ctx context.Context) ([]MediaItem, error)
-    DeleteMedia(ctx context.Context, id MediaID, opts DeleteOpts) error
     HealthCheck(ctx context.Context) error
 }
 
-// QbitClient abstracts the download client (V1 = qBittorrent only).
-type QbitClient interface {
-    ListTorrents(ctx) ([]Torrent, error)
-    TorrentFiles(ctx, Hash) ([]TorrentFile, error)
-    Delete(ctx, Hash, DeleteOpts) error
+// FileDeleter is the OPTIONAL delete capability. The M5 Actor consumes this,
+// not ArrInstance — deletion is per library file (episodeFile/movieFile id),
+// never per media item. Stub clients omit it.
+type FileDeleter interface {
+    DeleteMediaFile(ctx context.Context, fileID int64, opts DeleteOpts) error
 }
 
-// Scorer computes the DeleteScore for a torrent.
-type Scorer interface {
-    Score(t Torrent, m []MediaItem, snaps []Snapshot, cfg ScoringConfig) Score
+// FileLister / ImportLister are the OPTIONAL read capabilities the arr poller
+// type-asserts on to fan out per-file metadata (FileLister) and refresh the
+// arr_imports link table from *arr history (ImportLister, ADR-0012).
+
+// TorrentClient abstracts the download client (qBittorrent today; one instance
+// per deployment). Was named QbitClient pre-ADR-0025.
+type TorrentClient interface {
+    ListTorrents(ctx context.Context) ([]Torrent, error)
+    TorrentFiles(ctx context.Context, h Hash) ([]TorrentFile, error)
+    ListTrackers(ctx context.Context, h Hash) ([]TrackerInfo, error)
+    Delete(ctx context.Context, h Hash, opts DeleteOpts) error
 }
 
 // Notifier delivers one post-action Report to a single provider.
@@ -192,27 +273,34 @@ type Notifier interface {
 }
 ```
 
-Concrete implementations live in `internal/clients/{sonarr,radarr,lidarr,readarr,whisparr_v2,whisparr_v3,qbit}/`, `internal/scorer/`, and `internal/notify/telegram/`.
+The scorer is not a single-method interface: `internal/scorer` reads the store directly and persists per-torrent `scores` + `score_factors` rows; per-tracker policy and the rare-content default come from the `tracker_policies` / `scoring_defaults` tables (ADR-0026), not from a `ScoringConfig` value.
+
+Concrete implementations live under `internal/clients/arr/{sonarr,radarr,lidarr,readarr,whisparr_v2,whisparr_v3,stub}/`, `internal/clients/torrent/qbit/`, `internal/scorer/`, and `internal/notify/telegram/`. The two registries (`internal/clients/arr/registry`, `internal/clients/torrent/torrentregistry`) build the live client set from the DB-owned connection rows (ADR-0022, ADR-0025).
 
 ## Storage schema
 
-See [`docs/STORAGE.md`](STORAGE.md) for the full schema (to be written in M1). Summary:
+The authoritative schema is the single embedded migration [`internal/store/migrations/0001_init.sql`](../internal/store/migrations/0001_init.sql) (the project is alpha — migrations are squashed into one baseline rather than kept additive, per the no-back-compat stance). Summary of the live tables:
 
 | Table | Purpose | Estimated row count (500 torrents, 1y) |
 |---|---|---|
-| `snapshots_raw` | High-resolution qBit snapshots, 30-day retention | ~720k (after rotation) |
+| `torrents` | Current state of each qBit torrent (last seen); carries the sticky `protected` flag | ~500 |
+| `torrent_files` | Per-file state incl. sampled `nlink` (cross-seed pre-filter) | ~thousands |
+| `torrent_trackers` | Per-tracker status + `first_seen_dead` (ADR-0009/0013) | ~thousands |
+| `snapshots_raw` | High-resolution qBit snapshots, raw-retention window | ~720k (after rotation) |
 | `snapshots_daily` | Downsampled daily aggregates, 1y retention | ~180k |
-| `torrents` | Current state of each qBit torrent (last seen) | ~500 |
-| `media` | *arr media items, joined to torrents via `arr_imports` (ADR-0012) | ~thousands |
+| `media` / `media_files` | *arr media items + their on-disk files | ~thousands |
+| `arr_imports` | torrent ↔ *arr file link, from import history (ADR-0012) | ~thousands |
 | `arr_instances` | Observed *arr instances, last health check | up to 6 (one per kind) |
-| `arr_connections` | Configured *arr connections (source of truth, ADR-0022) | up to 6 (one per kind) |
-| `disk_pressure` | Disk usage snapshots for the watched volume, 30-day | ~10k |
-| `scores` | Latest computed score per torrent, with breakdown | ~500 |
-| `actions` | Every action ever taken (or would-have-been) | grows slowly |
-| `audit_log` | Free-form context dump per decision | grows slowly |
-| `maintainerr_collections` | (V2) read-only mirror of Maintainerr collections | small |
+| `arr_connections` / `torrent_client_connections` | DB-owned connection config (source of truth, ADR-0022/0025) | ≤6 / ≤4 |
+| `disk_pressure` | Disk usage snapshots for the watched volume | ~10k |
+| `scoring_defaults` / `tracker_policies` | DB-owned scoring policy (ADR-0026), UI-edited | 1 / small |
+| `scores` / `score_factors` | Latest computed score per torrent + per-factor breakdown | ~500 / ~3.5k |
+| `runs` / `run_items` | Decider invocations + their ordered candidate plans | grows slowly |
+| `actions` / `audit_log` | Every action taken (or would-have-been) + per-file audit trail | grows slowly |
+| `auth_users` / `auth_sessions` | Opt-in built-in auth (ADR-0019) | tiny |
+| `settings_overrides` | UI-managed config overrides (notifications, etc.) | small |
 
-All tables use `WITHOUT ROWID` where appropriate and have composite indexes for time-range queries.
+`maintainerr_collections` is a V2 table and is **not** in the current schema. Tables use composite indexes for the time-range queries the dashboard issues.
 
 ## Process model
 
@@ -229,36 +317,65 @@ A central `context.Context` is propagated everywhere; `SIGTERM` triggers gracefu
 
 ## HTTP API
 
-Served on `127.0.0.1:9494` by default. Authentication is Sonarr-style: loopback binds default to `auth: none` (pair with TinyAuth/Authelia/Caddy for external access); any non-loopback bind forces `auth: apikey` (`X-API-Key`, constant-time-compared). The choice is validated at config load — `auth: none` + non-loopback is rejected.
+Served on `127.0.0.1:9494` by default, routed by the stdlib `net/http.ServeMux` (Go 1.22 method-aware patterns + `{hash}` wildcards), middleware applied by handler-wrapping: `s.security(s.auth(s.runRateLimit(h)))`.
 
-Endpoint surface as of M6:
+**Authentication (ADR-0019)** is opt-in built-in auth, not the old loopback/auth-mode model (removed in M6.1):
+
+- When no user is registered in `auth_users`, the `auth` middleware is a pass-through — the API is open (intended for a loopback bind behind TinyAuth/Authelia/Caddy).
+- Once a user enables auth, every `auth`-gated handler requires **either** a session cookie (opaque, HttpOnly, SameSite=Lax, 7-day sliding TTL) **or** an `X-API-Key` header (constant-time-compared against the auto-generated key file). Programmatic clients keep using the header.
+- `POST /api/v1/runs` is rate-limited 1/min/IP; auth-mutating endpoints 5/min/IP (both via `golang.org/x/time/rate`).
+
+Endpoint surface (current):
 
 ```
-GET    /healthz                            unauthenticated liveness probe
-GET    /api/v1/auth-mode                   unauthenticated; UI uses it to decide whether to prompt for a key
+GET    /healthz                                   unauthenticated liveness probe
 
-GET    /api/v1/summary                     dashboard aggregate
-GET    /api/v1/version                     build metadata
-GET    /api/v1/config                      effective config, secrets redacted to "***"
+# session + auth management (ADR-0019)
+GET    /api/v1/session                            current session status
+POST   /api/v1/session                            login            (5/min/IP)
+DELETE /api/v1/session                            logout
+POST   /api/v1/auth/enable                         enable built-in auth (5/min/IP)
+POST   /api/v1/auth/disable                        disable           (5/min/IP)
+POST   /api/v1/auth/password                       change password   (5/min/IP)
 
-GET    /api/v1/volume                      configured volume + latest disk_pressure
-GET    /api/v1/volume/history               ?since=24h    pressure time series
-GET    /api/v1/arrs                        instance health
+# observation
+GET    /api/v1/summary                            dashboard aggregate
+GET    /api/v1/version                            build metadata
+GET    /api/v1/config                             effective config, secrets redacted
+GET    /api/v1/volume                             configured volume + latest disk_pressure
+GET    /api/v1/volume/history    ?since=24h        pressure time series
+GET    /api/v1/arrs                               instance health
+GET    /api/v1/torrents          ?sort=&q=&category=&private=&limit=&offset=
+GET    /api/v1/torrents/categories                distinct categories
+GET    /api/v1/torrents/{hash}                    detail (trackers, links, score)
+GET    /api/v1/torrents/{hash}/snapshots ?since=720h
+PUT    /api/v1/torrents/{hash}/protected          sticky per-torrent protect toggle
+GET    /api/v1/scores            ?limit=&include_excluded=
 
-GET    /api/v1/torrents                    ?sort=&q=&category=&private=&limit=&offset=
-GET    /api/v1/torrents/{hash}             detail (trackers, links, score)
-GET    /api/v1/torrents/{hash}/snapshots   ?since=720h   ratio/seeders/leechers history
-GET    /api/v1/scores                      ?limit=50&include_excluded=false
+# runs / actions
+GET    /api/v1/runs/preview                       dry candidate preview (no run row)
+POST   /api/v1/runs                               body: {mode:"live"|…}; 1/min/IP
+GET    /api/v1/runs              ?limit=
+GET    /api/v1/runs/{id}                          one run + items
+GET    /api/v1/runs/{id}/actions                  actions for one run
+GET    /api/v1/actions           ?limit=&offset=   global timeline
+GET    /api/v1/actions/{id}                       one action + audit trail
 
-POST   /api/v1/runs                        body: {mode:"live"|undefined}; 1/min/IP
-GET    /api/v1/runs                        ?limit=50
-GET    /api/v1/runs/{id}                   one run + items
-GET    /api/v1/runs/{id}/actions           actions for one run
-GET    /api/v1/actions                     ?limit=&offset=   global timeline
-GET    /api/v1/actions/{id}                one action + audit trail
+# UI-managed config (ADR-0022, 0025, 0026)
+GET    /api/v1/settings                           override map
+PUT    /api/v1/settings
+DELETE /api/v1/settings/{key}
+GET|PUT  /api/v1/scoring/defaults                 scoring_defaults singleton
+POST   /api/v1/scoring/simulate                   replay scorer over archetype fixtures
+GET    /api/v1/scoring/tracker-policies
+PUT|DELETE /api/v1/scoring/tracker-policies/{host}
+GET    /api/v1/arr-connections
+PUT|DELETE /api/v1/arr-connections/{kind}
+GET    /api/v1/torrent-client-connections
+PUT|DELETE /api/v1/torrent-client-connections/{kind}
 ```
 
-Every response carries the M6 security header set (`Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy: ()`).
+Every response carries the security header set (`Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy: ()`).
 
 The React UI is served from the same binary via `embed.FS` (`web/web.go`): asset paths serve directly from `web/dist/`, everything else falls back to `index.html` so the in-memory SPA router keeps working on full-page reloads. The Vite build outputs to `web/dist/`; `make build` runs `bun run build` inside `web/` before invoking `go build`.
 

@@ -35,7 +35,7 @@ func main() {
 
 	app := &cli.Command{
 		Name:    "triagearr",
-		Usage:   "disk-pressure-aware media reaper for Plex/*arr/qBittorrent",
+		Usage:   "disk-pressure-aware media reaper for *arr + torrent-client stacks",
 		Version: version,
 		Commands: []*cli.Command{
 			{

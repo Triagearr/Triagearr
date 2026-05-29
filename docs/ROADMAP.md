@@ -202,7 +202,7 @@ executed — manual HTTP/CLI runs stay silent. One event, not four.
 - [x] Container image: distroless or `scratch` base, runs as non-root (`USER 65532:65532`), read-only root filesystem
 - [x] `SECURITY.md` at repo root: supported versions, GitHub private advisory + email fallback, scope, built-in safety contract, auth/secret storage, ADR cross-refs
 - [x] Dependabot configured for weekly dep bumps grouped by ecosystem (gomod, npm/web, github-actions, docker) — `.github/dependabot.yml`. Renovate considered but Dependabot is GitHub-native and sufficient for the dep surface.
-- [ ] Documentation reviewed for accuracy against final code
+- [x] Documentation reviewed for accuracy against final code (2026-05-29: README + docs reconciled to code — net/http ServeMux not chi, ADR-0019 opt-in auth, `torrent_clients`/scoring DB-owned config, real endpoint surface)
 - [ ] Demo GIF in README
 - [ ] Announcement post drafted (r/sonarr, r/Plex, Discord communities)
 

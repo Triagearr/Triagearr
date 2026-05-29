@@ -2,10 +2,23 @@
 
 The heart of Triagearr is the `DeleteScore`: a number computed per torrent that expresses "how safe is it to delete this from disk." Higher score = more safely deletable.
 
+## TL;DR (the user view)
+
+If you just want to know what Triagearr will and won't touch:
+
+- **Never deleted while the obligation is live:** torrents inside their hit-and-run window, and rare content (few seeders) the swarm still depends on. These carry a near-veto — no combination of other factors overrides them.
+- **First to go:** old, idle torrents on **dead trackers** (the "graveyard" — the primary use case), and saturated public content with a huge swarm that no longer needs you.
+- **Private trackers are treated carefully:** ratio + seed-time obligations are respected; the safe `+50` is only credited once you've actually met them.
+- **Two ways to protect something yourself:** flip the per-torrent **Protect** toggle in the UI (sticky across re-syncs), or exclude by qBit category/tag or *arr tag.
+- **Two knobs you'll actually touch:** the global **weights** (Settings → Scoring) for "more/less aggressive," and the **per-tracker policy** (`min_ratio`, `min_seed_days`, rare threshold). Both are live-editable; nothing here needs a redeploy.
+- **Size is not in the score** — the Decider already stops once the disk hits its free-space target, so a big file isn't "preferred."
+
+The rest of this document is the full model: every factor, its gates, and worked examples. Read on only if you want to understand *why* a given torrent scored the way it did.
+
 ## Goals of the scoring system
 
 1. **Auditable**: every score must be explainable. Each contributing factor is persisted alongside the final value.
-2. **Tunable**: weights live in YAML, not in code. A user can shift the tradeoff between "be aggressive" and "be conservative" without redeploying.
+2. **Tunable**: the global factor weights live in `scoring.weights` (YAML); the per-tracker policy and rare-content default live in the database and are edited from the UI (ADR-0026). A user can shift the tradeoff between "be aggressive" and "be conservative" without touching code, and the policy half without even a restart.
 3. **Multi-criteria**: the decision is not based on a single signal. Ratio alone is insufficient (you'd prematurely delete useful seeds). Upload velocity alone is insufficient (you'd punish freshly added torrents). The combination is what makes Triagearr defensible.
 4. **Guard rails first**: certain conditions are near-vetoes. Rare-content protection and HnR-window protection use extreme weights (`-1000`) such that no realistic combination of bonuses can override them.
 
@@ -74,7 +87,7 @@ Old torrents are slightly preferred for deletion, ceteris paribus. The weight is
 
 ```
 seeders_avg_7d    = average seeders count over last 7 days
-threshold         = tracker-specific override OR scoring.rare_content_threshold (default 3)
+threshold         = tracker_policies override OR scoring_defaults.rare_threshold (default 3, ADR-0026)
 any_tracker_alive = any(t.status != 4 for t in trackers)
 
 if any_tracker_alive AND seeders_avg_7d ≤ threshold:
@@ -142,9 +155,9 @@ A torrent is marked excluded if it matches any of:
 | Source | Reason tag |
 |---|---|
 | `torrents.protected = 1` (UI per-torrent toggle, survives qBit re-sync) | `triagearr_protected` |
-| `qbit.category_exclude` category | `qbit_category:<cat>` |
-| `qbit.tags_exclude` tag | `qbit_tag:<tag>` |
-| Linked media has `arrs.<kind>.tags_exclude` *arr tag | `arr_tag:<tag>` |
+| `torrent_client_connections` category_exclude category | `qbit_category:<cat>` |
+| `torrent_client_connections` tags_exclude tag | `qbit_tag:<tag>` |
+| Linked media has an `arr_connections` tags_exclude *arr tag | `arr_tag:<tag>` |
 | *arr media `monitored: false` AND user enabled "skip unmonitored" | `arr_unmonitored` |
 
 The scorer **still computes all factors** for excluded torrents (so the UI can surface "this would score +60 but is protected"). Exclusion is enforced by the Decider, which drops these torrents from the candidate set before action. No deletion can target an excluded torrent.
@@ -269,13 +282,17 @@ the eligible set; T3.5 still catches them at action time.
 
 So the score is **comparative, not absolute**. Two libraries with very different patterns will naturally calibrate themselves: in a library full of saturated public-tracker stuff, all scores will be high and the cutoff is meaningless; in a library of mostly private-tracker recent grabs, scores will cluster low and the cutoff naturally protects everything.
 
-## Explainability API
+## Explainability
 
-```
-GET /api/v1/scores/{hash}/explain
-```
+The per-factor breakdown is **persisted** to `score_factors` every time the
+scorer runs, so it can be replayed offline. It is surfaced two ways:
 
-Returns the full breakdown:
+- CLI: `triagearr score explain <hash>` prints the waterfall for one torrent.
+- HTTP: `GET /api/v1/torrents/{hash}` embeds the latest score + factors in the
+  torrent detail payload; `GET /api/v1/scores` lists scored torrents.
+
+There is no dedicated `/scores/{hash}/explain` endpoint — the detail endpoint
+already carries the breakdown. Its shape:
 
 ```json
 {
@@ -311,7 +328,7 @@ The UI renders this as a horizontal bar chart with positive/negative contributio
 - **Want age to matter more?** Bump `age_days` weight to 0.5 or 1.0.
 - **Want to favor older content harshly?** Add an exponential age factor in V2 (`age_days_exp` with default 0, optional).
 
-The V1 release ships with conservative defaults. The `triagearr score --explain` CLI command lets you simulate scoring against your real library without making any change.
+The V1 release ships with conservative defaults. The `triagearr score explain <hash>` CLI command lets you inspect scoring against your real library without making any change.
 
 ## Settings simulator
 
