@@ -1,0 +1,4 @@
+---
+# Cosign — container image signing and verification tool.
+packages:
+  - name: sigstore/cosign@v3.0.6

@@ -121,7 +121,7 @@ These are all `golang.org/x` packages — stdlib-adjacent, maintained by the Go 
 ## Local dev tooling (aqua-managed)
 
 CLI tools for the dev/build loop are pinned per-repo via [aqua](https://aquaproj.github.io/).
-`aqua.yaml` imports one file per tool from `aqua/imports/*.yaml` so [Renovate](../renovate.json)
+`aqua/aqua.yaml` imports one file per tool from `aqua/imports/*.yaml` so [Renovate](../renovate.json)
 bumps each independently. These are **developer tools, not `go.mod` dependencies** — the
 "new dep ⇒ ADR" rule (below) governs the compiled binary, not this toolchain.
 
@@ -134,6 +134,7 @@ bumps each independently. These are **developer tools, not `go.mod` dependencies
 | Node.js | `nodejs/node` | v26.2.0 | Vite tooling + Playwright MCP (E2E) |
 | Dev supervisor | `F1bonacc1/process-compose` | v1.110.0 | Drives the local stack (fakes + daemon + vite); see `process-compose.yaml` + `scripts/dev.sh` |
 | File watcher | `watchexec/watchexec` | v2.5.1 | Build-gated rebuild + restart of the Go daemon on change |
+| Supply-chain signing | `sigstore/cosign` | v3.0.6 | Local verify of release signatures/SBOM bundles; mirrors the keyless signing in `release.yml` |
 
 The dev stack is **command-driven, not a foreground process** — `scripts/dev.sh
 up|down|status|logs|restart|ready|attach` pokes a detached process-compose instance over
