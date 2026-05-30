@@ -1,0 +1,14 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-yaml.json
+# Repo-local CLI toolchain for Triagearr's dev/build stack, managed by aqua.
+# https://aquaproj.github.io/
+#
+# Tools are split one-per-file under aqua/imports/ so Renovate can bump each
+# independently (see renovate.json for the manager file pattern). This config
+# takes precedence over any parent aqua.yaml, making the repo self-contained
+# for its toolchain.
+registries:
+  - type: standard
+    ref: v4.518.0 # renovate: depName=aquaproj/aqua-registry
+packages:
+  - import: aqua/imports/*.yaml

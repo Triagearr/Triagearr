@@ -118,6 +118,28 @@ These are all `golang.org/x` packages — stdlib-adjacent, maintained by the Go 
 | Container registry | GHCR (`ghcr.io/triagearr/triagearr`) | n/a |
 | CI | GitHub Actions | n/a |
 
+## Local dev tooling (aqua-managed)
+
+CLI tools for the dev/build loop are pinned per-repo via [aqua](https://aquaproj.github.io/).
+`aqua.yaml` imports one file per tool from `aqua/imports/*.yaml` so [Renovate](../renovate.json)
+bumps each independently. These are **developer tools, not `go.mod` dependencies** — the
+"new dep ⇒ ADR" rule (below) governs the compiled binary, not this toolchain.
+
+| | Choice | Version | Why |
+|---|---|---|---|
+| Toolchain manager | `aquaproj/aqua` | repo-local config | Declarative, per-repo pins; Renovate-friendly |
+| Go | `golang/go` | go1.26.3 | Build/test/run the daemon |
+| Go linter | `golangci/golangci-lint` | v2.12.2 | `make lint` |
+| JS runtime/pm | `oven-sh/bun` | 1.3.14 | `web/` install + Vite dev/build |
+| Node.js | `nodejs/node` | v26.2.0 | Vite tooling + Playwright MCP (E2E) |
+| Dev supervisor | `F1bonacc1/process-compose` | v1.110.0 | Drives the local stack (fakes + daemon + vite); see `process-compose.yaml` + `scripts/dev.sh` |
+| File watcher | `watchexec/watchexec` | v2.5.1 | Build-gated rebuild + restart of the Go daemon on change |
+
+The dev stack is **command-driven, not a foreground process** — `scripts/dev.sh
+up|down|status|logs|restart|ready|attach` pokes a detached process-compose instance over
+a pinned unix socket, so it's drivable by an agent. Auto-reload coverage: Vite HMR (front),
+in-place engine swap (config, ADR-0028), watchexec build-gated restart (Go daemon).
+
 ## Versioning policy
 
 - Triagearr follows **SemVer 2.0**.

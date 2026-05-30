@@ -1,0 +1,5 @@
+---
+# process-compose — declarative supervisor for the local dev stack
+# (fakes + daemon + vite). Drives scripts/dev.sh / process-compose.yaml.
+packages:
+  - name: F1bonacc1/process-compose@v1.110.0

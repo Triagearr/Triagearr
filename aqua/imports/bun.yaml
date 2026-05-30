@@ -1,0 +1,4 @@
+---
+# Bun — frontend package manager + Vite dev/build runner (web/).
+packages:
+  - name: oven-sh/bun@bun-v1.3.14

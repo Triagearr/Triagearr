@@ -1,0 +1,4 @@
+---
+# Go toolchain — builds/tests/runs the daemon (cmd/, internal/).
+packages:
+  - name: golang/go@go1.26.3

@@ -1,0 +1,98 @@
+version: "0.5"
+
+# Local dev stack for Triagearr, supervised by process-compose.
+#
+# Entry point is scripts/dev.sh (it pins the unix socket + detached/no-TUI so
+# the stack is drivable by commands, not a foreground terminal):
+#   scripts/dev.sh up | down | status | logs <svc> | restart <svc> | ready | attach
+#
+# Auto-reload coverage — nothing here needs a manual full restart:
+#   - frontend  -> Vite HMR (native, :5173)
+#   - config    -> daemon in-place hot reload (ADR-0028); a settings/connection
+#                  save or `kill -HUP` swaps the engine, the listener survives
+#   - Go daemon -> the `watch` process rebuilds on .go changes and restarts the
+#                  daemon ONLY when `go build` succeeds (build-gated): a broken
+#                  edit leaves the last-good daemon running with the error logged
+
+processes:
+  # Fake Sonarr/Radarr/qBit + disk source the dev daemon points at.
+  fakes:
+    command: "go run ./cmd/devfixtures --scenario fixtures/scenarios/${SCENARIO:-default}.yaml"
+    readiness_probe:
+      http_get:
+        host: "127.0.0.1"
+        scheme: "http"
+        port: 18091
+        path: "/disk/dev"
+      initial_delay_seconds: 1
+      period_seconds: 1
+      timeout_seconds: 2
+      failure_threshold: 30
+    availability:
+      restart: "on_failure"
+      backoff_seconds: 2
+
+  # First compile, so the daemon has a binary to exec. Subsequent rebuilds are
+  # the `watch` process's job. Atomic write (.new + mv) is harmless here but
+  # keeps the recipe identical to the watcher's.
+  build:
+    command: "go build -o .dev/triagearrd.new ./cmd/triagearr && mv -f .dev/triagearrd.new .dev/triagearrd"
+    availability:
+      restart: "no"
+
+  # Runs the pre-built binary only — no compile in this process, so a failed
+  # rebuild can never take the daemon down (see `watch`).
+  daemon:
+    command: ".dev/triagearrd serve --config config.dev.yml"
+    depends_on:
+      build:
+        condition: process_completed_successfully
+      fakes:
+        condition: process_healthy
+    readiness_probe:
+      http_get:
+        host: "127.0.0.1"
+        scheme: "http"
+        port: 9494
+        path: "/healthz"
+      initial_delay_seconds: 1
+      period_seconds: 1
+      timeout_seconds: 2
+      failure_threshold: 30
+    availability:
+      restart: "on_failure"
+      backoff_seconds: 2
+
+  # Rebuilds the daemon on .go changes, then restarts it via process-compose —
+  # but only on a successful build (scripts/dev-rebuild.sh is the gate). A small
+  # script instead of an inline `sh -c` avoids nested quoting. --postpone skips
+  # the run-on-startup so it only fires on a real change.
+  watch:
+    command: "watchexec --postpone --restart --debounce 500ms --exts go --watch cmd --watch internal -- scripts/dev-rebuild.sh"
+    depends_on:
+      daemon:
+        condition: process_healthy
+    availability:
+      restart: "on_failure"
+      backoff_seconds: 2
+
+  # Vite dev server (React UI + HMR). Proxies /api to the daemon.
+  vite:
+    command: "bun run dev"
+    working_dir: "web"
+    depends_on:
+      daemon:
+        condition: process_healthy
+    readiness_probe:
+      http_get:
+        host: "127.0.0.1"
+        scheme: "http"
+        port: 5173
+        path: "/"
+      initial_delay_seconds: 1
+      period_seconds: 1
+      timeout_seconds: 2
+      failure_threshold: 60
+    availability:
+      restart: "on_failure"
+      backoff_seconds: 2

@@ -1,0 +1,4 @@
+---
+# Go linter — `make lint` (golangci-lint run ./...).
+packages:
+  - name: golangci/golangci-lint@v2.12.2

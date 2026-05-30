@@ -1,0 +1,5 @@
+---
+# watchexec — rebuilds + restarts the Go daemon on source changes
+# (build-gated) inside the dev stack.
+packages:
+  - name: watchexec/watchexec@v2.5.1

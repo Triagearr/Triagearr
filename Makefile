@@ -16,7 +16,7 @@ LDFLAGS     := -s -w \
 GO          ?= go
 GOFLAGS     ?=
 
-.PHONY: all build run test cover lint tidy clean docker help web-install web-build web-dev web-test dev-fakes dev-ui
+.PHONY: all build run test cover lint tidy clean docker help web-install web-build web-dev web-test dev-fakes dev dev-down dev-status dev-attach
 
 all: lint test build
 
@@ -66,8 +66,18 @@ SCENARIO ?= default
 dev-fakes: ## Boot fake Sonarr/Radarr/qBit (SCENARIO=default by default)
 	$(GO) run ./cmd/devfixtures --scenario fixtures/scenarios/$(SCENARIO).yaml
 
-dev-ui: ## Boot fakes + triagearr + vite dev together (Ctrl-C tears down all 3)
-	@./scripts/dev-ui.sh
+dev: ## Bring up the dev stack (fakes + daemon + vite) detached via process-compose
+	@./scripts/dev.sh up $(SCENARIO)
+	@./scripts/dev.sh ready
+
+dev-down: ## Tear down the dev stack
+	@./scripts/dev.sh down
+
+dev-status: ## Show per-process state of the dev stack
+	@./scripts/dev.sh status
+
+dev-attach: ## Attach the process-compose TUI to the running dev stack
+	@./scripts/dev.sh attach
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "Targets:\n"} /^[a-zA-Z_-]+:.*##/ { printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
