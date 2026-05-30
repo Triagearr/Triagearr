@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSettings, useUpdateSettings, useTestNotification } from "@/api/hooks";
 import type { SettingsOverrideInput } from "@/api/hooks";
 import { Drawer } from "@/components/ui/Modal";
@@ -184,6 +184,16 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
   const [pending, setPending] = useState<Pending>({});
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  // Hold "applying" across the PUT + daemon reload + refetch so the save state
+  // stays legible instead of flipping back early. See SectionShell.
+  const [applying, setApplying] = useState(false);
+
+  useEffect(() => {
+    if (settings.data) {
+      setPending({});
+      setApplying(false);
+    }
+  }, [settings.dataUpdatedAt]);
 
   const tg = settings.data?.values.notifications.telegram ?? {};
   const overridden = new Set(settings.data?.overridden_keys ?? []);
@@ -216,12 +226,16 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
     }
     if (ops.length === 0) return;
     try {
+      setApplying(true);
       await update.mutateAsync(ops);
-      setPending({});
+      // pending clears when the refreshed snapshot arrives (effect above).
     } catch (e) {
       setError(String(e));
+      setApplying(false);
     }
   };
+
+  const busy = update.isPending || applying;
 
   const onTest = async () => {
     setTestResult(null);
@@ -291,19 +305,24 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
 
           {/* Actions */}
           <div className="flex items-center gap-3 pt-2 border-t border-border">
-            <Button onClick={onSave} disabled={dirtyCount === 0 || update.isPending}>
-              {update.isPending
-                ? m.common_saving()
+            <Button onClick={onSave} disabled={dirtyCount === 0 || busy}>
+              {busy
+                ? m.settings_shell_saving_reloading()
                 : dirtyCount === 0
                   ? m.settings_shell_no_changes()
                   : dirtyCount === 1
                     ? m.settings_notif_save_changes({ count: dirtyCount })
                     : m.settings_notif_save_changes_plural({ count: dirtyCount })}
             </Button>
-            {dirtyCount > 0 && (
-              <Button variant="outline" onClick={() => setPending({})} disabled={update.isPending}>
+            {dirtyCount > 0 && !busy && (
+              <Button variant="outline" onClick={() => setPending({})}>
                 {m.settings_notif_discard()}
               </Button>
+            )}
+            {busy && (
+              <span className="text-xs text-muted-foreground">
+                {m.settings_shell_daemon_restarting()}
+              </span>
             )}
           </div>
 

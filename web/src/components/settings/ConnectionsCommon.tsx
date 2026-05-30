@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -345,12 +345,21 @@ export function useConnectionDrawer<
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Hold "applying" from save until the refreshed connection lands (~1s after
+  // the PUT, once the daemon has reloaded), so the Save button doesn't sit
+  // there looking unsaved in the meantime. Key the reset on the connection's
+  // serialized value, not its reference — the parent rebuilds it every render.
+  const [applying, setApplying] = useState(false);
+  const originalKey = JSON.stringify(original);
+  useEffect(() => {
+    setApplying(false);
+  }, [originalKey]);
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
   const dirty = isDraft || JSON.stringify(form) !== JSON.stringify(original);
-  const busy = mutations.create.isPending || mutations.update.isPending || mutations.del.isPending;
+  const busy = mutations.create.isPending || mutations.update.isPending || mutations.del.isPending || applying;
 
   const onSave = async () => {
     setError(null);
@@ -364,10 +373,13 @@ export function useConnectionDrawer<
         await mutations.create.mutateAsync(formToInput(kind, form));
         onClose();
       } else {
+        setApplying(true);
         await mutations.update.mutateAsync({ kind, input: formToInput(kind, form) });
+        // applying clears when the refreshed connection lands (effect above).
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setApplying(false);
     }
   };
 
@@ -431,7 +443,7 @@ export function DrawerActions<Form, TInput extends { kind: string }, TTest>({
 
       <div className="flex items-center gap-2 pt-2 border-t border-border">
         <Button onClick={onSave} disabled={!dirty || busy}>
-          {mutations.create.isPending || mutations.update.isPending ? m.common_saving() : isDraft ? m.settings_conn_create() : m.common_save()}
+          {busy ? m.common_saving() : isDraft ? m.settings_conn_create() : m.common_save()}
         </Button>
         <Button
           variant={confirmDelete ? "destructive" : "ghost"}

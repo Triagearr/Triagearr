@@ -28,11 +28,20 @@ export function SectionShell({
   const update = useUpdateSettings();
   const [pending, setPending] = useState<Pending>({});
   const [error, setError] = useState<string | null>(null);
+  // The PUT resolves fast, but the values only settle once the daemon has
+  // reloaded and we've refetched (~1s later). Hold an "applying" state across
+  // that whole window so the button doesn't flip back to a clickable "Save N
+  // changes" mid-flight — that gap reads as "nothing happened".
+  const [applying, setApplying] = useState(false);
 
   // Reset pending whenever a fresh server snapshot arrives (we just saved,
-  // or another tab/process changed the config).
+  // or another tab/process changed the config) — that snapshot is also the
+  // signal that an in-flight save has fully landed.
   useEffect(() => {
-    if (settings.data) setPending({});
+    if (settings.data) {
+      setPending({});
+      setApplying(false);
+    }
   }, [settings.dataUpdatedAt]);
 
   const overridden = useMemo(
@@ -95,11 +104,17 @@ export function SectionShell({
     }
     if (ops.length === 0) return;
     try {
+      setApplying(true);
       await update.mutateAsync(ops);
+      // Stay "applying" until the refreshed snapshot lands (cleared by the
+      // effect above); the PUT resolving early isn't the same as "done".
     } catch (e) {
       setError(String(e));
+      setApplying(false);
     }
   };
+
+  const busy = update.isPending || applying;
 
   return (
     <Card>
@@ -117,8 +132,8 @@ export function SectionShell({
         )}
 
         <div className="flex items-center gap-3 pt-2 border-t">
-          <Button onClick={onSave} disabled={dirtyCount === 0 || update.isPending}>
-            {update.isPending
+          <Button onClick={onSave} disabled={dirtyCount === 0 || busy}>
+            {busy
               ? m.settings_shell_saving_reloading()
               : dirtyCount === 0
                 ? m.settings_shell_no_changes()
@@ -126,12 +141,12 @@ export function SectionShell({
                   ? m.settings_shell_save_changes({ count: dirtyCount })
                   : m.settings_shell_save_changes_plural({ count: dirtyCount })}
           </Button>
-          {dirtyCount > 0 && (
-            <Button variant="outline" onClick={() => setPending({})} disabled={update.isPending}>
+          {dirtyCount > 0 && !busy && (
+            <Button variant="outline" onClick={() => setPending({})}>
               {m.settings_shell_discard()}
             </Button>
           )}
-          {update.isPending && (
+          {busy && (
             <span className="text-xs text-muted-foreground">
               {m.settings_shell_daemon_restarting()}
             </span>
