@@ -186,12 +186,14 @@ function ConnectionDrawer({
   meta,
   connection,
   arrView,
+  dataUpdatedAt,
   open,
   onClose,
 }: {
   meta: KindMeta;
   connection: ArrConnectionT | undefined;
   arrView: ArrViewT | undefined;
+  dataUpdatedAt: number;
   open: boolean;
   onClose: () => void;
 }) {
@@ -204,6 +206,7 @@ function ConnectionDrawer({
   const state = useConnectionDrawer<ArrConnectionT, Form, ArrConnectionInput, ArrTestInput>({
     kind: meta.value,
     connection,
+    dataUpdatedAt,
     emptyForm: () => emptyForm(meta),
     connectionToForm,
     formToInput,
@@ -305,6 +308,7 @@ export function ArrConnectionsSection() {
           meta={openMeta}
           connection={connectionByKind[openMeta.value]}
           arrView={arrViewByKind[openMeta.value]}
+          dataUpdatedAt={connections.dataUpdatedAt}
           open={open === openMeta.value}
           onClose={() => setOpen(null)}
         />

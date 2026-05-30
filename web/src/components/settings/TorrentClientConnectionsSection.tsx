@@ -177,12 +177,14 @@ function ConnectionDrawer({
   meta,
   connection,
   clientView,
+  dataUpdatedAt,
   open,
   onClose,
 }: {
   meta: KindMeta;
   connection: TorrentClientConnectionT | undefined;
   clientView: ClientViewT | undefined;
+  dataUpdatedAt: number;
   open: boolean;
   onClose: () => void;
 }) {
@@ -195,6 +197,7 @@ function ConnectionDrawer({
   const state = useConnectionDrawer<TorrentClientConnectionT, Form, TorrentClientConnectionInput, TorrentTestInput>({
     kind: meta.value,
     connection,
+    dataUpdatedAt,
     emptyForm,
     connectionToForm,
     formToInput,
@@ -299,6 +302,7 @@ export function TorrentClientConnectionsSection() {
           meta={openMeta}
           connection={connectionByKind[openMeta.value]}
           clientView={clientViewByKind[openMeta.value]}
+          dataUpdatedAt={connections.dataUpdatedAt}
           open={open === openMeta.value}
           onClose={() => setOpen(null)}
         />

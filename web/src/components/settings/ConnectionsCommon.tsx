@@ -317,6 +317,9 @@ export function useConnectionDrawer<
 >(opts: {
   kind: string;
   connection: Conn | undefined;
+  // Connections-query last-fetch timestamp; advances on every refetch so it's a
+  // reliable signal that an in-flight save has landed (see the applying reset).
+  dataUpdatedAt: number;
   emptyForm: () => Form;
   connectionToForm: (c: Conn) => Form;
   formToInput: (kind: string, f: Form) => TInput;
@@ -329,6 +332,7 @@ export function useConnectionDrawer<
   const {
     kind,
     connection,
+    dataUpdatedAt,
     emptyForm,
     connectionToForm,
     formToInput,
@@ -345,15 +349,14 @@ export function useConnectionDrawer<
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // Hold "applying" from save until the refreshed connection lands (~1s after
-  // the PUT, once the daemon has reloaded), so the Save button doesn't sit
-  // there looking unsaved in the meantime. Key the reset on the connection's
-  // serialized value, not its reference — the parent rebuilds it every render.
+  // Hold "applying" from save until the refreshed connection lands (after the
+  // daemon's SIGHUP reload), so the Save button reads as in-progress the whole
+  // time instead of flipping back to a clickable "Save" mid-flight. Cleared by
+  // the dataUpdatedAt effect below.
   const [applying, setApplying] = useState(false);
-  const originalKey = JSON.stringify(original);
   useEffect(() => {
     setApplying(false);
-  }, [originalKey]);
+  }, [dataUpdatedAt]);
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
