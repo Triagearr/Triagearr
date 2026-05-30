@@ -138,6 +138,10 @@ type trackerView struct {
 	Status      string    `json:"status"`
 	Message     string    `json:"message"`
 	LastChecked time.Time `json:"last_checked"`
+	// FirstSeenDead is when Triagearr anchored this tracker's death (activity
+	// proxy, not last_checked). Nil while the tracker is alive. Surfaced so the
+	// UI can explain a still-zero tracker_dead_bonus instead of just showing 0.
+	FirstSeenDead *time.Time `json:"first_seen_dead,omitempty"`
 }
 
 type linkView struct {
@@ -159,6 +163,12 @@ type scoreView struct {
 	ExclusionReasons string          `json:"exclusion_reasons,omitempty"`
 	Factors          json.RawMessage `json:"factors,omitempty"`
 	ComputedAt       time.Time       `json:"computed_at"`
+	// TrackerDeadEligibleAt is set only when every tracker is dead but the
+	// grace window has not yet elapsed: it is the instant the tracker_dead
+	// bonus will start contributing (max(first_seen_dead) + tracker_dead_grace).
+	// Nil when the bonus is already active or not applicable, letting the UI
+	// render an "active in N" countdown beside the 0.00 contribution.
+	TrackerDeadEligibleAt *time.Time `json:"tracker_dead_eligible_at,omitempty"`
 }
 
 func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
@@ -186,14 +196,20 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var deadEligibleAt *time.Time
 	if trks, err := s.opts.Store.ListTrackers(r.Context(), hash); err == nil {
 		out.Trackers = make([]trackerView, len(trks))
 		for i, t := range trks {
 			out.Trackers[i] = trackerView{
 				Host: t.Host, URL: t.URL, Status: t.Status.String(),
-				Message: t.Msg, LastChecked: t.LastChecked,
+				Message: t.Msg, LastChecked: t.LastChecked, FirstSeenDead: t.FirstSeenDead,
 			}
 		}
+		var grace time.Duration
+		if cfg := s.engine().Config; cfg != nil {
+			grace = cfg.Scoring.TrackerDeadGrace
+		}
+		deadEligibleAt = trackerDeadEligibleAt(trks, grace, time.Now().UTC())
 	}
 
 	if s.opts.Linker != nil {
@@ -226,9 +242,10 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 		out.Score = &scoreView{
 			Score: score.Score, Private: score.Private,
 			AnyTrackerAlive: score.AnyTrackerAlive, Excluded: score.Excluded,
-			ExclusionReasons: score.ExclusionReasons,
-			Factors:          json.RawMessage(score.FactorsJSON),
-			ComputedAt:       score.ComputedAt,
+			ExclusionReasons:      score.ExclusionReasons,
+			Factors:               json.RawMessage(score.FactorsJSON),
+			ComputedAt:            score.ComputedAt,
+			TrackerDeadEligibleAt: deadEligibleAt,
 		}
 	}
 
@@ -239,6 +256,31 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 		out.Links = []linkView{}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// trackerDeadEligibleAt mirrors the scorer's allTrackersDeadSustained gate and
+// returns when the tracker_dead bonus will start contributing — but only while
+// it is still pending. It returns nil when the bonus is already active, when a
+// tracker is alive, when first_seen_dead is unknown, or when there are no
+// trackers. The UI uses the non-nil case to show an "active in N" countdown.
+func trackerDeadEligibleAt(trks []store.TrackerRow, grace time.Duration, now time.Time) *time.Time {
+	if len(trks) == 0 {
+		return nil
+	}
+	var maxFSD time.Time
+	for _, t := range trks {
+		if t.Status != triagearr.TrackerNotWorking || t.FirstSeenDead == nil {
+			return nil
+		}
+		if t.FirstSeenDead.After(maxFSD) {
+			maxFSD = *t.FirstSeenDead
+		}
+	}
+	eligibleAt := maxFSD.Add(grace)
+	if eligibleAt.After(now) {
+		return &eligibleAt
+	}
+	return nil
 }
 
 type setProtectedRequest struct {

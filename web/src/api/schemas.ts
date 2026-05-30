@@ -73,6 +73,7 @@ export const TrackerView = z.object({
   status: TrackerStatus.catch("unknown"),
   message: z.string(),
   last_checked: ts,
+  first_seen_dead: ts.optional(),
 });
 
 export const LinkView = z.object({
@@ -94,6 +95,7 @@ export const ScoreView = z.object({
   exclusion_reasons: z.string().optional(),
   factors: z.unknown().optional(),
   computed_at: ts,
+  tracker_dead_eligible_at: ts.optional(),
 });
 
 export const TorrentDetail = z.object({

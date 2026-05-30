@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -13,10 +14,18 @@ import (
 // would survive forever.
 //
 // first_seen_dead is preserved across the rewrite when a tracker stays in
-// not_working, set to now on the alive→dead transition (or first observation
-// of a dead tracker), and cleared back to NULL when the tracker recovers.
-// qBit does not expose a "status changed at" field, so the transition must
-// be observed here.
+// not_working, seeded on the alive→dead transition (or first observation of a
+// dead tracker), and cleared back to NULL when the tracker recovers.
+//
+// Seeding uses an activity proxy — torrents.last_activity, falling back to
+// completion_on then added_on — clamped to ≤ now, rather than a bare
+// now. qBit exposes no "tracker died at" timestamp (verified: the trackers API
+// only carries future reannounce schedules), so first-observation time would
+// otherwise restart the grace clock on every DB wipe and silently zero the
+// tracker_dead bonus across an entire graveyard library for a full grace
+// window. Anchoring on real inactivity makes long-dead torrents qualify
+// immediately while still letting a recently-active torrent serve out the
+// grace when its tracker blips. See SCORING.md §Factor 7.
 func (s *Store) ReplaceTrackers(ctx context.Context, hash triagearr.Hash, infos []triagearr.TrackerInfo) error {
 	tx, err := s.writer.BeginTxx(ctx, nil)
 	if err != nil {
@@ -57,13 +66,41 @@ func (s *Store) ReplaceTrackers(ctx context.Context, hash triagearr.Hash, infos 
 	}
 	now := time.Now().UTC()
 	deadStatus := int(triagearr.TrackerNotWorking)
+
+	// Activity proxy for a freshly-observed dead tracker (see doc comment).
+	// Computed lazily — only the alive→dead path needs it, and it is the same
+	// for every tracker on this hash. nil until first use.
+	var deadSeed *time.Time
+	seedDeadSince := func() time.Time {
+		if deadSeed != nil {
+			return *deadSeed
+		}
+		var proxy sql.NullString
+		// COALESCE walks best→worst proxy on the torrents row the tracker poller
+		// already guarantees exists (it enumerates from torrents), so this is a
+		// single race-free read — no dependency on a snapshot having landed.
+		// Timestamps are stored as RFC3339Nano strings (ts()), so parse back the
+		// same way rather than trusting driver-side time coercion.
+		_ = tx.GetContext(ctx, &proxy, `
+			SELECT COALESCE(last_activity, completion_on, added_on)
+			FROM torrents WHERE hash = ?`, string(hash))
+		seed := now
+		if proxy.Valid {
+			if p, err := time.Parse(time.RFC3339Nano, proxy.String); err == nil && p.Before(now) {
+				seed = p.UTC()
+			}
+		}
+		deadSeed = &seed
+		return seed
+	}
+
 	for _, info := range infos {
 		var firstSeenDead any
 		if int(info.Status) == deadStatus {
 			if p, ok := prevByURL[info.URL]; ok && p.status == deadStatus && p.firstSeenDead != nil {
 				firstSeenDead = ts(*p.firstSeenDead)
 			} else {
-				firstSeenDead = ts(now)
+				firstSeenDead = ts(seedDeadSince())
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `

@@ -55,3 +55,24 @@ After migration, historical dead trackers carry `first_seen_dead = last_checked`
 
 **Risk: tracker URL change preserves nothing.**
 If a tracker rewrites its announce URL while staying in `status=4`, the old row is deleted and the new row starts a fresh `first_seen_dead`. This is a rare edge case; the cost is one extra grace window of patience.
+
+## Amendment — 2026-05-30: seed the transition from an activity proxy
+
+The decision table above stamped `first_seen_dead = now` on the alive→dead transition. Field experience exposed the flaw: `now` measures *Triagearr's* observation history, not the tracker's real death. The two diverge whenever Triagearr first sees an already-dead tracker — a torrent re-added or cross-seeded from long-dead content is made to serve a full grace window it factually outlived. A wiped DB is the degenerate case (the whole library re-observed at once); it is routine only during alpha, where the schema is reset rather than migrated, so it is an amplifier of the bug, not its root. Re-confirmed live on qBit 5.2.0: still no `status_changed_at` / `last_seen_alive`; the only per-tracker timestamps are the *future* `min_announce`/`next_announce` schedules.
+
+Scope note: the seed fires on the *transition*, so existing rows already preserved as dead keep their old `now`-stamped value until a recovery→dead cycle. Under the alpha wipe-on-deploy flow this self-corrects on the next deploy. When the project moves to migrate-without-wipe, a one-time backfill (re-seed currently-dead `first_seen_dead` from the same proxy) is the clean place to retire the stale values — deferred until that cut.
+
+**Refinement:** on the transition, seed `first_seen_dead = min(now, activity_proxy)` where `activity_proxy = COALESCE(torrents.last_activity, torrents.completion_on, torrents.added_on)`. `torrents.last_activity` is a new column mirroring qBit's per-torrent last-data-moved time, written by the torrent poller — so the proxy is a single race-free read of a row the tracker poller already guarantees exists (it enumerates hashes from `torrents`), with no dependency on a snapshot having landed first. `ReplaceTrackers` computes it in the same tx (one lazy read, reused across all of a hash's trackers). The two "→ now" cells in the decision table become "→ min(now, activity_proxy)"; preservation and dead→alive→dead reset are unchanged.
+
+Rationale: a swarm's `last_activity` is the closest observable signal to "graveyard since" — it does not advance on failed reannounce attempts, so it stays old for genuinely dead torrents (qualify immediately, wipe-proof) yet stays recent for a live swarm whose tracker merely blips (grace still protects it). The `completion_on`/`added_on` fallbacks cover the narrow window after a wipe before the first snapshot lands. When no proxy exists at all (brand-new torrent, no rows) the seed degrades to `now` — the original behaviour. The migration-0007 backfill note above is now moot: long-dead torrents mature on their first post-amendment poll instead of waiting a grace window.
+
+**Cross-client survey (why the proxy, not a client field).** Confirmed across the four mainstream clients that none exposes a *first-failure* timestamp:
+
+| Client | Backend | Per-tracker signal | "Last seen alive" timestamp |
+|---|---|---|---|
+| qBittorrent | libtorrent | `status`, `fails`, future `min/next_announce` | none |
+| Deluge | libtorrent | same `announce_entry`/`announce_endpoint` | none |
+| Transmission | own | `last_announce_time`, `last_announce_succeeded`, `announce_state` | partial (last attempt + success flag) |
+| rTorrent | own | `t.success_time_last`, `t.failed_time_last`, `t.activity_time_last` | yes (`success_time_last`, epoch) |
+
+qBit and Deluge share libtorrent's blindness, so the activity proxy is the correct cross-client common denominator. Transmission and rTorrent *do* surface a last-alive timestamp (rTorrent's `success_time_last` is the best of any client). Forward hook: when those providers are implemented under `internal/clients/torrent/`, `triagearr.TrackerInfo` can carry an optional `LastAliveAt` that those clients populate and `ReplaceTrackers` prepends to the COALESCE chain; qBit/Deluge leave it nil and fall back to `last_activity` as now.

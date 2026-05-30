@@ -24,6 +24,11 @@ CREATE TABLE torrents (
     size          INTEGER   NOT NULL DEFAULT 0,
     added_on      TIMESTAMP NOT NULL,
     completion_on TIMESTAMP,
+    -- last_activity mirrors qBit's per-torrent "last data moved" time. Persisted
+    -- here (not only in snapshots_raw) so the tracker poller can anchor a dead
+    -- tracker's first_seen_dead on real inactivity in a single race-free read,
+    -- without depending on a snapshot having landed first. See ADR-0013.
+    last_activity TIMESTAMP,
     private       INTEGER   NOT NULL DEFAULT 1,
     tags          TEXT      NOT NULL DEFAULT '',
     last_seen     TIMESTAMP NOT NULL,

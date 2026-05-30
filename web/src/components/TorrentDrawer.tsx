@@ -159,7 +159,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
             <div className="drawer-section">
               <div className="drawer-section-title">{m.comp_drawer_score_breakdown()}</div>
               {t.score
-                ? <ScoreBreakdown factors={t.score.factors} total={t.score.score} />
+                ? <ScoreBreakdown factors={t.score.factors} total={t.score.score} trackerDeadEligibleAt={t.score.tracker_dead_eligible_at} />
                 : <div style={{ color: "var(--fg-3)", fontSize: 12 }}>{m.comp_drawer_no_score()}</div>
               }
             </div>
@@ -179,6 +179,11 @@ export function TorrentDrawer({ hash, onClose }: Props) {
                           <span className={`badge ${tr.status === "working" ? "badge-success" : "badge-danger"}`}>
                             {trackerStatusLabel(tr.status)}
                           </span>
+                          {tr.first_seen_dead && (
+                            <div style={{ color: "var(--fg-3)", fontSize: 10, marginTop: 2 }}>
+                              {m.comp_drawer_tracker_dead_since({ when: relativeTime(tr.first_seen_dead) })}
+                            </div>
+                          )}
                         </td>
                         <td style={{ color: "var(--fg-3)", fontSize: 11, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                           {relativeTime(tr.last_checked)}

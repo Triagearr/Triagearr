@@ -168,6 +168,30 @@ qbit:
       trackers:
         - { url: "https://tracker.alive.example.org/announce", status: 2 }
 
+    # Recently-dead tracker: all trackers down, but the swarm was active a few
+    # days ago (last_activity ~2026-05-27), so first_seen_dead lands inside the
+    # 7d grace. Exercises the tracker_dead_bonus *pending* path — the breakdown
+    # shows a "bonus active in N days" countdown rather than the +40 firing yet.
+    - hash: "8888888888888888888888888888888888888888"
+      name: "Just.Died.S01E05.1080p.WEB-FAKE"
+      category: "tv-sonarr"
+      save_path: "/tmp/triagearr-dev/torrents/tv"
+      size: 3000000000
+      added_on: 1735689600       # ~2025-01-01
+      completion_on: 1735700000
+      ratio: 0.6
+      uploaded: 1800000000
+      num_complete: 0
+      num_incomplete: 0
+      state: "stalledUP"
+      last_activity: 1779840000  # ~2026-05-27, within the grace window
+      private: true
+      tags: "ygg"
+      files:
+        - { name: "Just.Died.S01E05.mkv", size: 3000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "tracker offline" }
+
 sonarr:
   api_key: "dev-key-sonarr"
   tags:

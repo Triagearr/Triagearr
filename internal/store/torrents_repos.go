@@ -11,6 +11,15 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
+// lastActivityArg renders Torrent.LastActivity for the upsert, mapping the zero
+// time to SQL NULL so the first_seen_dead proxy falls through to completion_on.
+func lastActivityArg(t triagearr.Torrent) any {
+	if t.LastActivity.IsZero() {
+		return nil
+	}
+	return ts(t.LastActivity)
+}
+
 // UpsertTorrent records (or refreshes) the current state of a torrent.
 func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 	now := time.Now().UTC()
@@ -19,8 +28,8 @@ func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 		completion = ts(t.CompletionOn)
 	}
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO torrents(hash, name, category, save_path, size, added_on, completion_on, private, tags, last_seen)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO torrents(hash, name, category, save_path, size, added_on, completion_on, last_activity, private, tags, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(hash) DO UPDATE SET
 			name=excluded.name,
 			category=excluded.category,
@@ -28,10 +37,11 @@ func (s *Store) UpsertTorrent(ctx context.Context, t triagearr.Torrent) error {
 			size=excluded.size,
 			added_on=excluded.added_on,
 			completion_on=excluded.completion_on,
+			last_activity=excluded.last_activity,
 			private=excluded.private,
 			tags=excluded.tags,
 			last_seen=excluded.last_seen
-	`, string(t.Hash), t.Name, t.Category, t.SavePath, t.Size, ts(t.AddedOn), completion, t.Private, t.Tags, ts(now))
+	`, string(t.Hash), t.Name, t.Category, t.SavePath, t.Size, ts(t.AddedOn), completion, lastActivityArg(t), t.Private, t.Tags, ts(now))
 	if err != nil {
 		return fmt.Errorf("upserting torrent %s: %w", t.Hash, err)
 	}
@@ -51,8 +61,8 @@ func (s *Store) UpsertTorrents(ctx context.Context, torrents []triagearr.Torrent
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.PreparexContext(ctx, `
-		INSERT INTO torrents(hash, name, category, save_path, size, added_on, completion_on, private, tags, last_seen)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO torrents(hash, name, category, save_path, size, added_on, completion_on, last_activity, private, tags, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(hash) DO UPDATE SET
 			name=excluded.name,
 			category=excluded.category,
@@ -60,6 +70,7 @@ func (s *Store) UpsertTorrents(ctx context.Context, torrents []triagearr.Torrent
 			size=excluded.size,
 			added_on=excluded.added_on,
 			completion_on=excluded.completion_on,
+			last_activity=excluded.last_activity,
 			private=excluded.private,
 			tags=excluded.tags,
 			last_seen=excluded.last_seen
@@ -76,7 +87,7 @@ func (s *Store) UpsertTorrents(ctx context.Context, torrents []triagearr.Torrent
 		}
 		if _, err := stmt.ExecContext(ctx,
 			string(t.Hash), t.Name, t.Category, t.SavePath, t.Size,
-			ts(t.AddedOn), completion, t.Private, t.Tags, now,
+			ts(t.AddedOn), completion, lastActivityArg(t), t.Private, t.Tags, now,
 		); err != nil {
 			return fmt.Errorf("upserting torrent %s: %w", t.Hash, err)
 		}

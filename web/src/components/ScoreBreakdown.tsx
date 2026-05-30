@@ -1,6 +1,7 @@
 import { m } from "@/paraglide/messages";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { FACTOR_LABEL, FACTOR_TIP } from "@/lib/scoringFactors";
+import { relativeTime } from "@/lib/format";
 
 type Factor = {
   name?: string;
@@ -13,7 +14,18 @@ type Factor = {
   [k: string]: unknown;
 };
 
-export function ScoreBreakdown({ factors, total }: { factors: unknown; total?: number }) {
+export function ScoreBreakdown({
+  factors,
+  total,
+  trackerDeadEligibleAt,
+}: {
+  factors: unknown;
+  total?: number;
+  // When set, every tracker is dead but the grace window has not elapsed yet:
+  // shown as a countdown on the tracker_dead_bonus row so a 0.00 contribution
+  // reads as "pending" rather than "broken".
+  trackerDeadEligibleAt?: string | null;
+}) {
   let rows: Factor[] = [];
   if (Array.isArray(factors)) rows = factors as Factor[];
   else if (factors && typeof factors === "object") rows = Object.entries(factors).map(([k, v]) => ({ name: k, ...(v as object) }));
@@ -59,6 +71,11 @@ export function ScoreBreakdown({ factors, total }: { factors: unknown; total?: n
               </div>
               {(r.note || r.reason) && (
                 <span className="text-xs text-muted-foreground">{r.note ?? r.reason}</span>
+              )}
+              {key === "tracker_dead_bonus" && trackerDeadEligibleAt && (
+                <span className="text-xs text-amber-600 dark:text-amber-400">
+                  {m.comp_score_tracker_dead_pending({ when: relativeTime(trackerDeadEligibleAt) })}
+                </span>
               )}
             </li>
           );
