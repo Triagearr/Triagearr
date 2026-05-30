@@ -50,9 +50,10 @@ func buildSrvWithActor(t *testing.T) (http.Handler, *store.Store, func()) {
 		Deleter: func(string) (triagearr.FileDeleter, bool) { return nil, false },
 	})
 	srv := server.New(server.Options{
-		Bind:       "127.0.0.1:0",
-		APIKey:     testAPIKey,
-		Store:      s,
+		Bind:   "127.0.0.1:0",
+		APIKey: testAPIKey,
+		Store:  s,
+	}, &server.Engine{
 		Decider:    decider.New(s),
 		Volume:     func() decider.Volume { return vol },
 		DaemonLive: true,

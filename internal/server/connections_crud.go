@@ -42,7 +42,7 @@ type connectionCRUD[Conn any, Input any, DTO any, TestReq any] struct {
 	runTest            func(ctx context.Context, req TestReq, timeout time.Duration) error
 	defaultTimeoutSecs int
 
-	reload func()
+	reload func(context.Context) error
 }
 
 func (c *connectionCRUD[Conn, Input, DTO, TestReq]) checkKind(w http.ResponseWriter, kind string) bool {
@@ -93,7 +93,13 @@ func (c *connectionCRUD[Conn, Input, DTO, TestReq]) handleUpsert(w http.Response
 		writeInternal(w, err)
 		return
 	}
-	c.doReload()
+	// The row is already persisted; the reload rebuilds the registry from it.
+	// If the rebuild fails the daemon keeps the previous engine — report the
+	// error so the UI doesn't claim success against a config that didn't take.
+	if err := c.doReload(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "reloading "+c.label+": "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, c.connToDTO(saved))
 }
 
@@ -110,7 +116,10 @@ func (c *connectionCRUD[Conn, Input, DTO, TestReq]) handleDelete(w http.Response
 		writeInternal(w, err)
 		return
 	}
-	c.doReload()
+	if err := c.doReload(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "reloading "+c.label+": "+err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -144,10 +153,10 @@ func (c *connectionCRUD[Conn, Input, DTO, TestReq]) handleTest(w http.ResponseWr
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (c *connectionCRUD[Conn, Input, DTO, TestReq]) doReload() {
+func (c *connectionCRUD[Conn, Input, DTO, TestReq]) doReload(ctx context.Context) error {
 	if c.reload != nil {
-		c.reload()
-		return
+		return c.reload(ctx)
 	}
 	slog.Warn(c.label + " changed but no Reload hook is wired — registry will not refresh until next SIGHUP")
+	return nil
 }

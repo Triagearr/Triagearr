@@ -341,30 +341,10 @@ export function useSettings() {
 
 export type SettingsOverrideInput = { key: string; value: unknown | null };
 
-// scheduleReloadInvalidate defers invalidation until after the daemon's SIGHUP
-// has had time to rebuild. We keep one pending timer per logical bucket and
-// cancel any in-flight timer for the same bucket — without this, two rapid
-// mutations would race: the first timer would fire after the second mutation
-// and clobber a fresh fetch with stale invalidations.
-const reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
-function scheduleReloadInvalidate(
-  bucket: string,
-  qc: ReturnType<typeof useQueryClient>,
-  keys: readonly (readonly unknown[])[],
-  delayMs = 1500,
-) {
-  const prev = reloadTimers.get(bucket);
-  if (prev) clearTimeout(prev);
-  const t = setTimeout(() => {
-    reloadTimers.delete(bucket);
-    for (const k of keys) qc.invalidateQueries({ queryKey: k });
-  }, delayMs);
-  reloadTimers.set(bucket, t);
-}
-
 // PUT /api/v1/settings — sends one or more override changes. Passing
-// value:null deletes the key (reverts to YAML default). The server returns
-// 202 and triggers a self-SIGHUP; callers should wait ~1s and re-fetch.
+// value:null deletes the key (reverts to YAML default). The server rebuilds
+// the daemon's config-derived engine in place and only returns 200 once the
+// swap is live, so we can invalidate immediately — no settle delay.
 export function useUpdateSettings() {
   const qc = useQueryClient();
   return useMutation({
@@ -374,11 +354,9 @@ export function useUpdateSettings() {
         body: JSON.stringify({ overrides }),
       }),
     onSuccess: () => {
-      scheduleReloadInvalidate("settings", qc, [
-        queryKeys.settings,
-        queryKeys.config,
-        queryKeys.summary,
-      ]);
+      qc.invalidateQueries({ queryKey: queryKeys.settings });
+      qc.invalidateQueries({ queryKey: queryKeys.config });
+      qc.invalidateQueries({ queryKey: queryKeys.summary });
     },
   });
 }
@@ -416,16 +394,16 @@ function createConnectionHooks<TList, TItem, TInput extends { kind: string }, TT
   listSchema: z.ZodType<TList>;
   itemSchema: z.ZodType<TItem>;
   queryKey: readonly unknown[];
-  // extraInvalidateKeys are invalidated 1.5s after a mutation, alongside the
-  // resource's own key. The daemon SIGHUPs itself on connection changes; this
-  // delay lets the registry rebuild before the UI re-reads.
+  // extraInvalidateKeys are invalidated alongside the resource's own key after
+  // a mutation. The server rebuilds the registry in place before responding, so
+  // the re-read reflects the new connections without any delay.
   extraInvalidateKeys?: readonly (readonly unknown[])[];
 }) {
   const { basePath, listSchema, itemSchema, queryKey, extraInvalidateKeys = [] } = opts;
 
   const invalidate = (qc: ReturnType<typeof useQueryClient>) => {
     qc.invalidateQueries({ queryKey });
-    scheduleReloadInvalidate(`conn:${basePath}`, qc, [queryKey, ...extraInvalidateKeys]);
+    for (const k of extraInvalidateKeys) qc.invalidateQueries({ queryKey: k });
   };
 
   const upsert = (kind: string, body: Omit<TInput, "kind">) =>

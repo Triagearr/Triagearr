@@ -26,14 +26,15 @@ func buildSrvM6(t *testing.T, cfg *config.Config) http.Handler {
 		Bind:    "127.0.0.1:0",
 		APIKey:  testAPIKey,
 		Store:   s,
-		Config:  cfg,
 		Version: server.VersionInfo{Version: "test", Commit: "abc", Date: "2026-05-21"},
-		Decider: decider.New(s),
 		// Tight rate limits keep these tests fast and deterministic — they
 		// assert the limiter engages, not specific homelab thresholds.
 		RunsPerMinute: 3,
 		AuthPerMinute: 3,
-		Volume:        func() decider.Volume { return vol },
+	}, &server.Engine{
+		Config:  cfg,
+		Decider: decider.New(s),
+		Volume:  func() decider.Volume { return vol },
 	})
 	return srv.Handler()
 }

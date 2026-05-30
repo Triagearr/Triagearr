@@ -33,15 +33,13 @@ type VersionInfo struct {
 	Date    string `json:"date"`
 }
 
-// Options bundles everything the server needs at construction time.
-type Options struct {
-	Bind      string
-	APIKey    string
-	Store     *store.Store
-	Linker    *linker.Linker
-	Config    *config.Config
-	Version   VersionInfo
-	UIHandler http.Handler
+// Engine bundles the config-derived subsystems the HTTP handlers read. It is
+// immutable once built: on reload the daemon constructs a fresh Engine and
+// swaps it in atomically via Server.SwapEngine (Option B hot reload), so a
+// request in flight keeps a consistent snapshot rather than reading a mix of
+// old and new fields mid-handler.
+type Engine struct {
+	Config *config.Config
 
 	// Scorer drives the single-hash rescore on protect-toggle so the Decider's
 	// view (excluded yes/no) updates without waiting for the next pass. Nil in
@@ -60,6 +58,18 @@ type Options struct {
 	// Notifier is the configured notification dispatcher. It backs the
 	// "send test notification" endpoint. Nil/empty when no provider is set.
 	Notifier *notify.Dispatcher
+}
+
+// Options bundles the long-lived dependencies the server needs at construction
+// time — those that survive a config reload (store, listener, build metadata,
+// reload hooks). Config-derived subsystems live in Engine instead.
+type Options struct {
+	Bind      string
+	APIKey    string
+	Store     *store.Store
+	Linker    *linker.Linker
+	Version   VersionInfo
+	UIHandler http.Handler
 
 	// RunsPerMinute and AuthPerMinute control the per-IP rate limits. 0
 	// applies the package default (60 / 30); negative disables. See
@@ -72,10 +82,12 @@ type Options struct {
 	// which the UI shows on hover over an overridden field.
 	ConfigPath string
 
-	// Reload, when non-nil, is invoked after a successful PUT /api/v1/settings
-	// to ask the daemon to rebuild itself with the new effective config.
-	// Wired to a self-SIGHUP in cmd/triagearr; nil in tests.
-	Reload func()
+	// Reload, when non-nil, asks the daemon to rebuild the Engine from the
+	// freshly persisted settings_overrides and swap it in. It blocks until the
+	// swap is live (or ctx is cancelled) and returns the build/validation
+	// error, so the settings handler can report failure synchronously instead
+	// of the old fire-and-forget self-SIGHUP. Nil in tests.
+	Reload func(context.Context) error
 
 	// ReloadValidate dry-runs a candidate override set through the full
 	// config load pipeline (YAML + overrides + Validate) so PUT can reject
@@ -93,6 +105,11 @@ type Server struct {
 	srv      *http.Server
 	runRate  *ipRateLimiter
 	authRate *ipRateLimiter
+
+	// eng holds the current config-derived Engine. Read via engine() on every
+	// handler hit and replaced wholesale by SwapEngine on reload — the listener
+	// itself never restarts (Option B).
+	eng atomic.Pointer[Engine]
 
 	// baseCtx is the daemon-lifetime context, captured in Start. Async live
 	// runs detach onto it so a deletion pipeline outlives the HTTP request
@@ -116,8 +133,9 @@ type authStateCache struct {
 	checkedAt time.Time
 }
 
-// New builds a Server. Does not start listening.
-func New(opts Options) *Server {
+// New builds a Server with its initial Engine. Does not start listening. The
+// Engine may be swapped later via SwapEngine without restarting the listener.
+func New(opts Options, eng *Engine) *Server {
 	s := &Server{
 		opts:     opts,
 		runRate:  buildRateLimiter(opts.RunsPerMinute, 60),
@@ -125,6 +143,7 @@ func New(opts Options) *Server {
 		baseCtx:  context.Background(),
 		liveRun:  make(chan struct{}, 1),
 	}
+	s.eng.Store(eng)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/runs", s.security(s.auth(s.runRateLimit(s.handlePostRun))))
@@ -203,6 +222,27 @@ func New(opts Options) *Server {
 
 // Handler exposes the wired http.Handler. Useful for httptest-driven tests.
 func (s *Server) Handler() http.Handler { return s.srv.Handler }
+
+// engine returns the current config-derived Engine snapshot. Handlers that read
+// several Engine fields should call this once and reuse the result so a
+// concurrent SwapEngine can't splice old and new values into one response.
+func (s *Server) engine() *Engine { return s.eng.Load() }
+
+// SwapEngine atomically replaces the config-derived Engine. Called by the
+// daemon's reload controller after the new subsystems (and their pollers) are
+// built and validated; the listener and in-flight live runs are untouched.
+func (s *Server) SwapEngine(eng *Engine) { s.eng.Store(eng) }
+
+// reload asks the daemon to rebuild and swap the Engine, blocking until the
+// swap is live. Returns nil (no-op) when no Reload hook is wired — e.g. tests
+// that don't exercise the reload path.
+func (s *Server) reload(ctx context.Context) error {
+	if s.opts.Reload == nil {
+		slog.Warn("settings changed but no Reload hook is wired — daemon will not reload until next manual SIGHUP")
+		return nil
+	}
+	return s.opts.Reload(ctx)
+}
 
 // Start serves until ctx is cancelled, then shuts down with a 5s grace.
 func (s *Server) Start(ctx context.Context) error {

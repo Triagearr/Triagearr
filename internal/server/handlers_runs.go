@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Triagearr/Triagearr/internal/actor"
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
@@ -62,18 +63,21 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength > 0 && !decodeJSONBody(w, r, &req) {
 		return
 	}
-	vol := s.opts.Volume()
+	// Snapshot the engine once: a reload may swap it mid-handler, and a live
+	// run must execute against the Actor that was current when it was armed.
+	eng := s.engine()
+	vol := eng.Volume()
 	if vol.Path == "" {
 		writeError(w, http.StatusBadRequest, "no volume configured")
 		return
 	}
-	plan, err := s.opts.Decider.Plan(r.Context(), vol)
+	plan, err := eng.Decider.Plan(r.Context(), vol)
 	if err != nil {
 		writeInternal(w, err)
 		return
 	}
-	mode := triagearr.ResolveRunMode(s.opts.DaemonLive, triagearr.RunTriggerHTTP, req.Mode == "live")
-	live := mode == triagearr.RunModeLive && s.opts.Actor != nil
+	mode := triagearr.ResolveRunMode(eng.DaemonLive, triagearr.RunTriggerHTTP, req.Mode == "live")
+	live := mode == triagearr.RunModeLive && eng.Actor != nil
 
 	// A live run executes asynchronously (see executeRunAsync); reserve the
 	// single-run slot before persisting anything so a concurrent trigger gets
@@ -119,7 +123,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if live {
-		go s.executeRunAsync(id)
+		go s.executeRunAsync(id, eng.Actor)
 	}
 	// Re-read so the response carries persisted state. The live goroutine may
 	// not have started yet, so this typically returns the "pending" run plus
@@ -139,9 +143,9 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 // HTTP request. It runs on the daemon-lifetime baseCtx so a long deletion
 // outlives the request, and always releases the single-run slot. On Actor
 // failure the run is marked "aborted" so the UI stops showing it in-flight.
-func (s *Server) executeRunAsync(id int64) {
+func (s *Server) executeRunAsync(id int64, act *actor.Actor) {
 	defer func() { <-s.liveRun }()
-	if err := s.opts.Actor.Execute(s.baseCtx, id); err != nil {
+	if err := act.Execute(s.baseCtx, id); err != nil {
 		slog.Warn("actor execute failed", "run_id", id, "err", err)
 		if mErr := s.opts.Store.MarkRunStatus(s.baseCtx, id, "aborted"); mErr != nil {
 			slog.Error("marking aborted run failed", "run_id", id, "err", mErr)
@@ -153,12 +157,13 @@ func (s *Server) executeRunAsync(id int64) {
 // now, without persisting a run. It backs the live-confirmation modal so the
 // operator sees what a live run would delete before arming it. Read-only.
 func (s *Server) handlePreviewRun(w http.ResponseWriter, r *http.Request) {
-	vol := s.opts.Volume()
+	eng := s.engine()
+	vol := eng.Volume()
 	if vol.Path == "" {
 		writeError(w, http.StatusBadRequest, "no volume configured")
 		return
 	}
-	plan, err := s.opts.Decider.Plan(r.Context(), vol)
+	plan, err := eng.Decider.Plan(r.Context(), vol)
 	if err != nil {
 		writeInternal(w, err)
 		return

@@ -196,8 +196,8 @@ func (s *Server) handleSimulateScoring(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var cur config.ScoringConfig
-	if s.opts.Config != nil {
-		cur = s.opts.Config.Scoring
+	if cfg := s.engine().Config; cfg != nil {
+		cur = cfg.Scoring
 	}
 
 	curDefaults, err := s.opts.Store.GetScoringDefaults(r.Context())

@@ -72,9 +72,10 @@ func buildSrvWithDaemonLive(t *testing.T, apiKey string, daemonLive bool) (*serv
 		Name: "data", Path: "/data", TargetFreePercent: 20,
 	}
 	srv := server.New(server.Options{
-		Bind:       "127.0.0.1:0",
-		APIKey:     apiKey,
-		Store:      s,
+		Bind:   "127.0.0.1:0",
+		APIKey: apiKey,
+		Store:  s,
+	}, &server.Engine{
 		Decider:    decider.New(s),
 		Volume:     func() decider.Volume { return vol },
 		DaemonLive: daemonLive,

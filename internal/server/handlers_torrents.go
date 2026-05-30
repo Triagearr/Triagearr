@@ -264,8 +264,8 @@ func (s *Server) handleSetTorrentProtected(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if s.opts.Scorer != nil {
-		if _, err := s.opts.Scorer.ScoreOne(r.Context(), hash); err != nil {
+	if sc := s.engine().Scorer; sc != nil {
+		if _, err := sc.ScoreOne(r.Context(), hash); err != nil {
 			slog.Warn("rescore after protect toggle failed", "hash", hash, "err", err)
 		}
 	}

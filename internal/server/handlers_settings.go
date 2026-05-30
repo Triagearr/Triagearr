@@ -137,7 +137,8 @@ func volumeToDTO(v config.VolumeConfig) volumeSettingsDTO {
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
-	if s.opts.Config == nil {
+	cfg := s.engine().Config
+	if cfg == nil {
 		writeError(w, http.StatusServiceUnavailable, "config not wired into server")
 		return
 	}
@@ -153,10 +154,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	view := settingsView{
 		Values: settingsValues{
-			Scoring:       scoringToDTO(s.opts.Config.Scoring),
-			Polling:       pollingToDTO(s.opts.Config.Polling),
-			Volume:        volumeToDTO(s.opts.Config.Volume),
-			Notifications: notificationsToDTO(s.opts.Config.Notifications),
+			Scoring:       scoringToDTO(cfg.Scoring),
+			Polling:       pollingToDTO(cfg.Polling),
+			Volume:        volumeToDTO(cfg.Volume),
+			Notifications: notificationsToDTO(cfg.Notifications),
 		},
 		OverriddenKeys: keys,
 		Editable:       config.EditableKeys(),
@@ -197,7 +198,7 @@ type settingsPutEntry struct {
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
-	if s.opts.Config == nil {
+	if s.engine().Config == nil {
 		writeError(w, http.StatusServiceUnavailable, "config not wired into server")
 		return
 	}
@@ -256,16 +257,15 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Trigger the daemon-side reload so pollers and the HTTP server pick up
-	// the new values. The Server itself is reconstructed by the SIGHUP loop —
-	// this handler returns 202 immediately and the client should re-fetch
-	// after a short delay.
-	if s.opts.Reload != nil {
-		s.opts.Reload()
-	} else {
-		slog.Warn("settings updated but no Reload hook is wired — daemon will not reload until next manual SIGHUP")
+	// Rebuild the Engine + pollers from the freshly persisted overrides and
+	// swap them in. This blocks until the new config is live, so a 200 means
+	// the client can re-fetch immediately — no arbitrary settle delay. The
+	// listener survives (Option B); only config-derived subsystems are rebuilt.
+	if err := s.reload(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "reloading config: "+err.Error())
+		return
 	}
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
@@ -282,10 +282,11 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "deleting override: "+err.Error())
 		return
 	}
-	if s.opts.Reload != nil {
-		s.opts.Reload()
+	if err := s.reload(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "reloading config: "+err.Error())
+		return
 	}
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 }
 
 // handleTestNotification delivers a synthetic notification through every
@@ -293,12 +294,13 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 // dashboard. Unlike the run-time dispatch this surfaces provider failures.
 // It tests the currently-loaded config, so unsaved edits must be saved first.
 func (s *Server) handleTestNotification(w http.ResponseWriter, r *http.Request) {
-	if s.opts.Notifier == nil || s.opts.Notifier.Empty() {
+	notifier := s.engine().Notifier
+	if notifier == nil || notifier.Empty() {
 		writeError(w, http.StatusBadRequest,
 			"no notification provider is enabled — enable one and save before testing")
 		return
 	}
-	if err := s.opts.Notifier.SendTest(r.Context()); err != nil {
+	if err := notifier.SendTest(r.Context()); err != nil {
 		writeError(w, http.StatusBadGateway, "test notification failed: "+err.Error())
 		return
 	}

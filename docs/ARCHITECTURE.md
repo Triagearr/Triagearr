@@ -315,6 +315,16 @@ Single binary, single process, multiple goroutines:
 
 A central `context.Context` is propagated everywhere; `SIGTERM` triggers graceful shutdown that lets the actor finish its current decision before exiting.
 
+### Config reload — in-place engine swap (ADR-0028)
+
+The daemon splits into a **long-lived** half and a **reloadable** half. Long-lived: the store, the `http.Server` + listener, the API key, rate limiters, auth state. Reloadable: a `server.Engine` (scorer, decider, actor, volume, notifier, the parsed config) plus its poller set — everything derived from editable config.
+
+When config changes — a `settings_overrides` write, an *arr/torrent-client connection edit, or a manual `kill -HUP` for a YAML edit — a reload controller in `serveAction` rebuilds **only** the reloadable half: it loads the fresh config, runs `buildEngine` (which re-runs the ADR-0023 preflight), drains the old pollers, starts the new ones, and `SwapEngine`s the new engine into the `Server`'s `atomic.Pointer`. The listener never restarts. HTTP handlers read the current engine via `s.engine()`, snapshotting once per request for consistency.
+
+The HTTP reload path is **synchronous**: the settings/connection handlers block until the swap is live, then return `200 OK` (or `500` with the engine unchanged on a build/preflight failure). There is no `202` and no client-side settle delay — the frontend invalidates its queries the moment the save succeeds.
+
+Consequence: infrastructure knobs read only at listener-build time — `http.bind`, `http.rate_limits`, the API key, `storage.sqlite_path` — are **restart-only**. They are YAML-only (outside the editable whitelist), so a real process restart is the expected way to change them.
+
 ## HTTP API
 
 Served on `127.0.0.1:9494` by default, routed by the stdlib `net/http.ServeMux` (Go 1.22 method-aware patterns + `{hash}` wildcards), middleware applied by handler-wrapping: `s.security(s.auth(s.runRateLimit(h)))`.
@@ -381,7 +391,7 @@ The React UI is served from the same binary via `embed.FS` (`web/web.go`): asset
 
 ## What lives outside the binary
 
-- Configuration file (mounted from disk, hot-reloaded on `SIGHUP`)
+- Configuration file (mounted from disk; YAML edits picked up by `SIGHUP` via an in-place engine swap — ADR-0028 — except restart-only infra knobs like `http.bind`)
 - SQLite database file
 - Optional Prometheus scrape endpoint (`/metrics`, V2)
 

@@ -33,8 +33,8 @@ func (s *Server) buildVolumeView(ctx context.Context) (volumeView, error) {
 		return volumeView{}, err
 	}
 	var vv volumeView
-	if s.opts.Config != nil {
-		v := s.opts.Config.Volume
+	if cfg := s.engine().Config; cfg != nil {
+		v := cfg.Volume
 		vv = volumeView{
 			Name: v.Name, Path: v.Path,
 			TargetFreePercent:    v.DiskPressure.TargetFreePercent,

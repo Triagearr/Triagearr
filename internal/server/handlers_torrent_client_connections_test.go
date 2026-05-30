@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,10 +23,9 @@ func buildTorrentConnSrv(t *testing.T) (http.Handler, *bool) {
 		Bind:    "127.0.0.1:0",
 		APIKey:  testAPIKey,
 		Store:   s,
-		Config:  &config.Config{},
 		Version: server.VersionInfo{Version: "test"},
-		Reload:  func() { reloadCalled = true },
-	})
+		Reload:  func(context.Context) error { reloadCalled = true; return nil },
+	}, &server.Engine{Config: &config.Config{}})
 	return srv.Handler(), &reloadCalled
 }
 

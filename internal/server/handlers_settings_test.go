@@ -31,10 +31,10 @@ func buildSettingsSrv(t *testing.T) (http.Handler, *store.Store, *bool) {
 		Bind:    "127.0.0.1:0",
 		APIKey:  testAPIKey,
 		Store:   s,
-		Config:  cfg,
 		Version: server.VersionInfo{Version: "test"},
-		Reload: func() {
+		Reload: func(context.Context) error {
 			reloadCalled = true
+			return nil
 		},
 		ReloadValidate: func(overrides []config.Override) error {
 			// Stub: accept anything well-formed. The real implementation
@@ -47,7 +47,7 @@ func buildSettingsSrv(t *testing.T) (http.Handler, *store.Store, *bool) {
 			}
 			return nil
 		},
-	})
+	}, &server.Engine{Config: cfg})
 	return srv.Handler(), s, &reloadCalled
 }
 
@@ -85,7 +85,7 @@ func TestPutSettings_PersistsAndReloads(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, http.StatusOK, w.Code)
 
 	row, err := s.GetSettingsOverride(context.Background(), "scoring.hnr_window_days")
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestPutSettings_DeletesWhenValueNull(t *testing.T) {
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, http.StatusOK, w.Code)
 
 	rows, err := s.ListSettingsOverrides(context.Background())
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestDeleteSetting_RevertsToDefault(t *testing.T) {
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, http.StatusOK, w.Code)
 	require.True(t, *reloadCalled)
 
 	rows, err := s.ListSettingsOverrides(context.Background())

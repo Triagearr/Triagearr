@@ -34,6 +34,11 @@ import (
 	"github.com/Triagearr/Triagearr/web"
 )
 
+// reloadRequest is sent to serveAction's reload controller by the HTTP
+// server's Reload hook. done carries the build/swap result back so the
+// settings handler can report success or failure synchronously.
+type reloadRequest struct{ done chan error }
+
 func serveAction(ctx context.Context, cmd *cli.Command) error {
 	path := cmd.String("config")
 	// Boot in two passes so SQLite overrides can layer on top of the YAML
@@ -62,55 +67,105 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
 
-	for {
-		runCtx, cancel := context.WithCancel(signalCtx)
-		done := make(chan error, 1)
-		go func(c *config.Config) {
-			done <- runDaemon(runCtx, s, c, path)
-		}(cfg)
+	reloadCh := make(chan reloadRequest, 1)
 
-	inner:
-		for {
-			select {
-			case <-signalCtx.Done():
-				cancel()
-				return <-done
-			case <-hup:
-				newCfg, err := loadWithOverrides(signalCtx, path, s)
-				if err != nil {
-					slog.Error("SIGHUP reload failed; keeping current config", "err", err)
-					continue inner
-				}
-				slog.Info("SIGHUP — restarting daemon with new config")
-				cancel()
-				<-done
-				cfg = newCfg
-				break inner
-			case err := <-done:
-				cancel()
-				return err
+	// Build the initial engine + pollers. A failure here (e.g. ADR-0023
+	// preflight) is fatal at boot, unlike a reload failure which is recoverable.
+	eng, ps, err := buildEngine(signalCtx, s, cfg)
+	if err != nil {
+		return fmt.Errorf("building engine: %w", err)
+	}
+
+	// The HTTP server is long-lived (Option B): built once, it survives every
+	// reload. Only the engine + pollers are rebuilt and swapped in. Infra knobs
+	// (http.bind, rate limits, api_key, sqlite_path) are YAML-only and need a
+	// real process restart — they're never reloadable this way.
+	var httpSrv *server.Server
+	httpErrCh := make(chan error, 1)
+	if cfg.HTTP.Bind != "" {
+		httpSrv, err = newHTTPServer(cfg, s, eng, path, reloadCh)
+		if err != nil {
+			return err
+		}
+		go func() { httpErrCh <- httpSrv.Start(signalCtx) }()
+	}
+
+	// Engine pollers run under their own context so a reload can stop just them
+	// without touching the listener. engineCancel is reassigned on every reload.
+	engineCtx, engineCancel := context.WithCancel(signalCtx)
+	defer func() { engineCancel() }()
+	mgrDone := make(chan error, 1)
+	go func() { mgrDone <- pollers.NewManager(ps...).Run(engineCtx) }()
+
+	slog.Info("daemon starting",
+		"mode", string(cfg.Mode),
+		"pollers", len(ps),
+		"http", cfg.HTTP.Bind,
+		"sqlite", cfg.Storage.SQLitePath,
+		"version", version,
+	)
+
+	// reload rebuilds the engine + pollers from the freshly persisted overrides
+	// and swaps them in. It drains the old pollers before starting the new set
+	// so two DiskWatchers can't both act during the swap. On any failure it
+	// keeps the current engine and returns the error (no partial swap).
+	reload := func() error {
+		newCfg, err := loadWithOverrides(signalCtx, path, s)
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+		newEng, newPs, err := buildEngine(signalCtx, s, newCfg)
+		if err != nil {
+			return fmt.Errorf("building engine: %w", err)
+		}
+		engineCancel()
+		<-mgrDone
+		engineCtx, engineCancel = context.WithCancel(signalCtx)
+		mgrDone = make(chan error, 1)
+		go func() { mgrDone <- pollers.NewManager(newPs...).Run(engineCtx) }()
+		if httpSrv != nil {
+			httpSrv.SwapEngine(newEng)
+		}
+		slog.Info("config reloaded", "mode", string(newCfg.Mode), "pollers", len(newPs))
+		return nil
+	}
+
+	for {
+		select {
+		case <-signalCtx.Done():
+			engineCancel()
+			<-mgrDone
+			if httpSrv != nil {
+				return <-httpErrCh
+			}
+			return nil
+		case err := <-httpErrCh:
+			// The listener died (bind failure or fatal serve error). Tear the
+			// pollers down and surface it.
+			engineCancel()
+			<-mgrDone
+			return err
+		case req := <-reloadCh:
+			req.done <- reload()
+		case <-hup:
+			// Manual YAML reload (kill -HUP). Same path, fire and forget.
+			if err := reload(); err != nil {
+				slog.Error("SIGHUP reload failed; keeping current config", "err", err)
 			}
 		}
 	}
 }
 
-// selfReload sends SIGHUP to the current process so the serveAction boot
-// loop tears down the daemon and re-loads with fresh settings_overrides.
-// Called by the settings HTTP handler after a successful PUT.
-func selfReload() {
-	if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
-		slog.Error("self-SIGHUP failed", "err", err)
-	}
-}
-
-// runDaemon assembles the poller set + HTTP server from cfg and blocks until
-// ctx is cancelled. Reused by serveAction's SIGHUP loop to spawn a fresh
-// daemon when config changes. cfgPath is captured for the ReloadValidate
-// closure given to the HTTP server.
-func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath string) error {
+// buildEngine assembles the config-derived subsystems (registry, pollers,
+// scorer, decider, actor, notifier, disk-pressure trigger) from cfg and runs
+// the ADR-0023 preflight. The returned Engine backs the HTTP handlers; the
+// poller set is run by the caller under an engine-scoped context. An error
+// (including preflight failure) means nothing was started — the caller keeps
+// the previous engine on reload, or fails to boot.
+func buildEngine(ctx context.Context, s *store.Store, cfg *config.Config) (*server.Engine, []pollers.Poller, error) {
 	reg, err := registry.BuildFromConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("building client registry: %w", err)
+		return nil, nil, fmt.Errorf("building client registry: %w", err)
 	}
 
 	var ps []pollers.Poller
@@ -126,7 +181,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 
 	treg, err := torrentregistry.BuildFromConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("building torrent client registry: %w", err)
+		return nil, nil, fmt.Errorf("building torrent client registry: %w", err)
 	}
 	var qb *qbit.Client
 	if active, ok := treg.Active(); ok {
@@ -170,7 +225,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 			pqb = qb
 		}
 		if err := preflight.Validate(ctx, pqb, cfg.Volume.Path, nil); err != nil {
-			return err
+			return nil, nil, err
 		}
 	}
 
@@ -188,7 +243,7 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 	})
 
 	if len(ps) == 0 {
-		return errors.New("no pollers enabled — check your config (qbit.enabled, arrs.*.enabled, volume.disk_pressure.enabled)")
+		return nil, nil, errors.New("no pollers enabled — check your config (qbit.enabled, arrs.*.enabled, volume.disk_pressure.enabled)")
 	}
 
 	sc := scorer.New(scorer.Options{
@@ -233,71 +288,62 @@ func runDaemon(ctx context.Context, s *store.Store, cfg *config.Config, cfgPath 
 		})
 	}
 
-	// HTTP server runs as a sibling goroutine to the Manager; cancellation
-	// of ctx triggers shutdown on both sides. The API key lives in
-	// `${data_dir}/api_key` (Sonarr-style), auto-generated if absent.
-	var httpSrv *server.Server
-	if cfg.HTTP.Bind != "" {
-		keyPath := filepath.Join(filepath.Dir(cfg.Storage.SQLitePath), "api_key")
-		apiKey, generated, err := server.LoadOrGenerateAPIKey(keyPath)
-		if err != nil {
-			return fmt.Errorf("loading api_key: %w", err)
+	eng := &server.Engine{
+		Config:     cfg,
+		Scorer:     sc,
+		Decider:    dec,
+		Volume:     func() decider.Volume { return theVolume(cfg) },
+		DaemonLive: daemonLive,
+		Actor:      act,
+		Notifier:   notifier,
+	}
+	return eng, ps, nil
+}
+
+// newHTTPServer wires the long-lived HTTP server. The API key lives in
+// `${data_dir}/api_key` (Sonarr-style), auto-generated if absent. The Reload
+// hook funnels settings/connection saves into serveAction's reload controller
+// and blocks until the swap is live, so the handler reports the real outcome.
+func newHTTPServer(cfg *config.Config, s *store.Store, eng *server.Engine, cfgPath string, reloadCh chan<- reloadRequest) (*server.Server, error) {
+	keyPath := filepath.Join(filepath.Dir(cfg.Storage.SQLitePath), "api_key")
+	apiKey, generated, err := server.LoadOrGenerateAPIKey(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading api_key: %w", err)
+	}
+	if generated {
+		slog.Warn("api_key generated — read it from the file to access the API",
+			"path", keyPath)
+	}
+	reload := func(reqCtx context.Context) error {
+		req := reloadRequest{done: make(chan error, 1)}
+		select {
+		case reloadCh <- req:
+		case <-reqCtx.Done():
+			return reqCtx.Err()
 		}
-		if generated {
-			slog.Warn("api_key generated — read it from the file to access the API",
-				"path", keyPath)
-		}
-		httpSrv = server.New(server.Options{
-			Bind:          cfg.HTTP.Bind,
-			APIKey:        apiKey,
-			RunsPerMinute: cfg.HTTP.RateLimits.RunsPerMinute,
-			AuthPerMinute: cfg.HTTP.RateLimits.AuthPerMinute,
-			Store:         s,
-			Linker:        linker.New(s),
-			Config:        cfg,
-			ConfigPath:    cfgPath,
-			Version:       server.VersionInfo{Version: version, Commit: commit, Date: date},
-			UIHandler:     web.Handler(),
-			Scorer:        sc,
-			Decider:       dec,
-			Volume:        func() decider.Volume { return theVolume(cfg) },
-			DaemonLive:    daemonLive,
-			Actor:         act,
-			Notifier:      notifier,
-			Reload:        selfReload,
-			ReloadValidate: func(ovs []config.Override) error {
-				_, err := config.LoadWithOverrides(cfgPath, ovs)
-				return err
-			},
-		})
-	}
-
-	slog.Info("daemon starting",
-		"mode", string(cfg.Mode),
-		"pollers", len(ps),
-		"http", cfg.HTTP.Bind,
-		"sqlite", cfg.Storage.SQLitePath,
-		"version", version,
-	)
-
-	mgr := pollers.NewManager(ps...)
-	errCh := make(chan error, 2)
-	go func() { errCh <- mgr.Run(ctx) }()
-	if httpSrv != nil {
-		go func() { errCh <- httpSrv.Start(ctx) }()
-	}
-
-	var firstErr error
-	expect := 1
-	if httpSrv != nil {
-		expect = 2
-	}
-	for i := 0; i < expect; i++ {
-		if err := <-errCh; err != nil && firstErr == nil {
-			firstErr = err
+		select {
+		case err := <-req.done:
+			return err
+		case <-reqCtx.Done():
+			return reqCtx.Err()
 		}
 	}
-	return firstErr
+	return server.New(server.Options{
+		Bind:          cfg.HTTP.Bind,
+		APIKey:        apiKey,
+		RunsPerMinute: cfg.HTTP.RateLimits.RunsPerMinute,
+		AuthPerMinute: cfg.HTTP.RateLimits.AuthPerMinute,
+		Store:         s,
+		Linker:        linker.New(s),
+		ConfigPath:    cfgPath,
+		Version:       server.VersionInfo{Version: version, Commit: commit, Date: date},
+		UIHandler:     web.Handler(),
+		Reload:        reload,
+		ReloadValidate: func(ovs []config.Override) error {
+			_, err := config.LoadWithOverrides(cfgPath, ovs)
+			return err
+		},
+	}, eng), nil
 }
 
 // registryDeleter adapts the registry's typed accessor into the
@@ -330,7 +376,7 @@ func buildNotifier(cfg config.NotificationsConfig) *notify.Dispatcher {
 }
 
 // buildActor constructs an Actor for one-shot CLI invocations. It mirrors
-// the lifecycle the daemon performs in runDaemon, but stays scoped to the
+// the lifecycle the daemon performs in buildEngine, but stays scoped to the
 // caller (no goroutines, no SIGHUP). Returns the qbit client too so callers
 // can keep it alive for the duration of Execute.
 func buildActor(cfg *config.Config, s *store.Store) (*actor.Actor, *qbit.Client, error) {
