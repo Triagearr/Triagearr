@@ -76,8 +76,7 @@ func TestPutSettings_ReloadSwapsEngine(t *testing.T) {
 func TestPutSettings_ReloadFailureKeepsEngine(t *testing.T) {
 	s := testStore(t)
 
-	var srv *server.Server
-	srv = server.New(server.Options{
+	srv := server.New(server.Options{
 		Bind:           "127.0.0.1:0",
 		APIKey:         testAPIKey,
 		Store:          s,
