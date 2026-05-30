@@ -70,8 +70,12 @@ signs:
     artifacts: checksum
     output: true
 
+# artifacts defaults to "none" — without it goreleaser signs nothing. "all"
+# covers both the per-arch images and the multi-arch manifest users pull by tag,
+# so `cosign verify ghcr.io/.../triagearr:<tag>` resolves a signature.
 docker_signs:
   - cmd: cosign
+    artifacts: all
     args: ["sign", "${artifact}", "--yes"]
     output: true
 
