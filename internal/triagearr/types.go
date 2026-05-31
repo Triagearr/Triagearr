@@ -18,7 +18,6 @@ const (
 	ArrTypeSonarr     ArrType = "sonarr"
 	ArrTypeRadarr     ArrType = "radarr"
 	ArrTypeLidarr     ArrType = "lidarr"
-	ArrTypeReadarr    ArrType = "readarr"
 	ArrTypeWhisparrV2 ArrType = "whisparr_v2"
 	ArrTypeWhisparrV3 ArrType = "whisparr_v3"
 )

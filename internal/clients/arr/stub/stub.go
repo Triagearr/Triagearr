@@ -1,8 +1,7 @@
 // Package stub is shared scaffolding for *arr clients that are declared in
-// the config schema but not yet implemented. M1 ships stubs for Lidarr,
-// Readarr, Whisparr v2 and Whisparr v3 — they satisfy the ArrInstance
-// interface so the registry can include them, but every operational method
-// returns a "not implemented" error tagged with the milestone that owns it.
+// the config schema but not yet implemented. Lidarr currently ships as a stub:
+// it satisfies the ArrInstance interface so the registry can include it, but
+// every operational method returns a "not implemented" error.
 package stub
 
 import (

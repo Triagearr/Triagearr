@@ -47,7 +47,7 @@ Telegram are simply the first in each lane.
 
 | Role | Supported today | Planned / scaffolded |
 |---|---|---|
-| **\*arr media managers** | Sonarr, Radarr | Lidarr, Readarr, Whisparr v2/v3 *(interface stubs — not functional yet)* |
+| **\*arr media managers** | Sonarr, Radarr, Whisparr v2/v3 | Lidarr *(interface stub — not functional yet)* |
 | **Torrent clients** | qBittorrent | Transmission, Deluge, rTorrent *(UI placeholders, no backend yet)* |
 | **Notifications** | Telegram | Webhook, Discord, Pushover, ntfy *(post-1.0)* |
 

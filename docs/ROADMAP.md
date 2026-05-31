@@ -37,8 +37,7 @@ The app polls everything, persists snapshots, and exposes a basic CLI to inspect
 - [x] `internal/clients/sonarr` client implementing `ArrInstance`
 - [x] `internal/clients/radarr` client implementing `ArrInstance`
 - [x] `internal/clients/lidarr` stub (interface satisfied, marked TODO)
-- [x] `internal/clients/readarr` stub
-- [x] `internal/clients/whisparr` stubs (v2 + v3)
+- [x] `internal/clients/whisparr` clients (v2 = Sonarr fork, v3 = Radarr fork)
 - [x] `internal/pollers` orchestrating the configured pollers on intervals
 - [x] Disk poller using `golang.org/x/sys/unix.Statfs_t`
 - [x] CLI: `triagearr serve` runs the daemon; `triagearr inspect torrents` lists current snapshots

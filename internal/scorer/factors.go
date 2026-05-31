@@ -357,7 +357,6 @@ func indexArrTagsExclude(arrs config.ArrsConfig) map[string][]string {
 	add(string(triagearr.ArrTypeSonarr), arrs.Sonarr)
 	add(string(triagearr.ArrTypeRadarr), arrs.Radarr)
 	add(string(triagearr.ArrTypeLidarr), arrs.Lidarr)
-	add(string(triagearr.ArrTypeReadarr), arrs.Readarr)
 	add(string(triagearr.ArrTypeWhisparrV2), arrs.WhisparrV2)
 	add(string(triagearr.ArrTypeWhisparrV3), arrs.WhisparrV3)
 	return out

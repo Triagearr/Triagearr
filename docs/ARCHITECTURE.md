@@ -16,7 +16,7 @@ flowchart TB
 
     subgraph stack["Typical *arr stack"]
         tc["Torrent client<br/>(qBittorrent today)"]
-        arrs["Sonarr · Radarr · Lidarr<br/>Readarr · Whisparr"]
+        arrs["Sonarr · Radarr · Lidarr<br/>Whisparr v2/v3"]
     end
 
     subgraph mount["Shared /data mount — TRaSH layout, hardlinks"]
@@ -89,8 +89,8 @@ The internal component breakdown below zooms *inside* the Triagearr box.
 │   │          │  │ (Sonarr, │  │ (optional,│ │          │         │
 │   │          │  │  Radarr, │  │  read-only│ │          │         │
 │   │          │  │  Lidarr, │  │  in V2)   │ │          │         │
-│   │          │  │  Readarr,│  │           │ │          │         │
-│   │          │  │ Whisparr)│  │           │ │          │         │
+│   │          │  │ Whisparr │  │           │ │          │         │
+│   │          │  │  v2/v3)  │  │           │ │          │         │
 │   └────┬─────┘  └────┬─────┘  └────┬─────┘ └────┬─────┘         │
 │        │             │              │             │              │
 │        ▼             ▼              ▼             ▼              │
@@ -231,14 +231,14 @@ The dashboard renders these as a timeline.
 
 ## Key interfaces
 
-All cross-component coupling goes through Go interfaces defined in `internal/triagearr/types.go`. Reading is mandatory; the destructive and per-file capabilities are **optional** interfaces a client type-asserts into — stubs (lidarr/readarr/whisparr) satisfy only the read contract:
+All cross-component coupling goes through Go interfaces defined in `internal/triagearr/types.go`. Reading is mandatory; the destructive and per-file capabilities are **optional** interfaces a client type-asserts into — the Lidarr stub satisfies only the read contract:
 
 ```go
 // ArrInstance is the read contract every *arr client implements.
 // Exactly one instance per kind (sonarr, radarr, …) — the kind is the identity.
 type ArrInstance interface {
     Name() string
-    Type() ArrType        // sonarr | radarr | lidarr | readarr | whisparr_v2 | whisparr_v3
+    Type() ArrType        // sonarr | radarr | lidarr | whisparr_v2 | whisparr_v3
     Poll() bool           // is read-allowed
     Act()  bool           // is delete-allowed
     ListMedia(ctx context.Context) ([]MediaItem, error)
@@ -275,7 +275,7 @@ type Notifier interface {
 
 The scorer is not a single-method interface: `internal/scorer` reads the store directly and persists per-torrent `scores` + `score_factors` rows; per-tracker policy and the rare-content default come from the `tracker_policies` / `scoring_defaults` tables (ADR-0026), not from a `ScoringConfig` value.
 
-Concrete implementations live under `internal/clients/arr/{sonarr,radarr,lidarr,readarr,whisparr_v2,whisparr_v3,stub}/`, `internal/clients/torrent/qbit/`, `internal/scorer/`, and `internal/notify/telegram/`. The two registries (`internal/clients/arr/registry`, `internal/clients/torrent/torrentregistry`) build the live client set from the DB-owned connection rows (ADR-0022, ADR-0025).
+Concrete implementations live under `internal/clients/arr/{sonarr,radarr,lidarr,whisparr_v2,whisparr_v3,stub}/`, `internal/clients/torrent/qbit/`, `internal/scorer/`, and `internal/notify/telegram/`. The two registries (`internal/clients/arr/registry`, `internal/clients/torrent/torrentregistry`) build the live client set from the DB-owned connection rows (ADR-0022, ADR-0025).
 
 ## Storage schema
 

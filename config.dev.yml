@@ -37,8 +37,6 @@ arrs:
     act: false
   lidarr:
     enabled: false
-  readarr:
-    enabled: false
   whisparr_v2:
     enabled: false
   whisparr_v3:

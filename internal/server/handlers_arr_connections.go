@@ -56,7 +56,7 @@ type arrConnectionTestRequest struct {
 // operator leaves the timeout field at zero.
 const defaultArrTimeoutSeconds = 30
 
-const arrKnownKindMsg = "kind must be one of sonarr, radarr, lidarr, readarr, whisparr_v2, whisparr_v3"
+const arrKnownKindMsg = "kind must be one of sonarr, radarr, lidarr, whisparr_v2, whisparr_v3"
 
 func arrConnectionToDTO(c store.ArrConnection) arrConnectionDTO {
 	return arrConnectionDTO{

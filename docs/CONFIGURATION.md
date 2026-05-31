@@ -12,7 +12,6 @@ arrs:                       # seed-only (ADR-0022); DB is source of truth after 
   sonarr: { … }
   radarr: { … }
   lidarr: { … }
-  readarr: { … }
   whisparr_v2: { … }
   whisparr_v3: { … }
 torrent_clients:            # seed-only (ADR-0025); keyed by client kind
@@ -95,8 +94,6 @@ arrs:
     act: false
 
   lidarr:
-    enabled: false
-  readarr:
     enabled: false
   whisparr_v2:
     enabled: false

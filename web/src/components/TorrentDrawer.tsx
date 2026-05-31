@@ -9,16 +9,15 @@ import { humanBytes, relativeTime } from "@/lib/format";
 import { m } from "@/paraglide/messages";
 
 // Maps each *arr kind to its detail-page route prefix. whisparr_v2 is a
-// Sonarr fork (series), v3 a Radarr fork (movies); Lidarr keys on artist,
-// Readarr on author. Falls back to the instance root when the slug is absent
-// (today only Sonarr/Radarr populate title_slug; the rest are stubs).
+// Sonarr fork (series), v3 a Radarr fork (movies); Lidarr keys on artist.
+// Falls back to the instance root when the slug is absent (Lidarr is still a
+// stub and does not populate title_slug).
 const arrRoutePrefix: Record<string, string> = {
   sonarr: "series",
   whisparr_v2: "series",
   radarr: "movie",
   whisparr_v3: "movie",
   lidarr: "artist",
-  readarr: "author",
 };
 
 // Localized labels for the qBittorrent tracker status enum (schemas.ts).
