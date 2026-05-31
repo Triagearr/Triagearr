@@ -1,18 +1,65 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, Lock, RefreshCw, Unlock, Zap } from "lucide-react";
 import { memo } from "react";
-import { useSummary, useArrs, useTriggerRun } from "@/api/hooks";
+import {
+  useSummary,
+  useArrs,
+  useTriggerRun,
+  useSettings,
+  useArrConnections,
+  useTorrentClientConnections,
+} from "@/api/hooks";
 import { PressureGauge } from "@/components/PressureGauge";
 import { ScoreCell } from "@/components/ScoreCell";
 import { humanBytes, relativeTime } from "@/lib/format";
-import type { ArrViewT } from "@/api/schemas";
+import type { ArrViewT, ClientViewT } from "@/api/schemas";
 import { ArrLogo } from "@/components/ArrLogo";
+import { TorrentClientLogo } from "@/components/TorrentClientLogo";
+import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
 
 function ModeBadge({ mode }: { mode: string }) {
   return mode === "live"
     ? <span className="badge badge-solid-danger">● {m.common_mode_live()}</span>
     : <span className="badge">{m.common_mode_dry_run()}</span>;
+}
+
+// Health-tile chips — same visual as the Settings connection tiles
+// (.arr-tile-toggles / .arr-chip), so the dashboard reads the per-instance
+// act/enabled/delete state at a glance.
+function TileChips({ chips }: { chips: { label: string; on: boolean; danger?: boolean }[] }) {
+  return (
+    <div className="arr-tile-toggles">
+      {chips.map((c) => (
+        <span key={c.label} className={cn("arr-chip", c.on && "on", c.on && c.danger && "danger")}>
+          <span className="arr-chip-dot" /> {c.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ModeStatCard — 5th stat card. Mirrors StatCard but is a coloured link to the
+// Mode settings: red/danger when armed (live), neutral in dry-run.
+function ModeStatCard({ mode }: { mode: string }) {
+  const live = mode === "live";
+  return (
+    <Link
+      to="/settings/mode"
+      className="card"
+      style={{
+        padding: 14,
+        textDecoration: "none",
+        ...(live ? { borderColor: "var(--red)", background: "var(--red-bg)" } : {}),
+      }}
+    >
+      <div className="stat-label">{m.settings_mode_title()}</div>
+      <div className="stat-value" style={{ color: live ? "var(--red-2)" : undefined }}>
+        {live ? m.common_mode_live() : m.common_mode_dry_run()}
+      </div>
+      <div className="stat-foot">{live ? m.dash_mode_foot_live() : m.dash_mode_foot_dry()}</div>
+    </Link>
+  );
 }
 
 type StatCardProps = {
@@ -33,7 +80,7 @@ const StatCard = memo(function StatCard({ label, value, foot, accent }: StatCard
 });
 
 // ── *arr health tile — same visual as Settings tiles, uses real SVG logos ─────
-function ArrHealthCard({ arr }: { arr: ArrViewT }) {
+function ArrHealthCard({ arr, conn }: { arr: ArrViewT; conn?: { enabled: boolean; act: boolean } }) {
   const kind = arr.type.toLowerCase();
   const state = !arr.healthy ? "down" : "healthy";
   return (
@@ -52,6 +99,12 @@ function ArrHealthCard({ arr }: { arr: ArrViewT }) {
         </div>
       </div>
       <div className="arr-tile-url">{arr.url}</div>
+      {conn && (
+        <TileChips chips={[
+          { label: m.settings_chip_enabled(), on: conn.enabled },
+          { label: m.settings_chip_act(), on: conn.act, danger: true },
+        ]} />
+      )}
       {arr.last_error && (
         <div className="arr-tile-error">
           {arr.last_error}
@@ -67,14 +120,62 @@ function ArrHealthCard({ arr }: { arr: ArrViewT }) {
   );
 }
 
+// ── Torrent-client health tile — mirrors ArrHealthCard; data already lives in
+// the /summary response (torrent_clients[]). No per-client act flag exists, so
+// the chips surface enabled + delete-files (what governs participation).
+function ClientHealthCard({ client, conn }: {
+  client: ClientViewT;
+  conn?: { enabled: boolean; delete_with_files: boolean };
+}) {
+  const state = !client.healthy ? "down" : "healthy";
+  return (
+    <div className={`arr-tile state-${state}`} style={{ cursor: "default" }}>
+      <div className="arr-tile-head">
+        <TorrentClientLogo kind={client.kind} size={34} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="arr-tile-name" style={{ textTransform: "capitalize" }}>{client.kind}</div>
+        </div>
+        <div className="arr-tile-state">
+          {client.healthy
+            ? <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>{m.common_healthy()}</span></>
+            : <><span className="dot red pulse" /><span style={{ color: "var(--red-2)" }}>{m.dash_arr_down()}</span></>
+          }
+        </div>
+      </div>
+      <div className="arr-tile-url">{client.url}</div>
+      {conn && (
+        <TileChips chips={[
+          { label: m.settings_chip_enabled(), on: conn.enabled },
+          { label: m.settings_chip_delete_files(), on: conn.delete_with_files, danger: true },
+        ]} />
+      )}
+      {client.last_error && (
+        <div className="arr-tile-error">
+          {client.last_error}
+        </div>
+      )}
+      <div className="arr-tile-foot">
+        {client.last_health_check
+          ? <span>{m.dash_arr_checked()} {relativeTime(client.last_health_check)}</span>
+          : <span>{m.dash_arr_never_checked()}</span>
+        }
+      </div>
+    </div>
+  );
+}
+
 function Dashboard() {
   const summary = useSummary();
   const arrsQuery = useArrs();
+  const settings = useSettings();
+  const arrConns = useArrConnections();
+  const clientConns = useTorrentClientConnections();
   const trigger = useTriggerRun();
   const navigate = useNavigate();
 
   const data = summary.data;
   const arrs = data?.arrs ?? arrsQuery.data?.arrs ?? [];
+  const torrentClients = data?.torrent_clients ?? [];
   const lastRuns = data?.last_runs ?? [];
   const topScore = data?.top_score ?? [];
   // Only positive scores are genuine reap candidates — negative scores are
@@ -82,6 +183,10 @@ function Dashboard() {
   // "would be deleted first in a live run" misrepresents what a run does.
   const reapCandidates = topScore.filter((t) => t.score > 0).slice(0, 10);
   const volume = data?.volume;
+
+  const mode = settings.data?.values.mode ?? "dry-run";
+  const arrConnByKind = new Map((arrConns.data?.connections ?? []).map((c) => [c.kind, c]));
+  const clientConnByKind = new Map((clientConns.data?.connections ?? []).map((c) => [c.kind, c]));
 
   const healthyArrs = arrs.filter((a) => a.healthy).length;
   const totalArrs = arrs.length;
@@ -123,7 +228,8 @@ function Dashboard() {
         {data && (
           <>
             {/* Stat cards */}
-            <div className="grid-resp" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
+            <div className="grid-resp" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 14 }}>
+              <ModeStatCard mode={mode} />
               <StatCard label={m.dash_stat_torrents_tracked()} value={data.counts.torrents} foot={m.dash_stat_in_qbittorrent()} />
               <StatCard label={m.dash_stat_scored()} value={data.counts.scored} foot={m.dash_stat_last_cycle()} />
               <StatCard label={m.dash_stat_actions_all_time()} value={data.counts.actions} foot={m.dash_stat_deletions_executed()} />
@@ -229,15 +335,20 @@ function Dashboard() {
               </div>
             )}
 
-            {/* *arr health grid */}
-            {arrs.length > 0 && (
+            {/* Connection health — *arr instances + torrent clients in one grid */}
+            {(arrs.length > 0 || torrentClients.length > 0) && (
               <div className="card">
                 <div className="card-head">
-                  <span className="card-title">{m.dash_arr_instance_health()}</span>
+                  <span className="card-title">{m.dash_connection_health()}</span>
                   <span className="card-sub">{m.dash_polled_30s()}</span>
                 </div>
                 <div className="card-body arr-grid">
-                  {arrs.map((a) => <ArrHealthCard key={a.name} arr={a} />)}
+                  {arrs.map((a) => (
+                    <ArrHealthCard key={`arr-${a.name}`} arr={a} conn={arrConnByKind.get(a.type.toLowerCase())} />
+                  ))}
+                  {torrentClients.map((c) => (
+                    <ClientHealthCard key={`client-${c.kind}`} client={c} conn={clientConnByKind.get(c.kind)} />
+                  ))}
                 </div>
               </div>
             )}
