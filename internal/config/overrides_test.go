@@ -81,6 +81,24 @@ func TestLoadWithOverrides_ScalarOverride(t *testing.T) {
 	require.Equal(t, 21, cfg.Scoring.HnRWindowDays)
 }
 
+func TestLoadWithOverrides_ModeOverride(t *testing.T) {
+	p := writeBaseYAML(t) // baseline is mode: dry-run
+	cfg, err := config.LoadWithOverrides(p, []config.Override{
+		{Key: "mode", ValueJSON: `"live"`},
+	})
+	require.NoError(t, err)
+	require.Equal(t, config.ModeLive, cfg.Mode)
+}
+
+func TestLoadWithOverrides_InvalidModeFailsValidation(t *testing.T) {
+	p := writeBaseYAML(t)
+	_, err := config.LoadWithOverrides(p, []config.Override{
+		{Key: "mode", ValueJSON: `"turbo"`},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "mode")
+}
+
 func TestLoadWithOverrides_NestedWeight(t *testing.T) {
 	p := writeBaseYAML(t)
 	cfg, err := config.LoadWithOverrides(p, []config.Override{
@@ -134,13 +152,13 @@ func TestLoadWithOverrides_VolumeDiskPressure(t *testing.T) {
 
 func TestIsEditableKey(t *testing.T) {
 	editable := []string{
+		"mode",
 		"scoring.hnr_window_days",
 		"scoring.weights.ratio_obligation_met",
 		"polling.torrent_client_interval",
 		"volume.disk_pressure.threshold_free_percent",
 	}
 	forbidden := []string{
-		"mode",
 		"arrs.sonarr.act",
 		"arrs.sonarr.api_key",
 		"qbit.password",

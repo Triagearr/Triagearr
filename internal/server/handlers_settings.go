@@ -35,6 +35,7 @@ type settingsView struct {
 }
 
 type settingsValues struct {
+	Mode          string            `json:"mode"`
 	Scoring       scoringDTO        `json:"scoring"`
 	Polling       pollingDTO        `json:"polling"`
 	Volume        volumeSettingsDTO `json:"volume"`
@@ -154,6 +155,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	view := settingsView{
 		Values: settingsValues{
+			Mode:          string(cfg.Mode),
 			Scoring:       scoringToDTO(cfg.Scoring),
 			Polling:       pollingToDTO(cfg.Polling),
 			Volume:        volumeToDTO(cfg.Volume),
@@ -173,6 +175,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("could not load baseline config for settings view", "err", err)
 		} else {
 			bv := settingsValues{
+				Mode:          string(baseline.Mode),
 				Scoring:       scoringToDTO(baseline.Scoring),
 				Polling:       pollingToDTO(baseline.Polling),
 				Volume:        volumeToDTO(baseline.Volume),

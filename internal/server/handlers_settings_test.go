@@ -21,6 +21,7 @@ func buildSettingsSrv(t *testing.T) (http.Handler, *store.Store, *bool) {
 	t.Helper()
 	s := testStore(t)
 	cfg := &config.Config{
+		Mode: config.ModeDryRun,
 		HTTP: config.HTTPConfig{Bind: "127.0.0.1:9494"},
 		Scoring: config.ScoringConfig{
 			HnRWindowDays: 14,
@@ -63,6 +64,7 @@ func TestGetSettings_ReturnsValuesAndOverrides(t *testing.T) {
 
 	var body struct {
 		Values struct {
+			Mode    string `json:"mode"`
 			Scoring struct {
 				HnRWindowDays int `json:"hnr_window_days"`
 			} `json:"scoring"`
@@ -71,9 +73,11 @@ func TestGetSettings_ReturnsValuesAndOverrides(t *testing.T) {
 		Editable       []string `json:"editable_prefixes"`
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	require.Equal(t, "dry-run", body.Values.Mode)
 	require.Equal(t, 14, body.Values.Scoring.HnRWindowDays)
 	require.Contains(t, body.OverriddenKeys, "scoring.hnr_window_days")
 	require.Contains(t, body.Editable, "scoring")
+	require.Contains(t, body.Editable, "mode")
 }
 
 func TestPutSettings_PersistsAndReloads(t *testing.T) {
@@ -95,13 +99,30 @@ func TestPutSettings_PersistsAndReloads(t *testing.T) {
 
 func TestPutSettings_RejectsForbiddenKey(t *testing.T) {
 	h, _, _ := buildSettingsSrv(t)
-	payload := `{"overrides":[{"key":"mode","value":"live"}]}`
+	payload := `{"overrides":[{"key":"http.bind","value":"0.0.0.0:1234"}]}`
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/v1/settings", strings.NewReader(payload))
 	req.Header.Set("X-API-Key", testAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestPutSettings_ModeIsEditable(t *testing.T) {
+	h, s, reloadCalled := buildSettingsSrv(t)
+
+	payload := `{"overrides":[{"key":"mode","value":"live"}]}`
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/v1/settings", strings.NewReader(payload))
+	req.Header.Set("X-API-Key", testAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	row, err := s.GetSettingsOverride(context.Background(), "mode")
+	require.NoError(t, err)
+	require.Equal(t, `"live"`, row.ValueJSON)
+	require.True(t, *reloadCalled)
 }
 
 func TestPutSettings_RejectsAPIKey(t *testing.T) {

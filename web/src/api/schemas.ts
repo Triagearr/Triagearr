@@ -349,6 +349,7 @@ export const NotificationSettings = z.object({
   telegram: TelegramSettings,
 });
 const SettingsValues = z.object({
+  mode: RunMode,
   scoring: ScoringSettings,
   polling: PollingSettings,
   volume: VolumeSettings,

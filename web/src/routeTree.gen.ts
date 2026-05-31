@@ -20,6 +20,7 @@ import { Route as SettingsSecurityRouteImport } from './routes/settings.security
 import { Route as SettingsScoringRouteImport } from './routes/settings.scoring'
 import { Route as SettingsPollingRouteImport } from './routes/settings.polling'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
+import { Route as SettingsModeRouteImport } from './routes/settings.mode'
 import { Route as SettingsDiskPressureRouteImport } from './routes/settings.disk-pressure'
 import { Route as SettingsDebugRouteImport } from './routes/settings.debug'
 import { Route as SettingsArrConnectionsRouteImport } from './routes/settings.arr-connections'
@@ -81,6 +82,11 @@ const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
   path: '/notifications',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsModeRoute = SettingsModeRouteImport.update({
+  id: '/mode',
+  path: '/mode',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsDiskPressureRoute = SettingsDiskPressureRouteImport.update({
   id: '/disk-pressure',
   path: '/disk-pressure',
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/settings/arr-connections': typeof SettingsArrConnectionsRoute
   '/settings/debug': typeof SettingsDebugRoute
   '/settings/disk-pressure': typeof SettingsDiskPressureRoute
+  '/settings/mode': typeof SettingsModeRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/polling': typeof SettingsPollingRoute
   '/settings/scoring': typeof SettingsScoringRoute
@@ -126,6 +133,7 @@ export interface FileRoutesByTo {
   '/settings/arr-connections': typeof SettingsArrConnectionsRoute
   '/settings/debug': typeof SettingsDebugRoute
   '/settings/disk-pressure': typeof SettingsDiskPressureRoute
+  '/settings/mode': typeof SettingsModeRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/polling': typeof SettingsPollingRoute
   '/settings/scoring': typeof SettingsScoringRoute
@@ -144,6 +152,7 @@ export interface FileRoutesById {
   '/settings/arr-connections': typeof SettingsArrConnectionsRoute
   '/settings/debug': typeof SettingsDebugRoute
   '/settings/disk-pressure': typeof SettingsDiskPressureRoute
+  '/settings/mode': typeof SettingsModeRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/polling': typeof SettingsPollingRoute
   '/settings/scoring': typeof SettingsScoringRoute
@@ -163,6 +172,7 @@ export interface FileRouteTypes {
     | '/settings/arr-connections'
     | '/settings/debug'
     | '/settings/disk-pressure'
+    | '/settings/mode'
     | '/settings/notifications'
     | '/settings/polling'
     | '/settings/scoring'
@@ -178,6 +188,7 @@ export interface FileRouteTypes {
     | '/settings/arr-connections'
     | '/settings/debug'
     | '/settings/disk-pressure'
+    | '/settings/mode'
     | '/settings/notifications'
     | '/settings/polling'
     | '/settings/scoring'
@@ -195,6 +206,7 @@ export interface FileRouteTypes {
     | '/settings/arr-connections'
     | '/settings/debug'
     | '/settings/disk-pressure'
+    | '/settings/mode'
     | '/settings/notifications'
     | '/settings/polling'
     | '/settings/scoring'
@@ -290,6 +302,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsNotificationsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/mode': {
+      id: '/settings/mode'
+      path: '/mode'
+      fullPath: '/settings/mode'
+      preLoaderRoute: typeof SettingsModeRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/disk-pressure': {
       id: '/settings/disk-pressure'
       path: '/disk-pressure'
@@ -326,6 +345,7 @@ interface SettingsRouteChildren {
   SettingsArrConnectionsRoute: typeof SettingsArrConnectionsRoute
   SettingsDebugRoute: typeof SettingsDebugRoute
   SettingsDiskPressureRoute: typeof SettingsDiskPressureRoute
+  SettingsModeRoute: typeof SettingsModeRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsPollingRoute: typeof SettingsPollingRoute
   SettingsScoringRoute: typeof SettingsScoringRoute
@@ -339,6 +359,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsArrConnectionsRoute: SettingsArrConnectionsRoute,
   SettingsDebugRoute: SettingsDebugRoute,
   SettingsDiskPressureRoute: SettingsDiskPressureRoute,
+  SettingsModeRoute: SettingsModeRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsPollingRoute: SettingsPollingRoute,
   SettingsScoringRoute: SettingsScoringRoute,

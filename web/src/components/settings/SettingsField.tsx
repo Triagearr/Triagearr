@@ -272,6 +272,8 @@ export function Field(p: FieldProps) {
 export function parseValueForKey(key: string, raw: string): unknown | Error {
   // Boolean toggle — value is always "true"/"false", never empty.
   if (key === "notifications.telegram.enabled") return raw === "true";
+  // Mode is the dry-run/live enum string ("live"/"dry-run").
+  if (key === "mode") return raw;
   if (raw.trim() === "") {
     return new Error(m.settings_field_error_empty());
   }
