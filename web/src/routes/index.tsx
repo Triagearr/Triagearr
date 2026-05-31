@@ -90,7 +90,6 @@ function ArrHealthCard({ arr, conn }: { arr: ArrViewT; conn?: { enabled: boolean
         <ArrLogo kind={kind} size={34} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="arr-tile-name" style={{ textTransform: "capitalize" }}>{arr.name}</div>
-          <div className="arr-tile-tag">{kind}</div>
         </div>
         <div className="arr-tile-state">
           {arr.healthy
