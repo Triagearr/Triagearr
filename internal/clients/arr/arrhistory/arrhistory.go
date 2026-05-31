@@ -41,7 +41,6 @@ type recordData struct {
 	DownloadClient string `json:"downloadClient"`
 	DroppedPath    string `json:"droppedPath"`
 	ImportedPath   string `json:"importedPath"`
-	Size           string `json:"size"`
 }
 
 // Fetch returns every history record strictly newer than sinceHistoryID with
@@ -95,14 +94,12 @@ func convert(r record) (triagearr.ImportRecord, bool) {
 	if err != nil {
 		return triagearr.ImportRecord{}, false
 	}
-	size, _ := strconv.ParseInt(r.Data.Size, 10, 64)
 	return triagearr.ImportRecord{
 		HistoryID:    r.ID,
 		FileID:       fid,
 		DownloadID:   triagearr.Hash(strings.ToLower(r.DownloadID)),
 		DroppedPath:  r.Data.DroppedPath,
 		ImportedPath: r.Data.ImportedPath,
-		Size:         size,
 		ImportedAt:   r.Date.UTC(),
 	}, true
 }

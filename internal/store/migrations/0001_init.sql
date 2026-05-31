@@ -142,7 +142,6 @@ CREATE TABLE arr_imports (
     download_id   TEXT      NOT NULL,
     dropped_path  TEXT      NOT NULL DEFAULT '',
     imported_path TEXT      NOT NULL DEFAULT '',
-    size          INTEGER   NOT NULL DEFAULT 0,
     history_id    INTEGER   NOT NULL,
     imported_at   TIMESTAMP NOT NULL,
     PRIMARY KEY (arr_type, file_id)

@@ -390,7 +390,7 @@ func TestPruneStaleTorrents_KeepsArrImports(t *testing.T) {
 
 	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, triagearr.ImportRecord{
 		FileID: 42, DownloadID: "stale", DroppedPath: "/dl/x", ImportedPath: "/files/tv/x.mkv",
-		Size: 100, HistoryID: 1, ImportedAt: now.Add(-30 * 24 * time.Hour),
+		HistoryID: 1, ImportedAt: now.Add(-30 * 24 * time.Hour),
 	}))
 
 	pruned, err := s.PruneStaleTorrents(ctx, 7*24*time.Hour)
@@ -432,12 +432,12 @@ func TestArrImports_JoinFiltersOrphanedFileIDs(t *testing.T) {
 	rec1 := triagearr.ImportRecord{
 		HistoryID: 100, FileID: 10, DownloadID: "abcd1234",
 		DroppedPath:  "/files/torrents/pack/E01.mkv",
-		ImportedPath: "/files/media/E01.mkv", Size: 1000, ImportedAt: now,
+		ImportedPath: "/files/media/E01.mkv", ImportedAt: now,
 	}
 	rec2 := triagearr.ImportRecord{
 		HistoryID: 101, FileID: 11, DownloadID: "abcd1234",
 		DroppedPath:  "/files/torrents/pack/E02.mkv",
-		ImportedPath: "/files/media/E02.mkv", Size: 2000, ImportedAt: now,
+		ImportedPath: "/files/media/E02.mkv", ImportedAt: now,
 	}
 	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, rec1))
 	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, rec2))
@@ -453,6 +453,28 @@ func TestArrImports_JoinFiltersOrphanedFileIDs(t *testing.T) {
 	require.Len(t, got, 1, "the orphaned arr_imports row (fileId=11 absent from media_files) must be filtered out")
 	require.Equal(t, int64(10), got[0].FileID)
 	require.Equal(t, "/files/media/E01.mkv", got[0].LivePath)
+}
+
+// Imports from old *arr versions carry no size in history (recorded 0); the
+// link size must come from the live media_files row instead, not show 0B.
+func TestLinksByHash_SizeFromMediaFileNotImport(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, triagearr.ImportRecord{
+		HistoryID: 1, FileID: 10, DownloadID: "abcd1234",
+		ImportedPath: "/files/media/E01.mkv", ImportedAt: now,
+	}))
+	require.NoError(t, s.UpsertMediaFile(ctx, triagearr.MediaFile{
+		ArrType: triagearr.ArrTypeSonarr,
+		FileID:  10, MediaID: 7, Path: "/files/media/E01.mkv", Size: 5000,
+	}))
+
+	got, err := s.LinksByHash(ctx, "abcd1234")
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, int64(5000), got[0].Size, "size must come from the live media_files row, not the import history")
 }
 
 func TestMaxHistoryID_ReturnsZeroWhenEmpty(t *testing.T) {

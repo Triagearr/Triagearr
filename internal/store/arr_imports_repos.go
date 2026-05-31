@@ -14,17 +14,16 @@ import (
 // in practice are rare.
 func (s *Store) UpsertArrImport(ctx context.Context, arrType triagearr.ArrType, rec triagearr.ImportRecord) error {
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO arr_imports(arr_type, file_id, download_id, dropped_path, imported_path, size, history_id, imported_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO arr_imports(arr_type, file_id, download_id, dropped_path, imported_path, history_id, imported_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(arr_type, file_id) DO UPDATE SET
 			download_id=excluded.download_id,
 			dropped_path=excluded.dropped_path,
 			imported_path=excluded.imported_path,
-			size=excluded.size,
 			history_id=excluded.history_id,
 			imported_at=excluded.imported_at
 	`, string(arrType), rec.FileID, string(rec.DownloadID),
-		rec.DroppedPath, rec.ImportedPath, rec.Size, rec.HistoryID, ts(rec.ImportedAt))
+		rec.DroppedPath, rec.ImportedPath, rec.HistoryID, ts(rec.ImportedAt))
 	if err != nil {
 		return fmt.Errorf("upserting arr_import %s/%d: %w", arrType, rec.FileID, err)
 	}
@@ -51,6 +50,10 @@ func (s *Store) MaxHistoryID(ctx context.Context, arrType triagearr.ArrType) (in
 // JOIN drops imports whose fileId no longer matches a current media_files
 // entry (post-upgrade, manual delete) — keeping the linker output aligned
 // with what M5 actor can actually act on.
+//
+// Size comes from media_files (mf.size), the current on-disk file size pulled
+// from the live *arr file API — not the import-history size, which old *arr
+// versions omitted (recorded as 0) for libraries imported years ago.
 func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagearr.Link, error) {
 	type row struct {
 		ArrType      string `db:"arr_type"`
@@ -65,7 +68,7 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 	var rows []row
 	if err := s.reader.SelectContext(ctx, &rows, `
 		SELECT ai.arr_type, ai.file_id, ai.download_id,
-		       ai.dropped_path, ai.imported_path, ai.size, mf.path AS live_path,
+		       ai.dropped_path, ai.imported_path, mf.size, mf.path AS live_path,
 		       COALESCE(m.title_slug, '') AS title_slug
 		FROM arr_imports ai
 		JOIN media_files mf

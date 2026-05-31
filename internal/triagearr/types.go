@@ -235,7 +235,6 @@ type ImportRecord struct {
 	DownloadID   Hash   // qBit info-hash, lowercased
 	DroppedPath  string // source path as reported by *arr at import time
 	ImportedPath string // destination path inside the *arr library
-	Size         int64
 	ImportedAt   time.Time
 }
 

@@ -63,7 +63,6 @@ func TestFetch_NormalisesAndFilters(t *testing.T) {
 				"data": map[string]any{
 					"fileId": "42", "downloadClient": "qBittorrent",
 					"droppedPath": "/files/torrents/x.mkv", "importedPath": "/files/media/x.mkv",
-					"size": "12345",
 				},
 			},
 			{ // empty downloadId — must be dropped
@@ -71,7 +70,7 @@ func TestFetch_NormalisesAndFilters(t *testing.T) {
 				"downloadId": "",
 				"data": map[string]any{
 					"fileId": "41", "downloadClient": "qBittorrent",
-					"droppedPath": "", "importedPath": "/files/media/y.mkv", "size": "0",
+					"droppedPath": "", "importedPath": "/files/media/y.mkv",
 				},
 			},
 			{ // non-qBit client — must be dropped
@@ -79,7 +78,7 @@ func TestFetch_NormalisesAndFilters(t *testing.T) {
 				"downloadId": "1234567890ABCDEF1234567890ABCDEF12345678",
 				"data": map[string]any{
 					"fileId": "40", "downloadClient": "Deluge",
-					"droppedPath": "", "importedPath": "", "size": "0",
+					"droppedPath": "", "importedPath": "",
 				},
 			},
 		},
@@ -93,7 +92,6 @@ func TestFetch_NormalisesAndFilters(t *testing.T) {
 	require.Equal(t, int64(42), recs[0].FileID)
 	require.Equal(t, triagearr.Hash("abcdef0123456789abcdef0123456789abcdef01"), recs[0].DownloadID,
 		"downloadId must be lowercased on the way in")
-	require.Equal(t, int64(12345), recs[0].Size)
 }
 
 func TestFetch_StopsAtSinceCursor(t *testing.T) {
@@ -103,7 +101,7 @@ func TestFetch_StopsAtSinceCursor(t *testing.T) {
 			"downloadId": strings.Repeat("a", 40),
 			"data": map[string]any{
 				"fileId": fmt.Sprintf("%d", id*10), "downloadClient": "qBittorrent",
-				"droppedPath": "", "importedPath": "", "size": "0",
+				"droppedPath": "", "importedPath": "",
 			},
 		}
 	}
@@ -124,7 +122,7 @@ func TestFetch_Paginates(t *testing.T) {
 			"downloadId": strings.Repeat("b", 40),
 			"data": map[string]any{
 				"fileId": fmt.Sprintf("%d", id), "downloadClient": "qBittorrent",
-				"droppedPath": "", "importedPath": "", "size": "0",
+				"droppedPath": "", "importedPath": "",
 			},
 		}
 	}
