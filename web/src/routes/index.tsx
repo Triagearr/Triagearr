@@ -80,39 +80,38 @@ const StatCard = memo(function StatCard({ label, value, foot, accent }: StatCard
   );
 });
 
-// ── *arr health tile — same visual as Settings tiles, uses real SVG logos ─────
-function ArrHealthCard({ arr, conn }: { arr: ArrViewT; conn?: { enabled: boolean; act: boolean } }) {
-  const kind = arr.type.toLowerCase();
-  const state = !arr.healthy ? "down" : "healthy";
+// ── Health tile — shared shell for the *arr and torrent-client dashboard tiles.
+// Same visual as the Settings connection tiles; callers supply the logo, the
+// status chips, and the health fields.
+function HealthTile({ logo, name, url, healthy, chips, lastError, lastHealthCheck }: {
+  logo: React.ReactNode;
+  name: string;
+  url: string;
+  healthy: boolean;
+  chips?: { label: string; on: boolean; danger?: boolean }[];
+  lastError?: string | null;
+  lastHealthCheck?: string | null;
+}) {
   return (
-    <div className={`arr-tile state-${state}`} style={{ cursor: "default" }}>
+    <div className={`arr-tile state-${healthy ? "healthy" : "down"}`} style={{ cursor: "default" }}>
       <div className="arr-tile-head">
-        <ArrLogo kind={kind} size={34} />
+        {logo}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="arr-tile-name" style={{ textTransform: "capitalize" }}>{arr.name}</div>
+          <div className="arr-tile-name" style={{ textTransform: "capitalize" }}>{name}</div>
         </div>
         <div className="arr-tile-state">
-          {arr.healthy
+          {healthy
             ? <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>{m.common_healthy()}</span></>
             : <><span className="dot red pulse" /><span style={{ color: "var(--red-2)" }}>{m.dash_arr_down()}</span></>
           }
         </div>
       </div>
-      <div className="arr-tile-url">{arr.url}</div>
-      {conn && (
-        <TileChips chips={[
-          { label: m.settings_chip_enabled(), on: conn.enabled },
-          { label: m.settings_chip_act(), on: conn.act, danger: true },
-        ]} />
-      )}
-      {arr.last_error && (
-        <div className="arr-tile-error">
-          {arr.last_error}
-        </div>
-      )}
+      <div className="arr-tile-url">{url}</div>
+      {chips && <TileChips chips={chips} />}
+      {lastError && <div className="arr-tile-error">{lastError}</div>}
       <div className="arr-tile-foot">
-        {arr.last_health_check
-          ? <span>{m.dash_arr_checked()} {relativeTime(arr.last_health_check)}</span>
+        {lastHealthCheck
+          ? <span>{m.dash_arr_checked()} {relativeTime(lastHealthCheck)}</span>
           : <span>{m.dash_arr_never_checked()}</span>
         }
       </div>
@@ -120,47 +119,42 @@ function ArrHealthCard({ arr, conn }: { arr: ArrViewT; conn?: { enabled: boolean
   );
 }
 
-// ── Torrent-client health tile — mirrors ArrHealthCard; data already lives in
-// the /summary response (torrent_clients[]). No per-client act flag exists, so
-// the chips surface enabled + delete-files (what governs participation).
+function ArrHealthCard({ arr, conn }: { arr: ArrViewT; conn?: { enabled: boolean; act: boolean } }) {
+  return (
+    <HealthTile
+      logo={<ArrLogo kind={arr.type.toLowerCase()} size={34} />}
+      name={arr.name}
+      url={arr.url}
+      healthy={arr.healthy}
+      chips={conn && [
+        { label: m.settings_chip_enabled(), on: conn.enabled },
+        { label: m.settings_chip_act(), on: conn.act, danger: true },
+      ]}
+      lastError={arr.last_error}
+      lastHealthCheck={arr.last_health_check}
+    />
+  );
+}
+
+// No per-client act flag exists, so the chips surface enabled + delete-files
+// (what governs the torrent client's participation in a live run).
 function ClientHealthCard({ client, conn }: {
   client: ClientViewT;
   conn?: { enabled: boolean; delete_with_files: boolean };
 }) {
-  const state = !client.healthy ? "down" : "healthy";
   return (
-    <div className={`arr-tile state-${state}`} style={{ cursor: "default" }}>
-      <div className="arr-tile-head">
-        <TorrentClientLogo kind={client.kind} size={34} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="arr-tile-name" style={{ textTransform: "capitalize" }}>{client.kind}</div>
-        </div>
-        <div className="arr-tile-state">
-          {client.healthy
-            ? <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>{m.common_healthy()}</span></>
-            : <><span className="dot red pulse" /><span style={{ color: "var(--red-2)" }}>{m.dash_arr_down()}</span></>
-          }
-        </div>
-      </div>
-      <div className="arr-tile-url">{client.url}</div>
-      {conn && (
-        <TileChips chips={[
-          { label: m.settings_chip_enabled(), on: conn.enabled },
-          { label: m.settings_chip_delete_files(), on: conn.delete_with_files, danger: true },
-        ]} />
-      )}
-      {client.last_error && (
-        <div className="arr-tile-error">
-          {client.last_error}
-        </div>
-      )}
-      <div className="arr-tile-foot">
-        {client.last_health_check
-          ? <span>{m.dash_arr_checked()} {relativeTime(client.last_health_check)}</span>
-          : <span>{m.dash_arr_never_checked()}</span>
-        }
-      </div>
-    </div>
+    <HealthTile
+      logo={<TorrentClientLogo kind={client.kind} size={34} />}
+      name={client.kind}
+      url={client.url}
+      healthy={client.healthy}
+      chips={conn && [
+        { label: m.settings_chip_enabled(), on: conn.enabled },
+        { label: m.settings_chip_delete_files(), on: conn.delete_with_files, danger: true },
+      ]}
+      lastError={client.last_error}
+      lastHealthCheck={client.last_health_check}
+    />
   );
 }
 

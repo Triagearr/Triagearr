@@ -5,6 +5,7 @@ import { Drawer } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
 import {
@@ -151,23 +152,7 @@ function ToggleRow({
         <div className="text-sm font-medium">{label}</div>
         {hint && <div className="text-xs text-muted-foreground mt-0.5">{hint}</div>}
       </div>
-      <button
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          checked ? "bg-primary" : "bg-input",
-        )}
-      >
-        <span
-          className={cn(
-            "pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow-lg transition-transform",
-            checked ? "translate-x-5" : "translate-x-0",
-          )}
-        />
-      </button>
+      <Switch checked={checked} onCheckedChange={onChange} />
     </div>
   );
 }

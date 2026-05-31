@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Callout } from "@/components/ui/Callout";
 import { Modal } from "@/components/ui/Modal";
-import { cn } from "@/lib/cn";
+import { Switch } from "@/components/ui/Switch";
 import { m } from "@/paraglide/messages";
 
 // ModeSection is intentionally standalone (not built on SectionShell): mode is
@@ -75,24 +75,7 @@ export function ModeSection() {
               {m.settings_mode_toggle_hint()}
             </div>
           </div>
-          <button
-            role="switch"
-            aria-checked={isLive}
-            disabled={busy}
-            onClick={() => onToggle(!isLive)}
-            className={cn(
-              "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
-              isLive ? "bg-rose-600" : "bg-input",
-            )}
-          >
-            <span
-              className={cn(
-                "pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow-lg transition-transform",
-                isLive ? "translate-x-5" : "translate-x-0",
-              )}
-            />
-          </button>
+          <Switch checked={isLive} onCheckedChange={onToggle} disabled={busy} variant="danger" />
         </div>
 
         {isOverridden && !busy && (
