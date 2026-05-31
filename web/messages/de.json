@@ -142,6 +142,7 @@
   "settings_scoring_hnr_window_label": "HnR-Fenster (Tage)",
   "settings_scoring_weights": "Gewichtungen",
   "settings_scoring_tip_hnr_window_days": "Tage, die ein frisch fertiggestellter privater Torrent vor dem Löschen geschützt ist (Hit-and-Run-Regel).",
+  "settings_scoring_tip_hnr_window_veto": "Hartes Veto (-10000): Der Torrent befindet sich noch in seinem Hit-and-Run-Fenster und ist bis zu dessen Ablauf vor dem Löschen geschützt. Nicht konfigurierbar.",
   "settings_scoring_tip_ratio_obligation_met": "Bonus, sobald ein privater Torrent Ratio und Seed-Zeit erfüllt hat — löschbar.",
   "settings_scoring_tip_upload_velocity_inv": "Bonus für Torrents, die kaum noch hochladen; aktiv seedende Torrents erhalten weniger.",
   "settings_scoring_tip_age_days": "Kleiner täglicher Bonus, damit ältere Torrents etwas höher ranken. Stichentscheid, kein Hauptsignal.",

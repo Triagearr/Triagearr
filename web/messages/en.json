@@ -142,6 +142,7 @@
   "settings_scoring_hnr_window_label": "HnR window (days)",
   "settings_scoring_weights": "Weights",
   "settings_scoring_tip_hnr_window_days": "Days a freshly-completed private torrent is shielded from deletion to satisfy hit-and-run rules.",
+  "settings_scoring_tip_hnr_window_veto": "Hard veto (-10000): the torrent is still inside its hit-and-run window and is shielded from deletion until the window elapses. Non-configurable.",
   "settings_scoring_tip_ratio_obligation_met": "Bonus once a private torrent has met its required ratio and seed time — safe to remove.",
   "settings_scoring_tip_upload_velocity_inv": "Bonus for torrents barely uploading anymore; actively-seeding torrents score lower.",
   "settings_scoring_tip_age_days": "Tiny daily bonus so older torrents rank slightly higher. A tiebreaker, not a main signal.",

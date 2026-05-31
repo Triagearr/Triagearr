@@ -142,6 +142,7 @@
   "settings_scoring_hnr_window_label": "Fenêtre HnR (jours)",
   "settings_scoring_weights": "Pondérations",
   "settings_scoring_tip_hnr_window_days": "Nombre de jours pendant lesquels un torrent privé fraîchement terminé est protégé de la suppression (règle hit-and-run).",
+  "settings_scoring_tip_hnr_window_veto": "Veto absolu (-10000) : le torrent est encore dans sa fenêtre hit-and-run et reste protégé de la suppression jusqu'à expiration. Non configurable.",
   "settings_scoring_tip_ratio_obligation_met": "Bonus quand un torrent privé a rempli son ratio et son temps de seed requis — supprimable.",
   "settings_scoring_tip_upload_velocity_inv": "Bonus pour les torrents qui n'uploadent presque plus ; ceux qui seedent activement scorent moins.",
   "settings_scoring_tip_age_days": "Petit bonus quotidien pour faire remonter légèrement les vieux torrents. Départage, pas signal principal.",

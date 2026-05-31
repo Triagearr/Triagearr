@@ -142,6 +142,7 @@
   "settings_scoring_hnr_window_label": "Ventana HnR (días)",
   "settings_scoring_weights": "Pesos",
   "settings_scoring_tip_hnr_window_days": "Días que un torrent privado recién completado queda protegido de la eliminación (regla hit-and-run).",
+  "settings_scoring_tip_hnr_window_veto": "Veto absoluto (-10000): el torrent sigue dentro de su ventana hit-and-run y queda protegido de la eliminación hasta que expire. No configurable.",
   "settings_scoring_tip_ratio_obligation_met": "Bonificación cuando un torrent privado cumple su ratio y tiempo de siembra — eliminable.",
   "settings_scoring_tip_upload_velocity_inv": "Bonificación para torrents que apenas suben ya; los que siembran activamente puntúan menos.",
   "settings_scoring_tip_age_days": "Pequeña bonificación diaria para subir un poco los torrents antiguos. Desempate, no señal principal.",
