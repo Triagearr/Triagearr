@@ -123,23 +123,15 @@ func (s *Scorer) ScoreAll(ctx context.Context) (ScoreAllStats, error) {
 		return ScoreAllStats{}, err
 	}
 	now := start
-
-	// Pass 1: snapshot stats per torrent. The map drives both the global avg
-	// computation and the per-torrent factor pass below — each torrent's
-	// stats are loaded exactly once.
-	statsByHash := make(map[string]store.SnapshotStats, len(torrents))
 	var stats ScoreAllStats
-	for _, t := range torrents {
-		if ctx.Err() != nil {
-			return stats, ctx.Err()
-		}
-		sn, err := s.store.ScoringSnapshotStats(ctx, triagearr.Hash(t.Hash), now)
-		if err != nil {
-			slog.Warn("loading snapshot stats failed", "hash", t.Hash, "err", err)
-			stats.Errors++
-			continue
-		}
-		statsByHash[t.Hash] = sn
+
+	// Pass 1: load every torrent's snapshot stats in one bulk query rather than
+	// four-per-torrent (the old loop fanned out to ~4N SELECTs on every pass).
+	// A snapshot-less torrent is absent from the map; pass 2 reads the zero
+	// value, exactly what the per-hash loader returned for it.
+	statsByHash, err := s.store.ScoringSnapshotStatsAll(ctx, now)
+	if err != nil {
+		return stats, fmt.Errorf("prefetch snapshot stats: %w", err)
 	}
 	globalAvg := globalAvgFromStats(statsByHash)
 
@@ -158,31 +150,38 @@ func (s *Scorer) ScoreAll(ctx context.Context) (ScoreAllStats, error) {
 		return stats, err
 	}
 
-	// Pass 2: evaluate factors against the cached stats.
+	// Pass 2: evaluate factors against the cached stats, collecting verdicts to
+	// persist in one batched write after the loop (was one tx per torrent).
+	rows := make([]store.ScoreRow, 0, len(torrents))
 	for _, t := range torrents {
 		if ctx.Err() != nil {
 			return stats, ctx.Err()
 		}
-		sn, ok := statsByHash[t.Hash]
-		if !ok {
-			// Pass-1 error already counted; skip rather than double-count.
-			continue
-		}
+		// A snapshot-less torrent has no map entry; the zero value matches what
+		// the per-hash loader produced, so it is still scored.
+		sn := statsByHash[t.Hash]
 		b, err := s.scoreWithPrefetched(t, sn, globalAvg, trackersByHash[t.Hash], linkedByHash[t.Hash], defaults, policyByHost)
 		if err != nil {
 			slog.Warn("scoring torrent failed", "hash", t.Hash, "err", err)
 			stats.Errors++
 			continue
 		}
-		if err := s.persist(ctx, b); err != nil {
-			slog.Warn("persisting score failed", "hash", t.Hash, "err", err)
+		row, err := breakdownToRow(b)
+		if err != nil {
+			slog.Warn("building score row failed", "hash", t.Hash, "err", err)
 			stats.Errors++
 			continue
 		}
+		rows = append(rows, row)
 		stats.Scored++
 		if b.Excluded {
 			stats.Excluded++
 		}
+	}
+	// One commit for the whole pass. On failure the counts above are not
+	// trustworthy (the tx rolled back), so surface the error to ScorePass.
+	if err := s.store.UpsertScores(ctx, rows); err != nil {
+		return stats, fmt.Errorf("persisting scores: %w", err)
 	}
 	stats.Duration = s.now().Sub(start)
 	return stats, nil
@@ -205,27 +204,18 @@ func (s *Scorer) ScorePass(ctx context.Context) error {
 	return nil
 }
 
-// computeGlobalAvgVelocity rebuilds the normaliser for the ScoreOne path. It
-// walks every torrent's snapshot stats once. The seed map lets the caller
-// avoid re-fetching the target hash that ScoreOne already loaded.
+// computeGlobalAvgVelocity rebuilds the normaliser for the ScoreOne path with
+// the same bulk load ScoreAll uses. The seed map lets the caller's
+// already-loaded target hash win over the bulk read. globalAvgFromStats ignores
+// zero-velocity entries, and any nonzero velocity implies snapshots, so
+// averaging over "all torrents" and "hashes-with-snapshots" is identical.
 func (s *Scorer) computeGlobalAvgVelocity(ctx context.Context, now time.Time, seed map[string]store.SnapshotStats) (float64, error) {
-	torrents, err := s.store.ListTorrentsForScoring(ctx)
+	by, err := s.store.ScoringSnapshotStatsAll(ctx, now)
 	if err != nil {
 		return 0, err
 	}
-	by := make(map[string]store.SnapshotStats, len(torrents))
 	for k, v := range seed {
 		by[k] = v
-	}
-	for _, t := range torrents {
-		if _, ok := by[t.Hash]; ok {
-			continue
-		}
-		sn, err := s.store.ScoringSnapshotStats(ctx, triagearr.Hash(t.Hash), now)
-		if err != nil {
-			return 0, fmt.Errorf("loading snapshot stats for %s: %w", t.Hash, err)
-		}
-		by[t.Hash] = sn
 	}
 	return globalAvgFromStats(by), nil
 }
@@ -296,12 +286,15 @@ func (s *Scorer) scoreWithPrefetched(t store.ScoringTorrent, snaps store.Snapsho
 	}, nil
 }
 
-func (s *Scorer) persist(ctx context.Context, b Breakdown) error {
+// breakdownToRow flattens a Breakdown into the persisted ScoreRow, marshalling
+// the factor slice to JSON. Shared by the per-hash persist (ScoreOne) and the
+// batched ScoreAll path so both serialise verdicts identically.
+func breakdownToRow(b Breakdown) (store.ScoreRow, error) {
 	payload, err := json.Marshal(b.Factors)
 	if err != nil {
-		return fmt.Errorf("marshalling factors: %w", err)
+		return store.ScoreRow{}, fmt.Errorf("marshalling factors: %w", err)
 	}
-	return s.store.UpsertScore(ctx, store.ScoreRow{
+	return store.ScoreRow{
 		Hash:             b.Hash,
 		Score:            b.Score,
 		Private:          b.Private,
@@ -310,5 +303,13 @@ func (s *Scorer) persist(ctx context.Context, b Breakdown) error {
 		ExclusionReasons: strings.Join(b.ExclusionReasons, ","),
 		FactorsJSON:      string(payload),
 		ComputedAt:       b.ComputedAt,
-	})
+	}, nil
+}
+
+func (s *Scorer) persist(ctx context.Context, b Breakdown) error {
+	row, err := breakdownToRow(b)
+	if err != nil {
+		return err
+	}
+	return s.store.UpsertScore(ctx, row)
 }

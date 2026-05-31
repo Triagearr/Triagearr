@@ -20,6 +20,8 @@ type fakeMaintStore struct {
 	pruneOlderThan   time.Duration
 	vacuumCalls      int
 	vacuumMin        int64
+	checkpointCalls  int
+	optimizeCalls    int
 
 	errDownsample error
 	errRetention  error
@@ -51,6 +53,16 @@ func (f *fakeMaintStore) Vacuum(_ context.Context, minReclaim int64) (bool, int6
 	return true, 1024, f.errVacuum
 }
 
+func (f *fakeMaintStore) CheckpointWAL(_ context.Context) error {
+	f.checkpointCalls++
+	return nil
+}
+
+func (f *fakeMaintStore) Optimize(_ context.Context) error {
+	f.optimizeCalls++
+	return nil
+}
+
 func fullConfig() MaintenanceConfig {
 	return MaintenanceConfig{
 		Schedule:              "0 3 * * *",
@@ -74,6 +86,8 @@ func TestMaintenance_runOnce_RunsEveryStep(t *testing.T) {
 	require.Equal(t, 1, fs.retentionCalls)
 	require.Equal(t, 1, fs.pruneCalls)
 	require.Equal(t, 1, fs.vacuumCalls)
+	require.Equal(t, 1, fs.checkpointCalls)
+	require.Equal(t, 1, fs.optimizeCalls)
 
 	// Args are derived from config.
 	require.WithinDuration(t, time.Now().UTC().Add(-cfg.DownsampleAge), fs.downsampleBefore, 5*time.Second)

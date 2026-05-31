@@ -163,3 +163,30 @@ func (s *Store) Vacuum(ctx context.Context, minReclaimBytes int64) (ran bool, re
 	}
 	return true, reclaimable, nil
 }
+
+// Optimize runs `PRAGMA optimize`, refreshing the planner's sqlite_stat1
+// statistics so the JOIN-heavy reads (dashboard list, scoring prefetch, the
+// snapshot window queries) keep choosing good plans as table sizes drift.
+// analysis_limit caps per-index sampling so the call stays cheap even on the
+// large snapshots tables. Both run on the single writer connection. Cheap and
+// safe to call after migrations and at the end of the daily maintenance tick.
+func (s *Store) Optimize(ctx context.Context) error {
+	if _, err := s.writer.ExecContext(ctx, `PRAGMA analysis_limit=400`); err != nil {
+		return fmt.Errorf("setting analysis_limit: %w", err)
+	}
+	if _, err := s.writer.ExecContext(ctx, `PRAGMA optimize`); err != nil {
+		return fmt.Errorf("optimize: %w", err)
+	}
+	return nil
+}
+
+// CheckpointWAL flushes the write-ahead log into the main DB file and truncates
+// the -wal file. The ~5k-row ingestion and scoring batches grow the WAL between
+// SQLite's own PASSIVE auto-checkpoints, which can never shrink it; a TRUNCATE
+// checkpoint at the end of maintenance keeps the on-disk -wal bounded.
+func (s *Store) CheckpointWAL(ctx context.Context) error {
+	if _, err := s.writer.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return fmt.Errorf("wal checkpoint: %w", err)
+	}
+	return nil
+}

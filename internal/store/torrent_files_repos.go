@@ -42,6 +42,47 @@ func (s *Store) UpsertTorrentFile(ctx context.Context, hash triagearr.Hash, relP
 	return nil
 }
 
+// UpsertTorrentFiles batches UpsertTorrentFile for one files-poller pass in a
+// single transaction with one prepared statement. The poller stats every file
+// of every torrent (~50k rows on a large library); writing them one Exec at a
+// time meant 50k separate round-trips on the writer connection. Each row's
+// SampledAt maps a nil pointer to SQL NULL, same as the single-row variant.
+func (s *Store) UpsertTorrentFiles(ctx context.Context, rows []TorrentFileRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	tx, err := s.writer.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for torrent_files batch: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	stmt, err := tx.PreparexContext(ctx, `
+		INSERT INTO torrent_files(torrent_hash, rel_path, size_bytes, nlink, sampled_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(torrent_hash, rel_path) DO UPDATE SET
+			size_bytes=excluded.size_bytes,
+			nlink=excluded.nlink,
+			sampled_at=excluded.sampled_at
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare torrent_files upsert: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+	for _, r := range rows {
+		var sampledArg any
+		if r.SampledAt != nil && !r.SampledAt.IsZero() {
+			sampledArg = ts(*r.SampledAt)
+		}
+		if _, err := stmt.ExecContext(ctx, r.TorrentHash, r.RelPath, r.SizeBytes, r.Nlink, sampledArg); err != nil {
+			return fmt.Errorf("upserting torrent_file %s/%s: %w", r.TorrentHash, r.RelPath, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit torrent_files batch: %w", err)
+	}
+	return nil
+}
+
 // TorrentFilesByHash returns all files tracked for the given torrent.
 func (s *Store) TorrentFilesByHash(ctx context.Context, hash triagearr.Hash) ([]TorrentFileRow, error) {
 	var rows []TorrentFileRow

@@ -16,7 +16,7 @@ import (
 // FilesStore is the subset of *store.Store the files poller needs.
 type FilesStore interface {
 	ListTorrentsBasic(ctx context.Context) ([]store.TorrentBasic, error)
-	UpsertTorrentFile(ctx context.Context, hash triagearr.Hash, relPath string, size int64, nlink *int64, sampledAt time.Time) error
+	UpsertTorrentFiles(ctx context.Context, rows []store.TorrentFileRow) error
 }
 
 // FilesQbit is the qBit subset the files poller needs.
@@ -74,6 +74,7 @@ func (p *FilesPoller) tick(ctx context.Context) error {
 			slog.Warn("files poller: TorrentFiles failed", "hash", t.Hash, "err", err)
 			continue
 		}
+		batch := make([]store.TorrentFileRow, 0, len(files))
 		for _, f := range files {
 			abs := filepath.Join(t.SavePath, f.Name)
 			size, nlink, statErr := p.Stat(abs)
@@ -103,12 +104,17 @@ func (p *FilesPoller) tick(ctx context.Context) error {
 					"hash", t.Hash, "path", abs, "err", statErr)
 				continue
 			}
-			if err := p.Store.UpsertTorrentFile(ctx, triagearr.Hash(t.Hash), f.Name, storedSize, nlinkArg, now); err != nil {
-				slog.Warn("files poller: upsert failed", "hash", t.Hash, "path", f.Name, "err", err)
-				continue
-			}
-			totalFiles++
+			sampledAt := now
+			batch = append(batch, store.TorrentFileRow{
+				TorrentHash: t.Hash, RelPath: f.Name, SizeBytes: storedSize,
+				Nlink: nlinkArg, SampledAt: &sampledAt,
+			})
 		}
+		if err := p.Store.UpsertTorrentFiles(ctx, batch); err != nil {
+			slog.Warn("files poller: batch upsert failed", "hash", t.Hash, "err", err)
+			continue
+		}
+		totalFiles += len(batch)
 	}
 	slog.Info("files tick complete",
 		"torrents", len(torrents),

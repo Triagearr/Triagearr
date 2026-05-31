@@ -30,6 +30,45 @@ func (s *Store) UpsertArrImport(ctx context.Context, arrType triagearr.ArrType, 
 	return nil
 }
 
+// UpsertArrImports batches UpsertArrImport for one *arr import-delta in a
+// single transaction with one prepared statement.
+func (s *Store) UpsertArrImports(ctx context.Context, arrType triagearr.ArrType, recs []triagearr.ImportRecord) error {
+	if len(recs) == 0 {
+		return nil
+	}
+	tx, err := s.writer.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for arr_imports batch: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	stmt, err := tx.PreparexContext(ctx, `
+		INSERT INTO arr_imports(arr_type, file_id, download_id, dropped_path, imported_path, history_id, imported_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(arr_type, file_id) DO UPDATE SET
+			download_id=excluded.download_id,
+			dropped_path=excluded.dropped_path,
+			imported_path=excluded.imported_path,
+			history_id=excluded.history_id,
+			imported_at=excluded.imported_at
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare arr_imports upsert: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+	for _, rec := range recs {
+		if _, err := stmt.ExecContext(ctx,
+			string(arrType), rec.FileID, string(rec.DownloadID),
+			rec.DroppedPath, rec.ImportedPath, rec.HistoryID, ts(rec.ImportedAt),
+		); err != nil {
+			return fmt.Errorf("upserting arr_import %s/%d: %w", arrType, rec.FileID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit arr_imports batch: %w", err)
+	}
+	return nil
+}
+
 // MaxHistoryID returns the highest history.id we've ingested for one *arr
 // instance, so the next poll can fetch only the delta.
 func (s *Store) MaxHistoryID(ctx context.Context, arrType triagearr.ArrType) (int64, error) {
