@@ -87,7 +87,8 @@ function FactorRow({ f }: { f: SimFactorT }) {
             <div className={`h-full rounded-full ${tone}`} style={{ width: `${width}%` }} />
           </div>
           <span
-            className={`justify-self-end font-mono font-medium ${c > 0 ? "text-emerald-700 dark:text-emerald-300" : c < 0 ? "text-rose-700 dark:text-rose-400" : "text-muted-foreground"}`}
+            className="justify-self-end font-mono font-medium"
+            style={{ color: c > 0 ? "var(--green-2)" : c < 0 ? "var(--red-2)" : "var(--fg-3)" }}
           >
             {c > 0 ? "+" : ""}
             {fmt(c)}
@@ -128,7 +129,8 @@ function ResultRow({ r }: { r: ScoringSimResultT }) {
           {protectedHit ? m.settings_scoring_sim_protected() : m.settings_scoring_sim_reapable()}
         </Badge>
         <span
-          className={`font-mono text-sm w-16 text-right shrink-0 ${protectedHit ? "text-rose-700 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-300"}`}
+          className="font-mono text-sm w-16 text-right shrink-0"
+          style={{ color: protectedHit ? "var(--red-2)" : "var(--green-2)" }}
         >
           {fmt(score)}
         </span>

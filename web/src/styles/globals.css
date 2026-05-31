@@ -43,7 +43,7 @@
     --amber-2:   oklch(0.66  0.17  75);
     --amber-bg:  oklch(0.96  0.05  75);
     --green:     oklch(0.62  0.14  152);
-    --green-2:   oklch(0.55  0.14  152);
+    --green-2:   oklch(0.47  0.15  152);
     --green-bg:  oklch(0.96  0.04  152);
 
     /* Tailwind compat — keep existing utility classes working */
