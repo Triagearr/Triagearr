@@ -18,6 +18,7 @@ type scoreListItem struct {
 	ExclusionReasons string          `json:"exclusion_reasons,omitempty"`
 	Factors          json.RawMessage `json:"factors,omitempty"`
 	ComputedAt       time.Time       `json:"computed_at"`
+	CandidateBoost   bool            `json:"candidate_boost"`
 }
 
 func (s *Server) handleListScores(w http.ResponseWriter, r *http.Request) {
@@ -45,5 +46,6 @@ func scoreItemFromRow(row store.ScoreRow) scoreListItem {
 		ExclusionReasons: row.ExclusionReasons,
 		Factors:          json.RawMessage(row.FactorsJSON),
 		ComputedAt:       row.ComputedAt,
+		CandidateBoost:   row.CandidateBoost,
 	}
 }

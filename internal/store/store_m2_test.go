@@ -163,6 +163,63 @@ func TestSetTorrentProtected_SurvivesUpsert(t *testing.T) {
 	require.ErrorIs(t, err, sql.ErrNoRows)
 }
 
+func TestSetTorrentCandidateBoost_SurvivesUpsertAndMutuallyExclusive(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "abc", Name: "Foo", AddedOn: now, Private: false,
+	}))
+
+	// Default: not boosted.
+	boost, at, err := s.GetTorrentCandidateBoost(ctx, "abc")
+	require.NoError(t, err)
+	require.False(t, boost)
+	require.Nil(t, at)
+
+	// Boost: timestamp stamped, scorer view reflects it.
+	require.NoError(t, s.SetTorrentCandidateBoost(ctx, "abc", true))
+	boost, at, err = s.GetTorrentCandidateBoost(ctx, "abc")
+	require.NoError(t, err)
+	require.True(t, boost)
+	require.NotNil(t, at)
+	st, err := s.GetTorrentForScoring(ctx, "abc")
+	require.NoError(t, err)
+	require.True(t, st.CandidateBoost)
+
+	// Survives a qBit sync tick (columns omitted from the UPSERT SET clause).
+	require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{
+		Hash: "abc", Name: "Foo Renamed", AddedOn: now, Private: true,
+	}))
+	boost, _, err = s.GetTorrentCandidateBoost(ctx, "abc")
+	require.NoError(t, err)
+	require.True(t, boost, "qbit sync must not clobber the candidate_boost flag")
+
+	// Mutual exclusivity: protecting clears the boost.
+	require.NoError(t, s.SetTorrentProtected(ctx, "abc", true))
+	boost, _, err = s.GetTorrentCandidateBoost(ctx, "abc")
+	require.NoError(t, err)
+	require.False(t, boost, "protecting must clear the candidate_boost flag")
+
+	// And boosting clears the protect.
+	require.NoError(t, s.SetTorrentCandidateBoost(ctx, "abc", true))
+	prot, _, err := s.GetTorrentProtected(ctx, "abc")
+	require.NoError(t, err)
+	require.False(t, prot, "boosting must clear the protected flag")
+
+	// Un-boost clears the timestamp.
+	require.NoError(t, s.SetTorrentCandidateBoost(ctx, "abc", false))
+	boost, at, err = s.GetTorrentCandidateBoost(ctx, "abc")
+	require.NoError(t, err)
+	require.False(t, boost)
+	require.Nil(t, at)
+
+	// Unknown hash → sql.ErrNoRows.
+	err = s.SetTorrentCandidateBoost(ctx, "nope", true)
+	require.ErrorIs(t, err, sql.ErrNoRows)
+}
+
 func TestDownsampleRange_AggregatesAndDeletes(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

@@ -30,6 +30,7 @@ type torrentListItem struct {
 	Score           *float64 `json:"score,omitempty"`
 	Excluded        *bool    `json:"excluded,omitempty"`
 	AnyTrackerAlive *bool    `json:"any_tracker_alive,omitempty"`
+	CandidateBoost  bool     `json:"candidate_boost"`
 }
 
 type torrentListResponse struct {
@@ -83,6 +84,7 @@ func (s *Server) handleListTorrents(w http.ResponseWriter, r *http.Request) {
 			Score:           row.Score,
 			Excluded:        row.Excluded,
 			AnyTrackerAlive: row.AnyTrackerAlive,
+			CandidateBoost:  row.CandidateBoost,
 		}
 	}
 	writeJSON(w, http.StatusOK, torrentListResponse{
@@ -113,8 +115,10 @@ type torrentDetailResponse struct {
 	Private      bool       `json:"private"`
 	Tags         string     `json:"tags"`
 	LastSeen     time.Time  `json:"last_seen"`
-	Protected    bool       `json:"protected"`
-	ProtectedAt  *time.Time `json:"protected_at,omitempty"`
+	Protected        bool       `json:"protected"`
+	ProtectedAt      *time.Time `json:"protected_at,omitempty"`
+	CandidateBoost   bool       `json:"candidate_boost"`
+	CandidateBoostAt *time.Time `json:"candidate_boost_at,omitempty"`
 
 	Latest *torrentLatest `json:"latest,omitempty"`
 
@@ -188,6 +192,7 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 		Size: row.Size, AddedOn: row.AddedOn, CompletionOn: row.CompletionOn,
 		Private: row.Private, Tags: row.Tags, LastSeen: row.LastSeen,
 		Protected: row.Protected, ProtectedAt: row.ProtectedAt,
+		CandidateBoost: row.CandidateBoost, CandidateBoostAt: row.CandidateBoostAt,
 	}
 	if row.SnapshotAt != nil {
 		out.Latest = &torrentLatest{
@@ -309,6 +314,39 @@ func (s *Server) handleSetTorrentProtected(w http.ResponseWriter, r *http.Reques
 	if sc := s.engine().Scorer; sc != nil {
 		if _, err := sc.ScoreOne(r.Context(), hash); err != nil {
 			slog.Warn("rescore after protect toggle failed", "hash", hash, "err", err)
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type setCandidateBoostRequest struct {
+	CandidateBoost bool `json:"candidate_boost"`
+}
+
+// handleSetTorrentCandidateBoost toggles the user-driven "prioritize deletion"
+// flag (the inverse of protect; ADR-0030). Idempotent (PUT). Boosting clears any
+// protect flag in the store. Triggers an immediate single-hash rescore so the
+// boosted score lands without waiting for the next scoring pass.
+func (s *Server) handleSetTorrentCandidateBoost(w http.ResponseWriter, r *http.Request) {
+	hash := triagearr.Hash(strings.ToLower(r.PathValue("hash")))
+	var body setCandidateBoostRequest
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+
+	if err := s.opts.Store.SetTorrentCandidateBoost(r.Context(), hash, body.CandidateBoost); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "torrent not found")
+			return
+		}
+		writeInternal(w, err)
+		return
+	}
+
+	if sc := s.engine().Scorer; sc != nil {
+		if _, err := sc.ScoreOne(r.Context(), hash); err != nil {
+			slog.Warn("rescore after candidate_boost toggle failed", "hash", hash, "err", err)
 		}
 	}
 

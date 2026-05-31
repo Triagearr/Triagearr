@@ -149,6 +149,7 @@ func evalFactors(t store.ScoringTorrent, snaps store.SnapshotStats, globalAvg fl
 		factorSwarmBonus(snaps.SeedersAvg7d, w.SwarmHealthBonus),
 		factorHnRVeto(t, alive, cfg.HnRWindowDays, now),
 		factorTrackerDead(trackers, now, cfg.TrackerDeadGrace, w.TrackerDeadBonus),
+		factorCandidateBoost(t, CandidateBoostWeight),
 	}
 }
 
@@ -262,6 +263,18 @@ func factorHnRVeto(t store.ScoringTorrent, alive bool, windowDays int, now time.
 func factorTrackerDead(trackers []trackerView, now time.Time, grace time.Duration, w float64) Factor {
 	f := Factor{Name: FactorTrackerDead, Weight: w}
 	if allTrackersDeadSustained(trackers, now, grace) {
+		f.Value = 1.0
+		f.Contribution = w
+	}
+	return f
+}
+
+// factorCandidateBoost: user-driven "prioritize deletion" override. SCORING.md
+// §Factor 9. The +2000 weight overrides the rare-content guard but not the HnR
+// veto (-10000), which stays absolute. Mirror image of the protected exclusion.
+func factorCandidateBoost(t store.ScoringTorrent, w float64) Factor {
+	f := Factor{Name: FactorCandidateBoost, Weight: w}
+	if t.CandidateBoost {
 		f.Value = 1.0
 		f.Contribution = w
 	}

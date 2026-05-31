@@ -264,3 +264,56 @@ func TestEvaluateExclusions(t *testing.T) {
 	noReason := evaluateExclusions(store.ScoringTorrent{Hash: "h2"}, nil, qb, arrs)
 	require.Empty(t, noReason)
 }
+
+func TestFactor_CandidateBoost(t *testing.T) {
+	const w = CandidateBoostWeight
+	off := factorCandidateBoost(store.ScoringTorrent{Hash: "h"}, w)
+	require.Equal(t, 0.0, off.Contribution)
+	on := factorCandidateBoost(store.ScoringTorrent{Hash: "h", CandidateBoost: true}, w)
+	require.Equal(t, w, on.Contribution)
+	require.Equal(t, FactorCandidateBoost, on.Name)
+}
+
+// The boost overrides the rare-content guard (-1000) but never the HnR veto
+// (-10000). These are the two safety invariants from ADR-0030, exercised
+// through the real evalFactors pipeline so the weights and gates stay honest.
+func TestCandidateBoost_OverridesRareGuardButNotHnR(t *testing.T) {
+	cfg := config.ScoringConfig{
+		HnRWindowDays:    14,
+		TrackerDeadGrace: 7 * 24 * time.Hour,
+		Weights: config.ScoringWeights{
+			RatioObligationMet: 50, UploadVelocityInv: 30, AgeDays: 0.1,
+			SeedersLowGuard: -1000, SwarmHealthBonus: 5, TrackerDeadBonus: 40,
+		},
+	}
+	policy := effectivePolicy{MinSeedDays: 30, MinRatio: 1.0, RareThreshold: 3}
+	live := []trackerView{{Host: "p", Status: triagearr.TrackerWorking, LastChecked: fixedNow}}
+	alive := anyTrackerAlive(live)
+
+	sum := func(t store.ScoringTorrent, snaps store.SnapshotStats) float64 {
+		var total float64
+		for _, f := range evalFactors(t, snaps, simGlobalAvg, live, cfg, policy, alive, fixedNow) {
+			total += f.Contribution
+		}
+		return total
+	}
+
+	// Rare content (1 seeder, live tracker) past the HnR window: the guard fires.
+	rare := store.ScoringTorrent{Hash: "r", Private: true,
+		AddedOn: fixedNow.Add(-90 * 24 * time.Hour), CompletionOn: ptr(fixedNow.Add(-90 * 24 * time.Hour))}
+	rareSnaps := store.SnapshotStats{SeedersAvg7d: 1, LatestRatio: 2.0}
+	require.Negative(t, sum(rare, rareSnaps), "rare content is guarded without a boost")
+
+	rareBoosted := rare
+	rareBoosted.CandidateBoost = true
+	require.Positive(t, sum(rareBoosted, rareSnaps), "boost overrides the rare-content guard")
+
+	// In-HnR-window private torrent: the boost must NOT lift the veto.
+	hnr := store.ScoringTorrent{Hash: "h", Private: true, CandidateBoost: true,
+		AddedOn: fixedNow.Add(-3 * 24 * time.Hour), CompletionOn: ptr(fixedNow.Add(-3 * 24 * time.Hour))}
+	hnrSnaps := store.SnapshotStats{SeedersAvg7d: 50, LatestRatio: 0.5}
+	// −10000 veto + 2000 boost + small positive factors ≈ −7960: still deeply
+	// negative, so the boost can never lift the HnR veto.
+	require.Less(t, sum(hnr, hnrSnaps), -7000.0,
+		"HnR veto still dominates a boosted in-window torrent")
+}

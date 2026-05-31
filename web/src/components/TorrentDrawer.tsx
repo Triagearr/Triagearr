@@ -1,6 +1,6 @@
-import { ArrowUpRight, Lock, Shield, ShieldOff, Unlock, X } from "lucide-react";
+import { ArrowUpRight, Flame, Lock, Shield, ShieldOff, Snowflake, Unlock, X } from "lucide-react";
 import { memo, useMemo } from "react";
-import { useSetTorrentProtected, useSnapshots, useTorrent } from "@/api/hooks";
+import { useSetTorrentCandidateBoost, useSetTorrentProtected, useSnapshots, useTorrent } from "@/api/hooks";
 import { ArrLogo } from "@/components/ArrLogo";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { scoreTier } from "@/components/ScoreCell";
@@ -84,6 +84,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
   const torrent = useTorrent(hash ?? "");
   const snaps = useSnapshots(hash ?? "");
   const setProtected = useSetTorrentProtected();
+  const setCandidateBoost = useSetTorrentCandidateBoost();
 
   const ratioSeries = useMemo(
     () => (snaps.data?.snapshots ?? []).map((p) => ({ ts: p.ts, value: p.ratio })),
@@ -120,6 +121,7 @@ export function TorrentDrawer({ hash, onClose }: Props) {
                   : <span className="badge"><Unlock size={9} /> {m.comp_drawer_public()}</span>
                 }
                 {t.protected && <span className="badge badge-warn"><Shield size={9} /> {m.comp_drawer_protected()}</span>}
+                {t.candidate_boost && <span className="badge badge-danger"><Flame size={9} /> {m.comp_drawer_prioritized()}</span>}
                 {t.score?.excluded && <span className="badge badge-warn">{m.comp_drawer_excluded()}</span>}
                 {t.score && !t.score.any_tracker_alive && (
                   <span className="badge badge-danger">{m.comp_drawer_tracker_dead()}</span>
@@ -254,6 +256,18 @@ export function TorrentDrawer({ hash, onClose }: Props) {
                 }
               >
                 {t.protected ? <><ShieldOff size={11} /> {m.comp_drawer_unprotect()}</> : <><Shield size={11} /> {m.comp_drawer_protect()}</>}
+              </button>
+              <button
+                className={`btn btn-sm ${t.candidate_boost ? "" : "btn-destructive"}`}
+                disabled={setCandidateBoost.isPending}
+                onClick={() => setCandidateBoost.mutate({ hash: t.hash, boost: !t.candidate_boost })}
+                title={
+                  t.candidate_boost
+                    ? m.comp_drawer_unprioritize_title()
+                    : m.comp_drawer_prioritize_title()
+                }
+              >
+                {t.candidate_boost ? <><Snowflake size={11} /> {m.comp_drawer_unprioritize()}</> : <><Flame size={11} /> {m.comp_drawer_prioritize()}</>}
               </button>
             </div>
           </div>

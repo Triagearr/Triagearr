@@ -158,6 +158,7 @@ func New(opts Options, eng *Engine) *Server {
 	mux.HandleFunc("GET /api/v1/torrents/{hash}", s.security(s.auth(s.handleGetTorrent)))
 	mux.HandleFunc("GET /api/v1/torrents/{hash}/snapshots", s.security(s.auth(s.handleTorrentSnapshots)))
 	mux.HandleFunc("PUT /api/v1/torrents/{hash}/protected", s.security(s.auth(s.handleSetTorrentProtected)))
+	mux.HandleFunc("PUT /api/v1/torrents/{hash}/candidate_boost", s.security(s.auth(s.handleSetTorrentCandidateBoost)))
 	mux.HandleFunc("GET /api/v1/scores", s.security(s.auth(s.handleListScores)))
 	mux.HandleFunc("GET /api/v1/volume", s.security(s.auth(s.handleVolume)))
 	mux.HandleFunc("GET /api/v1/volume/history", s.security(s.auth(s.handleVolumeHistory)))

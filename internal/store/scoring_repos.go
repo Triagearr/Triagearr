@@ -22,8 +22,9 @@ type ScoringTorrent struct {
 	Size         int64      `db:"size"`
 	AddedOn      time.Time  `db:"added_on"`
 	CompletionOn *time.Time `db:"completion_on"`
-	Private      bool       `db:"private"`
-	Protected    bool       `db:"protected"`
+	Private        bool `db:"private"`
+	Protected      bool `db:"protected"`
+	CandidateBoost bool `db:"candidate_boost"`
 }
 
 // GetTorrentForScoring loads one torrent's scoring fields. Returns sql.ErrNoRows
@@ -31,7 +32,7 @@ type ScoringTorrent struct {
 func (s *Store) GetTorrentForScoring(ctx context.Context, hash triagearr.Hash) (ScoringTorrent, error) {
 	var row ScoringTorrent
 	err := s.reader.GetContext(ctx, &row, `
-		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected
+		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected, candidate_boost
 		FROM torrents WHERE hash = ?
 	`, string(hash))
 	if err != nil {
@@ -44,7 +45,7 @@ func (s *Store) GetTorrentForScoring(ctx context.Context, hash triagearr.Hash) (
 func (s *Store) ListTorrentsForScoring(ctx context.Context) ([]ScoringTorrent, error) {
 	var rows []ScoringTorrent
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected
+		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected, candidate_boost
 		FROM torrents ORDER BY hash
 	`); err != nil {
 		return nil, fmt.Errorf("listing torrents for scoring: %w", err)
@@ -270,6 +271,7 @@ type ScoreRow struct {
 	ExclusionReasons string    `db:"exclusion_reasons"`
 	FactorsJSON      string    `db:"factors_json"`
 	ComputedAt       time.Time `db:"computed_at"`
+	CandidateBoost   bool      `db:"candidate_boost"`
 }
 
 // UpsertScore writes (or replaces) one score row. The verdict and its factor
@@ -356,7 +358,8 @@ func (s *Store) ListScores(ctx context.Context, opts ListScoresOpts) ([]ScoreRow
 		SELECT sc.torrent_hash, sc.score, sc.private, sc.any_tracker_alive,
 		       sc.excluded, sc.exclusion_reasons, sc.computed_at,
 		       %s,
-		       COALESCE(t.name, sc.torrent_hash) AS name
+		       COALESCE(t.name, sc.torrent_hash) AS name,
+		       COALESCE(t.candidate_boost, 0) AS candidate_boost
 		FROM scores sc
 		LEFT JOIN torrents t ON t.hash = sc.torrent_hash
 		%s

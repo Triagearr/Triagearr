@@ -268,7 +268,7 @@ func TestScoreOne_PersistsAndRoundTrips(t *testing.T) {
 	b, err := sc.ScoreOne(ctx, "h")
 	require.NoError(t, err)
 	require.Equal(t, "h", b.Hash)
-	require.Len(t, b.Factors, 7)
+	require.Len(t, b.Factors, 8)
 
 	row, err := s.GetScore(ctx, "h")
 	require.NoError(t, err)

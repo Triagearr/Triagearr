@@ -13,6 +13,7 @@ export const FACTOR_LABEL: Record<string, () => string> = {
   swarm_health_bonus: m.settings_scoring_factor_swarm_health_bonus,
   hnr_window_veto: m.settings_scoring_factor_hnr_window_veto,
   tracker_dead_bonus: m.settings_scoring_factor_tracker_dead_bonus,
+  candidate_boost: m.settings_scoring_factor_candidate_boost,
 };
 
 export const FACTOR_TIP: Record<string, () => string> = {
@@ -22,4 +23,5 @@ export const FACTOR_TIP: Record<string, () => string> = {
   seeders_low_guard: m.settings_scoring_tip_seeders_low_guard,
   swarm_health_bonus: m.settings_scoring_tip_swarm_health_bonus,
   tracker_dead_bonus: m.settings_scoring_tip_tracker_dead_bonus,
+  candidate_boost: m.settings_scoring_tip_candidate_boost,
 };

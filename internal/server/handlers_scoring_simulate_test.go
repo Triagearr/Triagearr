@@ -45,7 +45,7 @@ func TestSimulateScoring_ReturnsRankedArchetypes(t *testing.T) {
 	byName := map[string]float64{}
 	for _, r := range results {
 		byName[r.Name] = r.Breakdown.Score
-		require.Len(t, r.Breakdown.Factors, 7, "archetype %s should expose all seven factors", r.Name)
+		require.Len(t, r.Breakdown.Factors, 8, "archetype %s should expose all eight factors", r.Name)
 	}
 
 	// The in-HnR-window archetype is hard-vetoed; the dead-tracker library is a

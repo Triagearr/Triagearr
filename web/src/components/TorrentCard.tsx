@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Lock, Unlock } from "lucide-react";
+import { EyeOff, Flame, Lock, Skull, Unlock } from "lucide-react";
 import { ScoreCell } from "@/components/ScoreCell";
 import { humanBytes, relativeTime } from "@/lib/format";
 import { m } from "@/paraglide/messages";
@@ -24,12 +24,17 @@ function TorrentCardImpl({ torrent: t, selected, onClick }: Props) {
       </div>
       <div className="torrent-card-meta">
         {t.private
-          ? <span className="badge"><Lock size={9} /> {m.torrents_badge_private()}</span>
-          : <span className="badge"><Unlock size={9} /> {m.torrents_badge_public()}</span>
+          ? <span className="badge"><Lock size={9} /> <span className="badge-label">{m.torrents_badge_private()}</span></span>
+          : <span className="badge"><Unlock size={9} /> <span className="badge-label">{m.torrents_badge_public()}</span></span>
         }
-        {t.excluded && <span className="badge badge-warn">{m.torrents_badge_excluded()}</span>}
+        {t.excluded && (
+          <span className="badge badge-warn"><EyeOff size={9} /> <span className="badge-label">{m.torrents_badge_excluded()}</span></span>
+        )}
+        {t.candidate_boost && (
+          <span className="badge badge-danger"><Flame size={9} /> <span className="badge-label">{m.torrents_badge_prioritized()}</span></span>
+        )}
         {t.any_tracker_alive === false && (
-          <span className="badge badge-danger">{m.torrents_badge_tracker_dead()}</span>
+          <span className="badge badge-danger"><Skull size={9} /> <span className="badge-label">{m.torrents_badge_tracker_dead()}</span></span>
         )}
         <span className="torrent-card-sep">·</span>
         <span className="mono">{humanBytes(t.size)}</span>

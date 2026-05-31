@@ -101,14 +101,21 @@ func (s *Store) UpsertTorrents(ctx context.Context, torrents []triagearr.Torrent
 // SetTorrentProtected toggles the user-driven protection flag for one torrent.
 // Protecting stamps protected_at = now; unprotecting clears it. Returns
 // sql.ErrNoRows when the hash is unknown so callers can map to 404.
+//
+// Protect and candidate_boost are opposite intents, so protecting also clears
+// candidate_boost (ADR-0030) in the same write — the two can never coexist.
 func (s *Store) SetTorrentProtected(ctx context.Context, hash triagearr.Hash, protected bool) error {
 	var stampedAt any
 	if protected {
 		stampedAt = ts(time.Now().UTC())
 	}
 	res, err := s.writer.ExecContext(ctx, `
-		UPDATE torrents SET protected = ?, protected_at = ? WHERE hash = ?
-	`, boolToInt(protected), stampedAt, string(hash))
+		UPDATE torrents
+		SET protected = ?, protected_at = ?,
+		    candidate_boost = CASE WHEN ? THEN 0 ELSE candidate_boost END,
+		    candidate_boost_at = CASE WHEN ? THEN NULL ELSE candidate_boost_at END
+		WHERE hash = ?
+	`, boolToInt(protected), stampedAt, protected, protected, string(hash))
 	if err != nil {
 		return fmt.Errorf("updating protected for %s: %w", hash, err)
 	}
@@ -134,6 +141,50 @@ func (s *Store) GetTorrentProtected(ctx context.Context, hash triagearr.Hash) (b
 		return false, nil, err
 	}
 	return protected != 0, at, nil
+}
+
+// SetTorrentCandidateBoost toggles the user-driven deletion-priority flag — the
+// inverse of protected (scorer Factor 9, ADR-0030). Boosting stamps
+// candidate_boost_at = now; un-boosting clears it. Boosting also clears
+// protected in the same write (the two are mutually exclusive). Returns
+// sql.ErrNoRows when the hash is unknown so callers can map to 404.
+func (s *Store) SetTorrentCandidateBoost(ctx context.Context, hash triagearr.Hash, boost bool) error {
+	var stampedAt any
+	if boost {
+		stampedAt = ts(time.Now().UTC())
+	}
+	res, err := s.writer.ExecContext(ctx, `
+		UPDATE torrents
+		SET candidate_boost = ?, candidate_boost_at = ?,
+		    protected = CASE WHEN ? THEN 0 ELSE protected END,
+		    protected_at = CASE WHEN ? THEN NULL ELSE protected_at END
+		WHERE hash = ?
+	`, boolToInt(boost), stampedAt, boost, boost, string(hash))
+	if err != nil {
+		return fmt.Errorf("updating candidate_boost for %s: %w", hash, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected for %s: %w", hash, err)
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// GetTorrentCandidateBoost reads the candidate-boost flag and timestamp.
+// Returns sql.ErrNoRows when the hash is unknown.
+func (s *Store) GetTorrentCandidateBoost(ctx context.Context, hash triagearr.Hash) (bool, *time.Time, error) {
+	var boost int
+	var at *time.Time
+	err := s.reader.QueryRowContext(ctx, `
+		SELECT candidate_boost, candidate_boost_at FROM torrents WHERE hash = ?
+	`, string(hash)).Scan(&boost, &at)
+	if err != nil {
+		return false, nil, err
+	}
+	return boost != 0, at, nil
 }
 
 func boolToInt(b bool) int {
@@ -285,6 +336,7 @@ type TorrentRow struct {
 	Score           *float64 `db:"score"`
 	Excluded        *bool    `db:"excluded"`
 	AnyTrackerAlive *bool    `db:"any_tracker_alive"`
+	CandidateBoost  bool     `db:"candidate_boost"`
 }
 
 // ListTorrentsLatest returns torrents with their latest snapshot, sorted+limited.

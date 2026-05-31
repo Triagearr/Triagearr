@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, Lock, RefreshCw, Unlock, Zap } from "lucide-react";
+import { AlertTriangle, Flame, Lock, RefreshCw, Skull, Unlock, Zap } from "lucide-react";
 import { memo } from "react";
 import {
   useSummary,
@@ -318,11 +318,14 @@ function Dashboard() {
                             <div className="name-text">{t.name}</div>
                             <div className="name-meta">
                               {t.private
-                                ? <span className="badge"><Lock size={9} /> {m.dash_badge_private()}</span>
-                                : <span className="badge"><Unlock size={9} /> {m.dash_badge_public()}</span>
+                                ? <span className="badge"><Lock size={9} /> <span className="badge-label">{m.dash_badge_private()}</span></span>
+                                : <span className="badge"><Unlock size={9} /> <span className="badge-label">{m.dash_badge_public()}</span></span>
                               }
                               {!t.any_tracker_alive && (
-                                <span className="badge badge-danger">{m.dash_badge_tracker_dead()}</span>
+                                <span className="badge badge-danger"><Skull size={9} /> <span className="badge-label">{m.dash_badge_tracker_dead()}</span></span>
+                              )}
+                              {t.candidate_boost && (
+                                <span className="badge badge-danger"><Flame size={9} /> <span className="badge-label">{m.dash_badge_prioritized()}</span></span>
                               )}
                             </div>
                           </td>

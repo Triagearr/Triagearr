@@ -44,7 +44,7 @@ func (s *Store) ListTorrentsFiltered(ctx context.Context, opts ListTorrentsOpts)
 
 	q := `
 		SELECT t.hash, t.name, t.category, t.size, t.added_on, t.last_seen,
-		       t.private AS private,
+		       t.private AS private, t.candidate_boost AS candidate_boost,
 		       s.ratio AS ratio, s.seeders AS seeders, s.leechers AS leechers,
 		       s.state AS state, s.ts AS snap_ts,
 		       sc.score AS score, sc.excluded AS excluded,
@@ -164,7 +164,7 @@ func (s *Store) GetTorrent(ctx context.Context, hash triagearr.Hash) (TorrentDet
 	err := s.reader.GetContext(ctx, &row, `
 		SELECT t.hash, t.name, t.category, t.save_path, t.size,
 		       t.added_on, t.completion_on, t.private, t.tags, t.last_seen,
-		       t.protected, t.protected_at,
+		       t.protected, t.protected_at, t.candidate_boost, t.candidate_boost_at,
 		       s.ratio AS ratio, s.uploaded AS uploaded, s.seeders AS seeders,
 		       s.leechers AS leechers, s.state AS state, s.ts AS snap_ts
 		FROM torrents t
@@ -194,9 +194,11 @@ type TorrentDetailRow struct {
 	Private      bool       `db:"private"`
 	Tags         string     `db:"tags"`
 	LastSeen     time.Time  `db:"last_seen"`
-	Protected    bool       `db:"protected"`
-	ProtectedAt  *time.Time `db:"protected_at"`
-	Ratio        *float64   `db:"ratio"`
+	Protected        bool       `db:"protected"`
+	ProtectedAt      *time.Time `db:"protected_at"`
+	CandidateBoost   bool       `db:"candidate_boost"`
+	CandidateBoostAt *time.Time `db:"candidate_boost_at"`
+	Ratio            *float64   `db:"ratio"`
 	Uploaded     *int64     `db:"uploaded"`
 	Seeders      *int       `db:"seeders"`
 	Leechers     *int       `db:"leechers"`

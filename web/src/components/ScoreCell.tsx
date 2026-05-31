@@ -15,7 +15,7 @@ export function ScoreCell({ score }: { score: number | null | undefined }) {
   return (
     <span className={`score-cell ${tier}`}>
       <span className="score-bar"><i style={{ width: `${pct}%` }} /></span>
-      {score.toFixed(2)}
+      <span className="score-val">{score.toFixed(2)}</span>
     </span>
   );
 }
