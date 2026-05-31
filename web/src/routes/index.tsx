@@ -8,6 +8,7 @@ import {
   useSettings,
   useArrConnections,
   useTorrentClientConnections,
+  usePreviewRun,
 } from "@/api/hooks";
 import { PressureGauge } from "@/components/PressureGauge";
 import { ScoreCell } from "@/components/ScoreCell";
@@ -184,6 +185,12 @@ function Dashboard() {
   const reapCandidates = topScore.filter((t) => t.score > 0).slice(0, 10);
   const volume = data?.volume;
 
+  // Only scan the Decider when actually below target — when the volume already
+  // meets target there's nothing to free and the preview would just be 0.
+  const target = volume?.target_free_percent ?? 0;
+  const belowTarget = volume?.free_percent != null && target > 0 && volume.free_percent < target;
+  const preview = usePreviewRun(belowTarget, 30_000);
+
   const mode = settings.data?.values.mode ?? "dry-run";
   const arrConnByKind = new Map((arrConns.data?.connections ?? []).map((c) => [c.kind, c]));
   const clientConnByKind = new Map((clientConns.data?.connections ?? []).map((c) => [c.kind, c]));
@@ -255,7 +262,12 @@ function Dashboard() {
                 </div>
                 <div className="card-body">
                   {volume
-                    ? <PressureGauge volume={volume} />
+                    ? <PressureGauge
+                        volume={volume}
+                        reclaimableBytes={belowTarget ? preview.data?.estimated_freed_bytes : undefined}
+                        targetReachable={belowTarget && preview.data ? preview.data.stop_reason === "target_reached" : undefined}
+                        previewPending={belowTarget && preview.isLoading}
+                      />
                     : <div style={{ color: "var(--fg-3)", fontSize: 12 }}>{m.dash_no_volume_configured()}</div>
                   }
                 </div>

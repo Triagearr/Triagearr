@@ -308,12 +308,13 @@ export function useRuns() {
 // persisting it. Enabled only while the confirm modal is open so we don't poll
 // the Decider in the background. staleTime is short: the plan moves with disk
 // state, and the modal should reflect a recent view.
-export function usePreviewRun(enabled: boolean) {
+export function usePreviewRun(enabled: boolean, refetchInterval?: number) {
   return useQuery({
     queryKey: queryKeys.runPreview,
     queryFn: () => apiFetch("/api/v1/runs/preview", RunPreview),
     enabled,
     staleTime: 5_000,
+    refetchInterval,
   });
 }
 
