@@ -57,8 +57,6 @@ export function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: n
                   <div className="action-card-meta">
                     <span>{m.actions_th_score()} <span className="mono">{c.score.toFixed(1)}</span></span>
                     <span>·</span>
-                    <span><span className="mono">{humanBytes(c.size_bytes)}</span></span>
-                    <span>·</span>
                     <span>{m.actions_th_would_free()} <span className="mono">{humanBytes(c.would_free_bytes)}</span></span>
                   </div>
                 </div>
@@ -71,7 +69,6 @@ export function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: n
                 <th style={{ width: 50 }}>{m.actions_th_rank()}</th>
                 <th>{m.actions_th_hash()}</th>
                 <th style={{ textAlign: "right", width: 80 }}>{m.actions_th_score()}</th>
-                <th style={{ textAlign: "right", width: 90 }}>{m.actions_th_size()}</th>
                 <th style={{ textAlign: "right", width: 90 }}>{m.actions_th_would_free()}</th>
               </tr>
             </thead>
@@ -81,7 +78,6 @@ export function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: n
                   <td className="mono" style={{ color: "var(--fg-3)" }}>#{c.rank}</td>
                   <td>{torrentLabel(c.torrent_name, c.torrent_hash)}</td>
                   <td className="num">{c.score.toFixed(1)}</td>
-                  <td className="num">{humanBytes(c.size_bytes)}</td>
                   <td className="num">{humanBytes(c.would_free_bytes)}</td>
                 </tr>
               ))}
