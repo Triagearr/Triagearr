@@ -14,9 +14,9 @@ import (
 // its assigned id. started_at is taken from the input.
 func (s *Store) InsertAction(ctx context.Context, a triagearr.Action) (int64, error) {
 	res, err := s.writer.ExecContext(ctx, `
-		INSERT INTO actions(run_id, rank, torrent_hash, started_at, status, freed_bytes)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, a.RunID, a.Rank, string(a.TorrentHash), ts(a.StartedAt), string(a.Status), a.FreedBytes)
+		INSERT INTO actions(run_id, rank, torrent_hash, torrent_name, started_at, status, freed_bytes)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, a.RunID, a.Rank, string(a.TorrentHash), a.TorrentName, ts(a.StartedAt), string(a.Status), a.FreedBytes)
 	if err != nil {
 		return 0, fmt.Errorf("inserting action: %w", err)
 	}
@@ -76,6 +76,7 @@ type actionRow struct {
 	RunID       int64        `db:"run_id"`
 	Rank        int          `db:"rank"`
 	TorrentHash string       `db:"torrent_hash"`
+	TorrentName string       `db:"torrent_name"`
 	StartedAt   time.Time    `db:"started_at"`
 	FinishedAt  sql.NullTime `db:"finished_at"`
 	Status      string       `db:"status"`
@@ -88,6 +89,7 @@ func (r actionRow) toAction() triagearr.Action {
 		RunID:       r.RunID,
 		Rank:        r.Rank,
 		TorrentHash: triagearr.Hash(r.TorrentHash),
+		TorrentName: r.TorrentName,
 		StartedAt:   r.StartedAt,
 		Status:      triagearr.ActionStatus(r.Status),
 		FreedBytes:  r.FreedBytes,
@@ -102,7 +104,7 @@ func (r actionRow) toAction() triagearr.Action {
 func (s *Store) GetAction(ctx context.Context, id int64) (triagearr.Action, error) {
 	var row actionRow
 	if err := s.reader.GetContext(ctx, &row, `
-		SELECT id, run_id, rank, torrent_hash, started_at, finished_at, status, freed_bytes
+		SELECT id, run_id, rank, torrent_hash, torrent_name, started_at, finished_at, status, freed_bytes
 		FROM actions WHERE id = ?
 	`, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -117,7 +119,7 @@ func (s *Store) GetAction(ctx context.Context, id int64) (triagearr.Action, erro
 func (s *Store) ListActionsByRun(ctx context.Context, runID int64) ([]triagearr.Action, error) {
 	var rows []actionRow
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT id, run_id, rank, torrent_hash, started_at, finished_at, status, freed_bytes
+		SELECT id, run_id, rank, torrent_hash, torrent_name, started_at, finished_at, status, freed_bytes
 		FROM actions WHERE run_id = ? ORDER BY rank ASC
 	`, runID); err != nil {
 		return nil, fmt.Errorf("listing actions for run %d: %w", runID, err)

@@ -83,7 +83,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		}
 		lastRuns = make([]runResponse, len(runs))
 		for i, rn := range runs {
-			lastRuns[i] = buildResponse(rn, nil, nil)
+			lastRuns[i] = buildResponse(rn, nil)
 		}
 		return nil
 	})

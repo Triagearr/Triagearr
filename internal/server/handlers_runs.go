@@ -131,12 +131,10 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	refreshed, items, err := s.opts.Store.GetRun(r.Context(), id)
 	if err != nil {
 		run.ID = id
-		names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), runItemHashes(plan.Items))
-		writeJSON(w, http.StatusOK, buildResponse(run, plan.Items, names))
+		writeJSON(w, http.StatusOK, buildResponse(run, plan.Items))
 		return
 	}
-	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), runItemHashes(items))
-	writeJSON(w, http.StatusOK, buildResponse(refreshed, items, names))
+	writeJSON(w, http.StatusOK, buildResponse(refreshed, items))
 }
 
 // executeRunAsync drives a live run's destructive pipeline detached from the
@@ -168,11 +166,10 @@ func (s *Server) handlePreviewRun(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), runItemHashes(plan.Items))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"estimated_freed_bytes": plan.EstimatedFreedBytes,
 		"stop_reason":           string(plan.StopReason),
-		"candidates":            buildRunItems(plan.Items, names),
+		"candidates":            buildRunItems(plan.Items),
 	})
 }
 
@@ -185,7 +182,7 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]runResponse, len(rows))
 	for i, r := range rows {
-		out[i] = buildResponse(r, nil, nil)
+		out[i] = buildResponse(r, nil)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"runs": out})
 }
@@ -204,11 +201,10 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), runItemHashes(items))
-	writeJSON(w, http.StatusOK, buildResponse(run, items, names))
+	writeJSON(w, http.StatusOK, buildResponse(run, items))
 }
 
-func buildResponse(r triagearr.Run, items []triagearr.RunItem, names map[triagearr.Hash]string) runResponse {
+func buildResponse(r triagearr.Run, items []triagearr.RunItem) runResponse {
 	out := runResponse{
 		RunID:               r.ID,
 		TriggeredBy:         string(r.TriggeredBy),
@@ -220,36 +216,27 @@ func buildResponse(r triagearr.Run, items []triagearr.RunItem, names map[triagea
 		StopReason:          string(r.StopReason),
 		Status:              r.Status,
 	}
-	out.Candidates = buildRunItems(items, names)
+	out.Candidates = buildRunItems(items)
 	return out
 }
 
-// buildRunItems maps deletion-plan items to their wire shape, merging in
-// torrent names when known. Shared by the persisted-run view and the preview.
-func buildRunItems(items []triagearr.RunItem, names map[triagearr.Hash]string) []runItemResponse {
+// buildRunItems maps deletion-plan items to their wire shape. The torrent name
+// rides on the item itself (set by the Decider, persisted in run_items per the
+// 0003 migration) so a reaped torrent still renders its title even after it has
+// left the torrents table. Shared by the persisted-run view and the preview.
+func buildRunItems(items []triagearr.RunItem) []runItemResponse {
 	out := make([]runItemResponse, 0, len(items))
 	for _, it := range items {
-		c := runItemResponse{
+		out = append(out, runItemResponse{
 			Rank:           it.Rank,
 			TorrentHash:    string(it.TorrentHash),
+			TorrentName:    it.TorrentName,
 			Score:          it.Score,
 			SizeBytes:      it.SizeBytes,
 			WouldFreeBytes: it.WouldFreeBytes,
-		}
-		if n, ok := names[it.TorrentHash]; ok {
-			c.TorrentName = n
-		}
-		out = append(out, c)
+		})
 	}
 	return out
-}
-
-func runItemHashes(items []triagearr.RunItem) []triagearr.Hash {
-	h := make([]triagearr.Hash, len(items))
-	for i, it := range items {
-		h[i] = it.TorrentHash
-	}
-	return h
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

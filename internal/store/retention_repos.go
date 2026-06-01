@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
 // DownsampleRange aggregates snapshots_raw rows older than `before` into
@@ -58,6 +60,26 @@ func (s *Store) DownsampleRange(ctx context.Context, before time.Time) (dailyWri
 	return int(written), int(deleted), nil
 }
 
+// torrentCascadeTables lists every hash-keyed child table that must be cleared
+// when a torrent leaves the store. ForgetTorrent (single hash, post-reap) and
+// PruneStaleTorrents (bulk, stale-aged) are the only two evictors — both cascade
+// through exactly this set, in this order, so a new torrent-keyed table only has
+// to be added here once. score_factors is intentionally absent: it ON DELETE
+// CASCADEs from scores (FK in 0001_init.sql), and foreign_keys is enabled on
+// every connection. The torrents row itself is deleted separately by each caller
+// (its hash column is `hash`, not `torrent_hash`).
+//
+// arr_imports, actions and run_items are deliberately NOT here: arr_imports stays
+// valid independent of the torrent (the linker joins it through media_files), and
+// actions/run_items are execution history that must outlive the torrent.
+var torrentCascadeTables = []string{
+	"snapshots_raw",
+	"snapshots_daily",
+	"torrent_trackers",
+	"scores",
+	"torrent_files",
+}
+
 // PruneStaleTorrents deletes torrents whose last_seen is older than `olderThan`
 // ago, plus the dependent rows in snapshots_raw, snapshots_daily, and
 // torrent_trackers. Returns the count of torrent rows removed.
@@ -93,20 +115,10 @@ func (s *Store) PruneStaleTorrents(ctx context.Context, olderThan time.Duration)
 	defer func() { _, _ = s.writer.ExecContext(ctx, `DROP TABLE IF EXISTS stale_hashes`) }()
 
 	hashFilter := `torrent_hash IN (SELECT hash FROM stale_hashes)`
-	if _, err := tx.ExecContext(ctx, `DELETE FROM snapshots_raw    WHERE `+hashFilter); err != nil {
-		return 0, fmt.Errorf("prune snapshots_raw: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM snapshots_daily  WHERE `+hashFilter); err != nil {
-		return 0, fmt.Errorf("prune snapshots_daily: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM torrent_trackers WHERE `+hashFilter); err != nil {
-		return 0, fmt.Errorf("prune torrent_trackers: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM scores WHERE `+hashFilter); err != nil {
-		return 0, fmt.Errorf("prune scores: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM torrent_files WHERE `+hashFilter); err != nil {
-		return 0, fmt.Errorf("prune torrent_files: %w", err)
+	for _, tbl := range torrentCascadeTables {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+tbl+` WHERE `+hashFilter); err != nil {
+			return 0, fmt.Errorf("prune %s: %w", tbl, err)
+		}
 	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM torrents WHERE hash IN (SELECT hash FROM stale_hashes)`)
 	if err != nil {
@@ -118,6 +130,36 @@ func (s *Store) PruneStaleTorrents(ctx context.Context, olderThan time.Duration)
 		return 0, fmt.Errorf("commit prune: %w", err)
 	}
 	return int(n), nil
+}
+
+// ForgetTorrent evicts a single torrent and its dependent rows from the store.
+// It is the targeted, post-reap counterpart of PruneStaleTorrents: when the
+// actor has durably deleted a torrent from *arr AND qBit, the row is gone for
+// good and must leave the store immediately — otherwise a later pressure run
+// re-targets a dead hash (the *arr delete then fails) and the dashboard keeps
+// listing it as a candidate. The 7-day prune grace is only for transient qBit
+// disappearances, which this case is not. Cascade set: torrentCascadeTables.
+func (s *Store) ForgetTorrent(ctx context.Context, hash triagearr.Hash) error {
+	tx, err := s.writer.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin forget tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	h := string(hash)
+	for _, tbl := range torrentCascadeTables {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+tbl+` WHERE torrent_hash = ?`, h); err != nil {
+			return fmt.Errorf("forgetting %s: %w", tbl, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM torrents WHERE hash = ?`, h); err != nil {
+		return fmt.Errorf("forgetting torrents: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit forget: %w", err)
+	}
+	return nil
 }
 
 // EnforceRetention drops snapshots_raw and snapshots_daily rows older than

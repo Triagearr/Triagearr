@@ -35,6 +35,10 @@ type Source interface {
 	FinishAction(ctx context.Context, id int64, status triagearr.ActionStatus, finishedAt time.Time, freedBytes int64) error
 	AppendAudit(ctx context.Context, e triagearr.AuditEntry) error
 	LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagearr.Link, error)
+	// ForgetTorrent evicts a reaped torrent (and its dependent rows) from the
+	// store. Called only after a fully successful delete so a later run can't
+	// re-target a dead hash.
+	ForgetTorrent(ctx context.Context, hash triagearr.Hash) error
 	// TorrentSavePath fetches the volume-relative root for the torrent so the
 	// T3.5 step can resolve absolute file paths in Triagearr's namespace
 	// (ADR-0023).
@@ -174,6 +178,7 @@ func (a *Actor) processCandidate(ctx context.Context, runID int64, item triagear
 		RunID:       runID,
 		Rank:        item.Rank,
 		TorrentHash: item.TorrentHash,
+		TorrentName: item.TorrentName,
 		StartedAt:   started,
 		Status:      triagearr.ActionRunning,
 	})
@@ -216,7 +221,18 @@ func (a *Actor) processCandidate(ctx context.Context, runID int64, item triagear
 	}
 	a.audit(ctx, actionID, triagearr.AuditStepQbitDelete, triagearr.AuditOutcomeOK, "", 0, "")
 
-	return a.finish(ctx, actionID, triagearr.ActionSucceeded, item.SizeBytes, nil)
+	if err := a.finish(ctx, actionID, triagearr.ActionSucceeded, item.SizeBytes, nil); err != nil {
+		return err
+	}
+	// The reap is durable: *arr and qBit both deleted. Evict the torrent from
+	// our store so a later run can't re-target a dead hash (the 7-day prune
+	// grace is for transient qBit disappearances, not torrents we deleted).
+	// A failure here is non-fatal — the deletion genuinely happened, the action
+	// stays succeeded, and the daily prune cleans up the leftover row.
+	if err := a.opts.Source.ForgetTorrent(ctx, item.TorrentHash); err != nil {
+		slog.Warn("actor: forgetting reaped torrent", "hash", item.TorrentHash, "err", err)
+	}
+	return nil
 }
 
 // checkNlink runs the T3.5 stat sweep. It fetches the torrent's current file

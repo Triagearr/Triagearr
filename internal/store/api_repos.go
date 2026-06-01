@@ -284,7 +284,7 @@ func (s *Store) ListActionsRecent(ctx context.Context, limit, offset int) ([]tri
 	}
 	var rows []actionRow
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT id, run_id, rank, torrent_hash, started_at, finished_at, status, freed_bytes
+		SELECT id, run_id, rank, torrent_hash, torrent_name, started_at, finished_at, status, freed_bytes
 		FROM actions
 		ORDER BY started_at DESC, id DESC
 		LIMIT ? OFFSET ?

@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
@@ -402,6 +403,85 @@ func TestPruneStaleTorrents_KeepsArrImports(t *testing.T) {
 	require.NoError(t, s.DB().GetContext(ctx, &n,
 		`SELECT COUNT(*) FROM arr_imports WHERE download_id = 'stale'`))
 	require.Equal(t, 1, n)
+}
+
+func TestForgetTorrent_CascadeAndPreservesHistory(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Two torrents: "reaped" is the one the actor just deleted; "keep" is a
+	// bystander that must be untouched (the cascade is hash-scoped, no IN-set).
+	for _, h := range []triagearr.Hash{"reaped", "keep"} {
+		require.NoError(t, s.UpsertTorrent(ctx, triagearr.Torrent{Hash: h, Name: string(h), AddedOn: now}))
+		require.NoError(t, s.InsertSnapshot(ctx, triagearr.Snapshot{
+			Hash: h, Timestamp: now.Add(-time.Hour),
+			Ratio: 1, Seeders: 1, State: "uploading", LastActivity: now,
+		}))
+		require.NoError(t, s.ReplaceTrackers(ctx, h, []triagearr.TrackerInfo{
+			{URL: "https://t.example/announce", Host: "t.example", Status: triagearr.TrackerWorking},
+		}))
+		require.NoError(t, s.UpsertTorrentFile(ctx, h, "ep01.mkv", 1000, nil, now))
+		// UpsertScore writes scores + score_factors; the latter cascades via FK.
+		require.NoError(t, s.UpsertScore(ctx, store.ScoreRow{
+			Hash: string(h), Score: 1.5, FactorsJSON: `{"f":1}`, ComputedAt: now,
+		}))
+	}
+	_, err := s.DB().ExecContext(ctx, `
+		INSERT INTO snapshots_daily(torrent_hash, day, ratio_avg, ratio_min, ratio_max, seeders_avg, seeders_min, seeders_max, samples)
+		VALUES ('reaped', '2026-04-01', 1,1,1, 1,1,1, 1), ('keep', '2026-04-01', 1,1,1, 1,1,1, 1)
+	`)
+	require.NoError(t, err)
+
+	// History that must OUTLIVE the torrent: arr_imports + an action row.
+	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, triagearr.ImportRecord{
+		FileID: 42, DownloadID: "reaped", DroppedPath: "/dl/x", ImportedPath: "/files/tv/x.mkv",
+		HistoryID: 1, ImportedAt: now,
+	}))
+	runID, err := s.InsertRun(ctx, triagearr.Run{
+		TriggeredBy: triagearr.RunTriggerDiskPressure, TriggeredAt: now,
+		Mode: string(triagearr.RunModeLive), Status: "completed",
+	})
+	require.NoError(t, err)
+	_, err = s.InsertAction(ctx, triagearr.Action{
+		RunID: runID, Rank: 0, TorrentHash: "reaped", StartedAt: now, Status: triagearr.ActionSucceeded,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, s.ForgetTorrent(ctx, "reaped"))
+
+	// torrents: only "keep" remains.
+	hashes, err := s.ListTorrentHashes(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []triagearr.Hash{"keep"}, hashes)
+
+	// Cascade landed on "reaped" (incl. score_factors via FK), "keep" intact.
+	type cnt struct {
+		Reaped int `db:"reaped"`
+		Keep   int `db:"keep"`
+	}
+	countFor := func(h string) string {
+		return `(SELECT COUNT(*) FROM snapshots_raw    WHERE torrent_hash = '` + h + `')` +
+			` + (SELECT COUNT(*) FROM snapshots_daily  WHERE torrent_hash = '` + h + `')` +
+			` + (SELECT COUNT(*) FROM torrent_trackers WHERE torrent_hash = '` + h + `')` +
+			` + (SELECT COUNT(*) FROM torrent_files    WHERE torrent_hash = '` + h + `')` +
+			` + (SELECT COUNT(*) FROM scores           WHERE torrent_hash = '` + h + `')` +
+			` + (SELECT COUNT(*) FROM score_factors    WHERE torrent_hash = '` + h + `')`
+	}
+	var c cnt
+	require.NoError(t, s.DB().GetContext(ctx, &c,
+		`SELECT `+countFor("reaped")+` AS reaped, `+countFor("keep")+` AS keep`))
+	require.Equal(t, 0, c.Reaped, "every hash-keyed child row of reaped must be gone")
+	require.Equal(t, 6, c.Keep, "bystander keep keeps all 6 child rows (snap+daily+tracker+file+score+factors)")
+
+	// History survives: it is execution/*arr-side record, not torrent state.
+	var imports, actions int
+	require.NoError(t, s.DB().GetContext(ctx, &imports,
+		`SELECT COUNT(*) FROM arr_imports WHERE download_id = 'reaped'`))
+	require.Equal(t, 1, imports, "arr_imports must survive the reap")
+	require.NoError(t, s.DB().GetContext(ctx, &actions,
+		`SELECT COUNT(*) FROM actions WHERE torrent_hash = 'reaped'`))
+	require.Equal(t, 1, actions, "actions history must survive the reap")
 }
 
 func TestEnforceRetention(t *testing.T) {

@@ -152,6 +152,7 @@ func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 		plan.Items = append(plan.Items, triagearr.RunItem{
 			Rank:           rank,
 			TorrentHash:    triagearr.Hash(sc.Hash),
+			TorrentName:    sc.Name,
 			Score:          sc.Score,
 			SizeBytes:      t.Size,
 			WouldFreeBytes: t.Size,
