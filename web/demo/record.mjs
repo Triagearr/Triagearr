@@ -38,7 +38,9 @@ const TOTAL_STEPS = 7;
 // The fresh grab: private + a live tracker + grabbed just now → the HnR-window
 // veto (-10000) keeps it off the reap list even though it caused the pressure.
 const GRAB_NAME = "Fresh.4K.Remux.S01.2160p.WEB-FAKE";
-const GRAB_SIZE = 165_000_000_000; // 165 GB — a 4K remux season pack
+// Exactly 165 GiB so the UI (which formats in GiB) reads "165 GB", matching the
+// step-3 caption. A 4K remux season pack.
+const GRAB_SIZE = 165 * 1024 ** 3; // 177_167_503_360
 const FREED_BYTES = 160_000_000_000; // what the graveyard reap actually frees
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

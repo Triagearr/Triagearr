@@ -53,9 +53,18 @@ WEBM="$(ls -t "$OUT_DIR"/*.webm 2>/dev/null | head -1 || true)"
 echo "[demo] captured $(basename "$WEBM")"
 
 echo "[demo] converting → $OUTPUT"
+# Playwright starts recording at context creation, so the clip opens on ~1s of
+# black before the dashboard's first paint. Detect that leading black segment
+# and seek past it so the WebP opens straight on beat 1. blackdetect only flags
+# the true-black lead-in — the dark UI has enough content to stay unflagged.
+TRIM="$(ffmpeg -hide_banner -i "$WEBM" -vf "blackdetect=d=0.05:pix_th=0.10:pic_th=0.98" -an -f null - 2>&1 \
+  | grep -oP 'black_start:0(\.0+)? black_end:\K[0-9.]+' | head -1)"
+TRIM="${TRIM:-0}"
+echo "[demo] trimming ${TRIM}s of leading black"
+
 # 12 fps is plenty for a UI walkthrough and keeps the file small; lanczos
 # downscale stays crisp on the gauge/score text. -loop 0 = loop forever.
-ffmpeg -y -loglevel error -i "$WEBM" \
+ffmpeg -y -loglevel error -ss "$TRIM" -i "$WEBM" \
   -vf "fps=12,scale=1280:-1:flags=lanczos" \
   -loop 0 -compression_level 6 -q:v 62 \
   "$OUTPUT"
