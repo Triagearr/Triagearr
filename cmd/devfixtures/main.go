@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -156,17 +157,43 @@ func loadScenario(path string) (*Scenario, error) {
 }
 
 func buildQbit(sc QbitScenario, host string, port int, logger *slog.Logger) (*qbitfake.Server, *http.Server) {
+	log := logger.With("component", "qbit")
 	srv := qbitfake.New(qbitfake.Options{
 		Username: sc.Username,
 		Password: sc.Password,
-		Logger:   logger.With("component", "qbit"),
+		Logger:   log,
 	})
 	srv.State().AddMany(sc.Torrents)
 	return srv, &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", host, port),
-		Handler:           srv.Handler(),
+		Handler:           qbitControlMux(srv, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+}
+
+// qbitControlMux wraps the fake qBit handler with a dev-only control surface
+// the recording/demo tooling drives. The fake itself only seeds at boot; this
+// lets a script inject a torrent at runtime to simulate a fresh grab landing
+// mid-session. The control route is more specific than "/", so it takes
+// precedence while everything else falls through to the real fake API.
+func qbitControlMux(srv *qbitfake.Server, log *slog.Logger) http.Handler {
+	m := http.NewServeMux()
+	m.HandleFunc("POST /control/torrents", func(w http.ResponseWriter, r *http.Request) {
+		var t qbitfake.Torrent
+		if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		if t.Hash == "" {
+			http.Error(w, "hash required", http.StatusBadRequest)
+			return
+		}
+		srv.State().Add(t)
+		log.Info("control: injected torrent", "hash", t.Hash, "name", t.Name, "size", t.Size)
+		w.WriteHeader(http.StatusCreated)
+	})
+	m.Handle("/", srv.Handler())
+	return m
 }
 
 func buildSonarr(sc SonarrScenario, host string, port int, logger *slog.Logger) (*sonarrfake.Server, *http.Server) {

@@ -1,0 +1,218 @@
+# Demo scenario — the README/landing visual (scripts/record-demo.sh).
+#
+# Tells one story end to end:
+#   1. Disk sits healthy (~28% free, above the 15% threshold).
+#   2. A fresh grab lands (injected at runtime via the qBit control endpoint)
+#      and tips the volume below threshold — pressure fires.
+#   3. The scorer's top reap candidates are all dead-tracker graveyard items.
+#   4. A human arms + confirms a live run; the graveyard is reaped.
+#   5. The freshly-grabbed release is SPARED (HnR window veto, -10000) and the
+#      rare low-seeder release is SPARED (seeders guard) — only dead weight goes.
+#
+# Hashes are deterministic 40-hex info-hash-shaped strings (not real torrents).
+# Timestamps are unix seconds relative to ~2026-06-01 (1748736000).
+
+name: demo
+
+# 1 TB volume, 28% free → above the 15% threshold and the 25% target, so the
+# gauge opens green/calm. The injected grab + disk fill drops it to ~10%.
+disks:
+  - name: dev
+    total_bytes: 1000000000000      # 1 TB
+    free_bytes: 280000000000        # 280 GB → 28% free, healthy
+
+qbit:
+  username: admin
+  password: adminadmin
+  torrents:
+    # ── Graveyard: dead tracker, obligation long since moot. Top reap
+    # candidates — these are what a run deletes.
+    - hash: "d000000000000000000000000000000000000001"
+      name: "Defunct.Crime.Series.S01.COMPLETE.1080p.WEB-FAKE"
+      category: "tv-sonarr"
+      save_path: "/tmp/triagearr-dev/torrents/tv"
+      size: 60000000000            # 60 GB
+      added_on: 1700000000         # ~2023-11
+      completion_on: 1700100000
+      ratio: 0.3
+      uploaded: 18000000000
+      num_complete: 4
+      num_incomplete: 0
+      state: "stalledUP"
+      last_activity: 1705000000
+      private: true
+      tags: "ygg,graveyard"
+      files:
+        - { name: "Defunct.Crime.S01E01.mkv", size: 20000000000, progress: 1.0 }
+        - { name: "Defunct.Crime.S01E02.mkv", size: 20000000000, progress: 1.0 }
+        - { name: "Defunct.Crime.S01E03.mkv", size: 20000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "tracker offline" }
+
+    - hash: "d000000000000000000000000000000000000002"
+      name: "Abandoned.Indie.Film.2017.1080p.BluRay-FAKE"
+      category: "movies-radarr"
+      save_path: "/tmp/triagearr-dev/torrents/movies"
+      size: 45000000000            # 45 GB
+      added_on: 1690000000         # ~2023-07
+      completion_on: 1690100000
+      ratio: 0.1
+      uploaded: 4500000000
+      num_complete: 3
+      num_incomplete: 0
+      state: "stalledUP"
+      last_activity: 1695000000
+      private: true
+      tags: "ygg,graveyard"
+      files:
+        - { name: "Abandoned.Indie.Film.2017.mkv", size: 45000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "host unreachable" }
+
+    - hash: "d000000000000000000000000000000000000003"
+      name: "Forgotten.Nature.Docu.S02.1080p.WEB-FAKE"
+      category: "tv-sonarr"
+      save_path: "/tmp/triagearr-dev/torrents/tv"
+      size: 55000000000            # 55 GB
+      added_on: 1705000000         # ~2024-01
+      completion_on: 1705100000
+      ratio: 0.0
+      uploaded: 0
+      num_complete: 2
+      num_incomplete: 0
+      state: "stalledUP"
+      last_activity: 1708000000
+      private: true
+      tags: "ygg,graveyard"
+      files:
+        - { name: "Forgotten.Nature.S02E01.mkv", size: 27500000000, progress: 1.0 }
+        - { name: "Forgotten.Nature.S02E02.mkv", size: 27500000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "tracker offline" }
+
+    # ── Rare content the swarm still depends on: alive tracker but almost no
+    # seeders → seeders_low_guard (-1000) protects it. SPARED.
+    - hash: "d000000000000000000000000000000000000004"
+      name: "Rare.Obscure.Film.1969.1080p.Remux-FAKE"
+      category: "movies-radarr"
+      save_path: "/tmp/triagearr-dev/torrents/movies"
+      size: 30000000000            # 30 GB
+      added_on: 1715000000
+      completion_on: 1715100000
+      ratio: 0.4
+      uploaded: 12000000000
+      num_complete: 1              # rare: you may be the only seed left
+      num_incomplete: 0
+      state: "uploading"
+      last_activity: 1748600000
+      private: true
+      tags: "rare"
+      files:
+        - { name: "Rare.Obscure.Film.1969.mkv", size: 30000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://tracker.alive.example.org/announce", status: 2 }
+
+    # ── Healthy active seed on a live tracker. Kept for context in the list.
+    - hash: "d000000000000000000000000000000000000005"
+      name: "Public.Linux.Distro.2026.iso"
+      category: ""
+      save_path: "/tmp/triagearr-dev/torrents/orphans"
+      size: 5000000000
+      added_on: 1747000000
+      completion_on: 1747100000
+      ratio: 3.2
+      uploaded: 16000000000
+      num_complete: 240
+      num_incomplete: 30
+      state: "uploading"
+      last_activity: 1748600000
+      private: false
+      files:
+        - { name: "linux-distro-2026.iso", size: 5000000000, progress: 1.0 }
+      trackers:
+        - { url: "udp://tracker.opentrackr.example.org:1337/announce", status: 2 }
+
+sonarr:
+  api_key: "dev-key-sonarr"
+  tags:
+    - { id: 1, label: "graveyard" }
+  series:
+    - id: 1
+      title: "Defunct Crime Series"
+      titleSlug: "defunct-crime-series"
+      path: "/data/tv/Defunct Crime Series"
+      tags: [1]
+      statistics: { sizeOnDisk: 60000000000 }
+      files:
+        - { id: 101, seriesId: 1, path: "/data/tv/Defunct Crime Series/S01E01.mkv", size: 20000000000 }
+        - { id: 102, seriesId: 1, path: "/data/tv/Defunct Crime Series/S01E02.mkv", size: 20000000000 }
+        - { id: 103, seriesId: 1, path: "/data/tv/Defunct Crime Series/S01E03.mkv", size: 20000000000 }
+    - id: 2
+      title: "Forgotten Nature Docu"
+      titleSlug: "forgotten-nature-docu"
+      path: "/data/tv/Forgotten Nature Docu"
+      tags: [1]
+      statistics: { sizeOnDisk: 55000000000 }
+      files:
+        - { id: 104, seriesId: 2, path: "/data/tv/Forgotten Nature Docu/S02E01.mkv", size: 27500000000 }
+        - { id: 105, seriesId: 2, path: "/data/tv/Forgotten Nature Docu/S02E02.mkv", size: 27500000000 }
+  history:
+    - id: 1001
+      date: 2023-11-15T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "d000000000000000000000000000000000000001"
+      data: { fileId: "101", downloadClient: "qBittorrent", importedPath: "/data/tv/Defunct Crime Series/S01E01.mkv", size: "20000000000" }
+    - id: 1002
+      date: 2023-11-15T00:05:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "d000000000000000000000000000000000000001"
+      data: { fileId: "102", downloadClient: "qBittorrent", importedPath: "/data/tv/Defunct Crime Series/S01E02.mkv", size: "20000000000" }
+    - id: 1003
+      date: 2023-11-15T00:10:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "d000000000000000000000000000000000000001"
+      data: { fileId: "103", downloadClient: "qBittorrent", importedPath: "/data/tv/Defunct Crime Series/S01E03.mkv", size: "20000000000" }
+    - id: 1004
+      date: 2024-01-12T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "d000000000000000000000000000000000000003"
+      data: { fileId: "104", downloadClient: "qBittorrent", importedPath: "/data/tv/Forgotten Nature Docu/S02E01.mkv", size: "27500000000" }
+    - id: 1005
+      date: 2024-01-12T00:05:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "d000000000000000000000000000000000000003"
+      data: { fileId: "105", downloadClient: "qBittorrent", importedPath: "/data/tv/Forgotten Nature Docu/S02E02.mkv", size: "27500000000" }
+
+radarr:
+  api_key: "dev-key-radarr"
+  tags:
+    - { id: 1, label: "graveyard" }
+    - { id: 2, label: "rare" }
+  movies:
+    - id: 1
+      title: "Abandoned Indie Film (2017)"
+      titleSlug: "abandoned-indie-film-2017"
+      path: "/data/movies/Abandoned Indie Film (2017)"
+      sizeOnDisk: 45000000000
+      tags: [1]
+      files:
+        - { id: 201, movieId: 1, path: "/data/movies/Abandoned Indie Film (2017)/Abandoned.Indie.Film.mkv", size: 45000000000 }
+    - id: 2
+      title: "Rare Obscure Film (1969)"
+      titleSlug: "rare-obscure-film-1969"
+      path: "/data/movies/Rare Obscure Film (1969)"
+      sizeOnDisk: 30000000000
+      tags: [2]
+      files:
+        - { id: 202, movieId: 2, path: "/data/movies/Rare Obscure Film (1969)/Rare.Obscure.Film.mkv", size: 30000000000 }
+  history:
+    - id: 2001
+      date: 2023-07-23T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "d000000000000000000000000000000000000002"
+      data: { fileId: "201", downloadClient: "qBittorrent", importedPath: "/data/movies/Abandoned Indie Film (2017)/Abandoned.Indie.Film.mkv", size: "45000000000" }
+    - id: 2002
+      date: 2024-05-06T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "d000000000000000000000000000000000000004"
+      data: { fileId: "202", downloadClient: "qBittorrent", importedPath: "/data/movies/Rare Obscure Film (1969)/Rare.Obscure.Film.mkv", size: "30000000000" }

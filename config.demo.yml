@@ -1,0 +1,112 @@
+# =============================================================================
+# Triagearr — demo configuration for the README/landing recording.
+#
+# Boot with: triagearrd serve --config config.demo.yml   (against the `demo`
+# devfixtures scenario). Unlike config.dev.yml this config is ARMED — live mode
+# with per-instance act/delete so the recorded run actually reaps. It only ever
+# points at the in-memory fakes (127.0.0.1:18xxx), never a real stack.
+#
+# The recording shows the autonomous reap: a freshly-grabbed release tips the
+# volume below threshold, and the disk-pressure trigger fires a LIVE run on its
+# own (ResolveRunMode: pressure + daemon-live → live). The fake disk doesn't
+# shrink when qBit deletes, so the gauge stays red until the record script
+# calls /disk/dev/free — which is how the recovery beat is timed.
+# =============================================================================
+
+mode: live
+
+http:
+  bind: "127.0.0.1:9494"
+  cors_origins:
+    - "http://localhost:5173"
+
+storage:
+  sqlite_path: ./.dev/triagearr-demo.db
+  retention:
+    snapshots_raw: 168h
+    snapshots_daily: 8760h
+  vacuum:
+    enabled: false
+
+arrs:
+  sonarr:
+    enabled: true
+    url: http://127.0.0.1:18989
+    api_key: dev-key-sonarr
+    poll: true
+    act: true
+  radarr:
+    enabled: true
+    url: http://127.0.0.1:17878
+    api_key: dev-key-radarr
+    poll: true
+    act: true
+  lidarr:
+    enabled: false
+  whisparr_v2:
+    enabled: false
+  whisparr_v3:
+    enabled: false
+
+torrent_clients:
+  qbittorrent:
+    enabled: true
+    url: http://127.0.0.1:18090
+    username: admin
+    password: adminadmin
+    category_exclude: [keep]
+    tags_exclude: [triagearr-keep]
+    delete_with_files: true
+
+maintainerr:
+  enabled: false
+
+volume:
+  name: dev
+  path: /tmp
+  source: http://127.0.0.1:18091/disk/dev
+  disk_pressure:
+    enabled: true
+    threshold_free_percent: 15
+    target_free_percent: 25
+    # Large enough that the recorded run isn't capped mid-story; the decider
+    # stops on target_reached, not this ceiling.
+    max_run_size_gb: 500
+
+polling:
+  # Short intervals so the recording sees the injected grab reflected in the
+  # UI within a second or two. The disk interval is deliberately wider: it
+  # paces both the gauge update and the auto-trigger, so the record script gets
+  # a window to show the red gauge before the pressure run fires.
+  torrent_client_interval: 2s
+  arr_interval: 2s
+  arr_file_min_interval: 50ms
+  tracker_interval: 5s
+  disk_interval: 8s
+  maintainerr_interval: 1h
+  downsample_cron: "0 3 * * *"
+
+scoring:
+  weights:
+    ratio_obligation_met:  +50
+    upload_velocity_inv:   +30
+    age_days:              +0.1
+    seeders_low_guard:     -1000
+    swarm_health_bonus:    +5
+  hnr_window_days: 14
+
+triggers:
+  schedule: ""
+  disk_pressure: true   # the fresh grab trips this; pressure run fires live
+  manual_api: true
+
+action:
+  max_deletions_per_run: 10
+  inter_action_delay: 100ms
+  add_import_exclusion: false
+
+notifications:
+  telegram:
+    enabled: false
+  webhook:
+    enabled: false
