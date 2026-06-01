@@ -138,6 +138,12 @@ func openStoreAndMigrate(ctx context.Context, cfg *config.Config) (*store.Store,
 		_ = s.Close()
 		return nil, fmt.Errorf("applying migrations: %w", err)
 	}
+	// Seed the query planner's statistics on startup so the first scoring pass
+	// and dashboard reads after a (re)deploy pick good plans without waiting for
+	// the nightly maintenance tick. Best-effort: a stats refresh is never fatal.
+	if err := s.Optimize(ctx); err != nil {
+		slog.Warn("optimize on startup failed", "err", err)
+	}
 	return s, nil
 }
 

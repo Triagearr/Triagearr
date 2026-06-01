@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Whisparr v2 and v3 are now functional *arr clients (previously stubs).
+  `internal/clients/arr/whisparr_v2` mirrors the Sonarr client (series /
+  episode files); `whisparr_v3` mirrors Radarr (movies / movie files). Both
+  speak `/api/v3`, share `arrhistory` (eventType=3) for import mapping, and
+  implement `FileLister`/`ImportLister`/`FileDeleter`, so they support polling
+  and live deletion. Each ships an in-memory `fake/` server for tests.
 - *arr connection management from the dashboard (ADR-0022). Sonarr/Radarr/etc.
   instances now live in the new `arr_connections` SQLite table (migration
   `0012`), the source of truth for the client registry. Settings → *arr
@@ -19,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The YAML `arrs:` block is now a one-time seed: on first boot, when
   `arr_connections` is empty, its instances are imported. Existing configs
   migrate transparently.
+
+### Removed
+- Readarr support (stub client + all wiring). Readarr was archived upstream by
+  the Servarr team; see ADR-0006.
 
 ### Fixed
 - `internal/notify`: gosec G115 lint failure on the disk-free-bytes

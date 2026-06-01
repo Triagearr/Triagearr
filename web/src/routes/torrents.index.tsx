@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Lock, Search, Unlock } from "lucide-react";
+import { ArrowDown, ArrowUp, Flame, Lock, Search, Unlock } from "lucide-react";
 import { memo, useCallback, useDeferredValue, useState } from "react";
 import { useTorrentCategories, useTorrents } from "@/api/hooks";
 import type { TorrentListItemT } from "@/api/schemas";
@@ -68,6 +68,9 @@ const TorrentRow = memo(function TorrentRow({ t, selected, onSelect }: RowProps)
           {t.excluded && <span className="badge badge-warn">{m.torrents_badge_excluded()}</span>}
           {t.any_tracker_alive === false && (
             <span className="badge badge-danger">{m.torrents_badge_tracker_dead()}</span>
+          )}
+          {t.candidate_boost && (
+            <span className="badge badge-danger"><Flame size={9} /> {m.torrents_badge_prioritized()}</span>
           )}
         </div>
       </td>

@@ -23,7 +23,7 @@ func TestStub_IdentityAndFlags(t *testing.T) {
 }
 
 func TestStub_AllOperationalMethodsErrorOut(t *testing.T) {
-	c, err := stub.New(stub.Options{Name: "main", Type: triagearr.ArrTypeReadarr})
+	c, err := stub.New(stub.Options{Name: "main", Type: triagearr.ArrTypeLidarr})
 	require.NoError(t, err)
 	ctx := context.Background()
 

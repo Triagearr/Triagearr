@@ -31,10 +31,18 @@ export function PressureGauge({
   volume,
   threshold: thresholdProp,
   target: targetProp,
+  reclaimableBytes,
+  targetReachable,
+  previewPending,
 }: {
   volume: VolumeViewT;
   threshold?: number;
   target?: number;
+  // Preview-derived: how much a run would free right now, and whether that
+  // reaches the target. Supplied by the dashboard only while below target.
+  reclaimableBytes?: number;
+  targetReachable?: boolean;
+  previewPending?: boolean;
 }) {
   const free    = volume.free_percent ?? 0;
   const threshold = thresholdProp ?? volume.threshold_free_percent ?? 0;
@@ -42,6 +50,10 @@ export function PressureGauge({
   const total = Number(volume.total_bytes ?? 0);
   const used  = Number(volume.used_bytes  ?? 0);
   const fillPct = total > 0 ? (used / total) * 100 : 0;
+
+  // Bytes that must be freed to bring free% up to target — the gap the gauge's
+  // percentage marks don't quantify. Mirrors decider.neededBytes.
+  const needBytes = total > 0 && free < target ? (total * (target - free)) / 100 : 0;
 
   let badge: string;
   let badgeClass: string;
@@ -116,6 +128,35 @@ export function PressureGauge({
           </div>
         </div>
       </div>
+
+      {/* Reclaim target: bytes to free + whether a run would actually reach it */}
+      {needBytes > 0 && (
+        <div style={{
+          display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 8px",
+          paddingTop: 12, borderTop: "1px solid var(--border)", fontSize: 12,
+        }}>
+          <span style={{ color: "var(--fg-3)" }}>{m.comp_gauge_to_free_label()}</span>
+          <span style={{ fontWeight: 600, fontFamily: "'Geist Mono',ui-monospace,monospace" }}>
+            {humanBytes(needBytes)}
+          </span>
+          <span style={{ marginLeft: "auto" }}>
+            {previewPending ? (
+              <span style={{ color: "var(--fg-4)" }}>{m.comp_gauge_checking()}</span>
+            ) : targetReachable === true ? (
+              <span style={{ color: "var(--green-2)" }}>{m.comp_gauge_reachable()}</span>
+            ) : targetReachable === false ? (
+              <span style={{ color: "var(--amber-2)" }}>
+                {m.comp_gauge_shortfall({ bytes: humanBytes(needBytes - (reclaimableBytes ?? 0)) })}
+                {reclaimableBytes != null && (
+                  <span style={{ color: "var(--fg-4)" }}>
+                    {" · "}{humanBytes(reclaimableBytes)} {m.comp_gauge_reclaimable()}
+                  </span>
+                )}
+              </span>
+            ) : null}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

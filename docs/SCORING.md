@@ -10,6 +10,7 @@ If you just want to know what Triagearr will and won't touch:
 - **First to go:** old, idle torrents on **dead trackers** (the "graveyard" — the primary use case), and saturated public content with a huge swarm that no longer needs you.
 - **Private trackers are treated carefully:** ratio + seed-time obligations are respected; the safe `+50` is only credited once you've actually met them.
 - **Two ways to protect something yourself:** flip the per-torrent **Protect** toggle in the UI (sticky across re-syncs), or exclude by qBit category/tag or *arr tag.
+- **One way to push something out yourself:** the inverse **Prioritize deletion** toggle adds a large boost so a chosen torrent jumps to the top of the reap queue. It overrides every guard *except* the hit-and-run window — a torrent inside its HnR window is still never deleted. Protect and Prioritize are mutually exclusive: setting one clears the other.
 - **Two knobs you'll actually touch:** the global **weights** (Settings → Scoring) for "more/less aggressive," and the **per-tracker policy** (`min_ratio`, `min_seed_days`, rare threshold). Both are live-editable; nothing here needs a redeploy.
 - **Size is not in the score** — the Decider already stops once the disk hits its free-space target, so a big file isn't "preferred."
 
@@ -165,6 +166,17 @@ A torrent is marked excluded if it matches any of:
 The scorer **still computes all factors** for excluded torrents (so the UI can surface "this would score +60 but is protected"). Exclusion is enforced by the Decider, which drops these torrents from the candidate set before action. No deletion can target an excluded torrent.
 
 The `triagearr_protected` flag is a user-driven, per-torrent override stored in `torrents.protected` / `torrents.protected_at`. It is deliberately preserved across qBit re-syncs (the UPSERT excludes the `protected*` columns) so the UI toggle is sticky.
+
+### Factor 9 — Candidate boost (user override, ADR-0030)
+
+```
+value  = 1.0 if torrents.candidate_boost = 1, else 0
+weight = +2000   (non-configurable constant, like the HnR veto's −10000)
+```
+
+The mirror image of Protect: a user-driven, per-torrent flag (`torrents.candidate_boost` / `candidate_boost_at`) that adds a large positive contribution so the chosen torrent bubbles to the top of the deletion candidates. Like `protected`, it is sticky — the qBit UPSERT excludes the `candidate_boost*` columns — and it is **mutually exclusive with `protected`**: setting one clears the other in the same write.
+
+**Strength and the one inviolable veto.** The `+2000` weight is deliberately larger than the rare-content guard (`seeders_low_guard = −1000`), so a boosted torrent reaps *even if the swarm still depends on it* — that is the operator's explicit "I really mean it." The only thing it cannot override is the **hit-and-run window veto** (`−10000`): a boosted in-window private torrent still nets `−8000` and is never deleted. HnR remains non-configurable per the project's non-negotiable safety rules. The weight is a hard-coded constant (not in `scoring.weights`) because it is a per-torrent action, not a global tuning knob (ADR-0030).
 
 ## Worked example
 

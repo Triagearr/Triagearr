@@ -18,7 +18,6 @@ const (
 	ArrTypeSonarr     ArrType = "sonarr"
 	ArrTypeRadarr     ArrType = "radarr"
 	ArrTypeLidarr     ArrType = "lidarr"
-	ArrTypeReadarr    ArrType = "readarr"
 	ArrTypeWhisparrV2 ArrType = "whisparr_v2"
 	ArrTypeWhisparrV3 ArrType = "whisparr_v3"
 )
@@ -235,7 +234,6 @@ type ImportRecord struct {
 	DownloadID   Hash   // qBit info-hash, lowercased
 	DroppedPath  string // source path as reported by *arr at import time
 	ImportedPath string // destination path inside the *arr library
-	Size         int64
 	ImportedAt   time.Time
 }
 
@@ -283,6 +281,7 @@ type RunItem struct {
 	RunID          int64
 	Rank           int
 	TorrentHash    Hash
+	TorrentName    string // snapshot at plan time; history outlives the torrent
 	Score          float64
 	SizeBytes      int64
 	WouldFreeBytes int64
@@ -335,6 +334,7 @@ type Action struct {
 	RunID       int64
 	Rank        int
 	TorrentHash Hash
+	TorrentName string // snapshot at action time; history outlives the torrent
 	StartedAt   time.Time
 	FinishedAt  time.Time // zero when not yet finished
 	Status      ActionStatus

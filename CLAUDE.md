@@ -36,7 +36,7 @@ Go 1.26+ · urfave/cli/v3 · koanf/v2 · modernc.org/sqlite · sqlx · net/http 
 
 - `cmd/triagearr/main.go` — CLI entry
 - `internal/store/` — SQLite + migrations
-- `internal/clients/arr/{sonarr,radarr,lidarr,readarr,whisparr_v2,whisparr_v3}/` — one per *arr provider
+- `internal/clients/arr/{sonarr,radarr,lidarr,whisparr_v2,whisparr_v3}/` — one per *arr provider
 - `internal/clients/torrent/{qbit,...}/` — one per torrent-client provider
 - `internal/scorer/` — DeleteScore
 - `internal/actor/` — destructive ops only

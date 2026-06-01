@@ -33,7 +33,15 @@ CREATE TABLE torrents (
     tags          TEXT      NOT NULL DEFAULT '',
     last_seen     TIMESTAMP NOT NULL,
     protected     INTEGER   NOT NULL DEFAULT 0,
-    protected_at  TIMESTAMP
+    protected_at  TIMESTAMP,
+    -- candidate_boost is the user-driven inverse of protected: it adds a large
+    -- positive contribution to the DeleteScore so the operator can force a
+    -- torrent to the top of the reap queue (scorer Factor 9, ADR-0030). Like
+    -- protected it is excluded from the qBit upsert so the flag survives sync
+    -- ticks, and the two are mutually exclusive — the store clears one when
+    -- setting the other.
+    candidate_boost    INTEGER NOT NULL DEFAULT 0,
+    candidate_boost_at TIMESTAMP
 );
 CREATE INDEX idx_torrents_last_seen ON torrents(last_seen);
 CREATE INDEX idx_torrents_category  ON torrents(category);
@@ -142,7 +150,6 @@ CREATE TABLE arr_imports (
     download_id   TEXT      NOT NULL,
     dropped_path  TEXT      NOT NULL DEFAULT '',
     imported_path TEXT      NOT NULL DEFAULT '',
-    size          INTEGER   NOT NULL DEFAULT 0,
     history_id    INTEGER   NOT NULL,
     imported_at   TIMESTAMP NOT NULL,
     PRIMARY KEY (arr_type, file_id)
@@ -263,6 +270,9 @@ CREATE TABLE run_items (
     score            REAL    NOT NULL,
     size_bytes       INTEGER NOT NULL,
     would_free_bytes INTEGER NOT NULL,
+    -- torrent_name is snapshotted at plan time so the run view keeps the title
+    -- even after the torrent leaves the torrents table (reap eviction / prune).
+    torrent_name     TEXT    NOT NULL DEFAULT '',
     PRIMARY KEY (run_id, rank)
 );
 -- No index on torrent_hash: run_items is only read by (run_id, rank).
@@ -277,6 +287,9 @@ CREATE TABLE actions (
     run_id       INTEGER   NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
     rank         INTEGER   NOT NULL,
     torrent_hash TEXT      NOT NULL,
+    -- Snapshotted at action time so the post-mortem keeps the title after the
+    -- reaped torrent is evicted from the torrents table (ForgetTorrent).
+    torrent_name TEXT      NOT NULL DEFAULT '',
     started_at   TIMESTAMP NOT NULL,
     finished_at  TIMESTAMP,
     status       TEXT      NOT NULL,

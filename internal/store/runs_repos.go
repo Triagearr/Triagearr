@@ -41,15 +41,15 @@ func (s *Store) InsertRunItems(ctx context.Context, runID int64, items []triagea
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.PreparexContext(ctx, `
-		INSERT INTO run_items(run_id, rank, torrent_hash, score, size_bytes, would_free_bytes)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO run_items(run_id, rank, torrent_hash, torrent_name, score, size_bytes, would_free_bytes)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare run_items insert: %w", err)
 	}
 	defer func() { _ = stmt.Close() }()
 	for _, it := range items {
-		if _, err := stmt.ExecContext(ctx, runID, it.Rank, string(it.TorrentHash), it.Score, it.SizeBytes, it.WouldFreeBytes); err != nil {
+		if _, err := stmt.ExecContext(ctx, runID, it.Rank, string(it.TorrentHash), it.TorrentName, it.Score, it.SizeBytes, it.WouldFreeBytes); err != nil {
 			return fmt.Errorf("insert run_item rank=%d: %w", it.Rank, err)
 		}
 	}
@@ -119,13 +119,14 @@ func (s *Store) GetRun(ctx context.Context, id int64) (triagearr.Run, []triagear
 	type itemRow struct {
 		Rank           int     `db:"rank"`
 		TorrentHash    string  `db:"torrent_hash"`
+		TorrentName    string  `db:"torrent_name"`
 		Score          float64 `db:"score"`
 		SizeBytes      int64   `db:"size_bytes"`
 		WouldFreeBytes int64   `db:"would_free_bytes"`
 	}
 	var items []itemRow
 	if err := s.reader.SelectContext(ctx, &items, `
-		SELECT rank, torrent_hash, score, size_bytes, would_free_bytes
+		SELECT rank, torrent_hash, torrent_name, score, size_bytes, would_free_bytes
 		FROM run_items WHERE run_id = ? ORDER BY rank ASC
 	`, id); err != nil {
 		return triagearr.Run{}, nil, fmt.Errorf("loading items for run %d: %w", id, err)
@@ -136,6 +137,7 @@ func (s *Store) GetRun(ctx context.Context, id int64) (triagearr.Run, []triagear
 			RunID:          id,
 			Rank:           it.Rank,
 			TorrentHash:    triagearr.Hash(it.TorrentHash),
+			TorrentName:    it.TorrentName,
 			Score:          it.Score,
 			SizeBytes:      it.SizeBytes,
 			WouldFreeBytes: it.WouldFreeBytes,

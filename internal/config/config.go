@@ -129,7 +129,6 @@ type ArrsConfig struct {
 	Sonarr     ArrInstanceConfig `koanf:"sonarr"`
 	Radarr     ArrInstanceConfig `koanf:"radarr"`
 	Lidarr     ArrInstanceConfig `koanf:"lidarr"`
-	Readarr    ArrInstanceConfig `koanf:"readarr"`
 	WhisparrV2 ArrInstanceConfig `koanf:"whisparr_v2"`
 	WhisparrV3 ArrInstanceConfig `koanf:"whisparr_v3"`
 }
@@ -141,7 +140,6 @@ func (c *ArrsConfig) EachPtr(fn func(label string, inst *ArrInstanceConfig)) {
 	fn("sonarr", &c.Sonarr)
 	fn("radarr", &c.Radarr)
 	fn("lidarr", &c.Lidarr)
-	fn("readarr", &c.Readarr)
 	fn("whisparr_v2", &c.WhisparrV2)
 	fn("whisparr_v3", &c.WhisparrV3)
 }
@@ -156,8 +154,6 @@ func (c *ArrsConfig) SetByKind(kind string, inst ArrInstanceConfig) bool {
 		c.Radarr = inst
 	case "lidarr":
 		c.Lidarr = inst
-	case "readarr":
-		c.Readarr = inst
 	case "whisparr_v2":
 		c.WhisparrV2 = inst
 	case "whisparr_v3":

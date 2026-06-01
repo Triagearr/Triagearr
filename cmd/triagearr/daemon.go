@@ -441,7 +441,6 @@ func arrURLMap(cfg *config.Config) map[string]string {
 		{triagearr.ArrTypeSonarr, cfg.Arrs.Sonarr},
 		{triagearr.ArrTypeRadarr, cfg.Arrs.Radarr},
 		{triagearr.ArrTypeLidarr, cfg.Arrs.Lidarr},
-		{triagearr.ArrTypeReadarr, cfg.Arrs.Readarr},
 		{triagearr.ArrTypeWhisparrV2, cfg.Arrs.WhisparrV2},
 		{triagearr.ArrTypeWhisparrV3, cfg.Arrs.WhisparrV3},
 	} {

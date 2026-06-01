@@ -241,6 +241,45 @@ export function useSetTorrentProtected() {
   });
 }
 
+// PUT /api/v1/torrents/{hash}/candidate_boost — the inverse of protect: a
+// user-driven "prioritize deletion" flag (ADR-0030). We optimistically patch the
+// cached list row's `candidate_boost` (so the badge flips immediately) and, when
+// boosting, its `excluded` to false (boost clears protect server-side). The big
+// score change is reflected by invalidating the detail + scores queries; the 30s
+// poll reconciles the list's `score`.
+export function useSetTorrentCandidateBoost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ hash, boost }: { hash: string; boost: boolean }) =>
+      apiFetchVoid(`/api/v1/torrents/${hash}/candidate_boost`, {
+        method: "PUT",
+        body: JSON.stringify({ candidate_boost: boost }),
+      }),
+    onSuccess: (_data, { hash, boost }) => {
+      qc.setQueriesData<z.infer<typeof TorrentList>>(
+        { queryKey: ["torrents"] },
+        (old) => {
+          if (!old) return old;
+          let touched = false;
+          const torrents = old.torrents.map((t) => {
+            if (t.hash !== hash) return t;
+            const next = { ...t, candidate_boost: boost };
+            // Boosting clears protect, so the row is no longer excluded.
+            if (boost && t.excluded) next.excluded = false;
+            touched = true;
+            return next;
+          });
+          return touched ? { ...old, torrents } : old;
+        },
+      );
+      qc.invalidateQueries({ queryKey: queryKeys.torrent(hash) });
+      qc.invalidateQueries({ queryKey: queryKeys.scores });
+      // The dashboard's "Top reap candidates" card reads top_score from /summary.
+      qc.invalidateQueries({ queryKey: queryKeys.summary });
+    },
+  });
+}
+
 export function useSnapshots(hash: string, since = "720h") {
   return useQuery({
     queryKey: queryKeys.snapshots(hash, since),
@@ -269,12 +308,13 @@ export function useRuns() {
 // persisting it. Enabled only while the confirm modal is open so we don't poll
 // the Decider in the background. staleTime is short: the plan moves with disk
 // state, and the modal should reflect a recent view.
-export function usePreviewRun(enabled: boolean) {
+export function usePreviewRun(enabled: boolean, refetchInterval?: number) {
   return useQuery({
     queryKey: queryKeys.runPreview,
     queryFn: () => apiFetch("/api/v1/runs/preview", RunPreview),
     enabled,
     staleTime: 5_000,
+    refetchInterval,
   });
 }
 

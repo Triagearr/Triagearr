@@ -45,9 +45,8 @@ const KINDS: KindMeta[] = [
   { value: "sonarr",      label: "Sonarr",      logo: "/logos/sonarr.svg",   stub: false, urlPlaceholder: "http://sonarr:8989",   categoryHint: "tv-sonarr" },
   { value: "radarr",      label: "Radarr",      logo: "/logos/radarr.svg",   stub: false, urlPlaceholder: "http://radarr:7878",   categoryHint: "radarr" },
   { value: "lidarr",      label: "Lidarr",      logo: "/logos/lidarr.svg",   stub: true,  urlPlaceholder: "http://lidarr:8686",   categoryHint: "lidarr" },
-  { value: "readarr",     label: "Readarr",     logo: "/logos/readarr.svg",  stub: true,  urlPlaceholder: "http://readarr:8787",  categoryHint: "readarr" },
-  { value: "whisparr_v2", label: "Whisparr v2", logo: "/logos/whisparr.svg", stub: true,  urlPlaceholder: "http://whisparr:6969", categoryHint: "whisparr" },
-  { value: "whisparr_v3", label: "Whisparr v3", logo: "/logos/whisparr.svg", stub: true,  urlPlaceholder: "http://whisparr:6969", categoryHint: "whisparr" },
+  { value: "whisparr_v2", label: "Whisparr v2", logo: "/logos/whisparr.svg", stub: false, urlPlaceholder: "http://whisparr:6969", categoryHint: "whisparr" },
+  { value: "whisparr_v3", label: "Whisparr v3", logo: "/logos/whisparr.svg", stub: false, urlPlaceholder: "http://whisparr:6969", categoryHint: "whisparr" },
 ];
 
 // ── Kind tile ──────────────────────────────────────────────────────────────────

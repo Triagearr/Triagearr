@@ -90,9 +90,12 @@ func applyOverrides(k *koanf.Koanf, overrides []Override) error {
 
 // IsEditableKey reports whether the given dotted path may be overridden via
 // the Settings API. The whitelist matches the operator-facing choices made
-// in plan: scoring, disk_pressure thresholds, polling intervals. Anything
-// not on this list must round-trip through a YAML edit (audit-trailed via
-// git) — notably mode, per-instance act flags, URLs/credentials, and the
+// in plan: scoring, disk_pressure thresholds, polling intervals, and the
+// dry-run/live mode (ADR-0029 — toggling it from the dashboard is the whole
+// point; the change is audit-trailed in settings_overrides rather than git,
+// and stays safe via the dry-run default, per-instance act gate, and HnR veto).
+// Anything not on this list must round-trip through a YAML edit (audit-trailed
+// via git) — notably per-instance act flags, URLs/credentials, and the
 // bind/sqlite_path infrastructure knobs.
 func IsEditableKey(key string) bool {
 	for prefix := range editablePrefixes {
@@ -108,6 +111,7 @@ func IsEditableKey(key string) bool {
 //
 // Kept as a map for O(1) lookup and so adding a new section is a one-liner.
 var editablePrefixes = map[string]struct{}{
+	"mode":                 {}, // dry-run/live toggle, UI-managed (ADR-0029); Validate() enforces the enum
 	"scoring":              {},
 	"polling":              {},
 	"volume.disk_pressure": {}, // thresholds only; volume.path/name/source are boot-critical (preflight reads them) and must stay YAML-only

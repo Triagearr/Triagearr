@@ -10,6 +10,8 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha-orange)](docs/ROADMAP.md)
 
+<img src="docs/assets/demo.webp" alt="A fresh download fills the disk past the threshold; a live run reaps the operator-prioritized grab, the dead-tracker graveyard and a private seed whose ratio is paid, and the space comes back — while the protected archive, the rare seed and the in-window grab are spared." width="900">
+
 </div>
 
 ---
@@ -47,7 +49,7 @@ Telegram are simply the first in each lane.
 
 | Role | Supported today | Planned / scaffolded |
 |---|---|---|
-| **\*arr media managers** | Sonarr, Radarr | Lidarr, Readarr, Whisparr v2/v3 *(interface stubs — not functional yet)* |
+| **\*arr media managers** | Sonarr, Radarr, Whisparr v2/v3 | Lidarr *(interface stub — not functional yet)* |
 | **Torrent clients** | qBittorrent | Transmission, Deluge, rTorrent *(UI placeholders, no backend yet)* |
 | **Notifications** | Telegram | Webhook, Discord, Pushover, ntfy *(post-1.0)* |
 

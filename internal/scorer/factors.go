@@ -149,6 +149,7 @@ func evalFactors(t store.ScoringTorrent, snaps store.SnapshotStats, globalAvg fl
 		factorSwarmBonus(snaps.SeedersAvg7d, w.SwarmHealthBonus),
 		factorHnRVeto(t, alive, cfg.HnRWindowDays, now),
 		factorTrackerDead(trackers, now, cfg.TrackerDeadGrace, w.TrackerDeadBonus),
+		factorCandidateBoost(t, CandidateBoostWeight),
 	}
 }
 
@@ -268,6 +269,18 @@ func factorTrackerDead(trackers []trackerView, now time.Time, grace time.Duratio
 	return f
 }
 
+// factorCandidateBoost: user-driven "prioritize deletion" override. SCORING.md
+// §Factor 9. The +2000 weight overrides the rare-content guard but not the HnR
+// veto (-10000), which stays absolute. Mirror image of the protected exclusion.
+func factorCandidateBoost(t store.ScoringTorrent, w float64) Factor {
+	f := Factor{Name: FactorCandidateBoost, Weight: w}
+	if t.CandidateBoost {
+		f.Value = 1.0
+		f.Contribution = w
+	}
+	return f
+}
+
 // -----------------------------------------------------------------------------
 // Exclusions (Factor 8 in SCORING.md — not a factor proper).
 // -----------------------------------------------------------------------------
@@ -344,7 +357,6 @@ func indexArrTagsExclude(arrs config.ArrsConfig) map[string][]string {
 	add(string(triagearr.ArrTypeSonarr), arrs.Sonarr)
 	add(string(triagearr.ArrTypeRadarr), arrs.Radarr)
 	add(string(triagearr.ArrTypeLidarr), arrs.Lidarr)
-	add(string(triagearr.ArrTypeReadarr), arrs.Readarr)
 	add(string(triagearr.ArrTypeWhisparrV2), arrs.WhisparrV2)
 	add(string(triagearr.ArrTypeWhisparrV3), arrs.WhisparrV3)
 	return out

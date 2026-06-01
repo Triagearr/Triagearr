@@ -28,8 +28,9 @@ type fakeSource struct {
 	actions  map[int64]*triagearr.Action      // by action id
 	audit    map[int64][]triagearr.AuditEntry // action id → entries
 	nextAct  int64
-	insErr   error // optional: error on InsertAction
-	linksErr error // optional: error on LinksByHash
+	insErr   error            // optional: error on InsertAction
+	linksErr error            // optional: error on LinksByHash
+	forgot   []triagearr.Hash // hashes evicted via ForgetTorrent
 }
 
 func newFakeSource(run triagearr.Run, items []triagearr.RunItem, links map[triagearr.Hash][]triagearr.Link) *fakeSource {
@@ -100,6 +101,13 @@ func (f *fakeSource) LinksByHash(_ context.Context, hash triagearr.Hash) ([]tria
 
 func (f *fakeSource) TorrentSavePath(_ context.Context, _ triagearr.Hash) (string, error) {
 	return "/fake", nil
+}
+
+func (f *fakeSource) ForgetTorrent(_ context.Context, hash triagearr.Hash) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forgot = append(f.forgot, hash)
+	return nil
 }
 
 // fakeQbit records every Delete call and can be programmed to fail N times.
@@ -201,7 +209,7 @@ func liveRun(items []triagearr.RunItem) triagearr.Run {
 }
 
 func TestActor_HappyPath_singleFile(t *testing.T) {
-	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h1", SizeBytes: 1000}}
+	items := []triagearr.RunItem{{Rank: 0, TorrentHash: "h1", TorrentName: "Some Show S01E01", SizeBytes: 1000}}
 	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
 		"h1": {{ArrType: triagearr.ArrTypeSonarr, FileID: 42}},
 	})
@@ -211,6 +219,7 @@ func TestActor_HappyPath_singleFile(t *testing.T) {
 
 	require.NoError(t, a.Execute(context.Background(), 1))
 
+	require.Equal(t, "Some Show S01E01", src.actions[1].TorrentName, "name snapshotted onto the action")
 	require.Equal(t, []int64{42}, d.calls)
 	require.Equal(t, []triagearr.Hash{"h1"}, q.calls)
 	require.Equal(t, "completed", src.runs[1])
@@ -227,6 +236,10 @@ func TestActor_HappyPath_singleFile(t *testing.T) {
 	require.Equal(t, triagearr.AuditOutcomeOK, rows[1].Outcome)
 	require.Equal(t, triagearr.AuditStepQbitDelete, rows[2].Step)
 	require.Equal(t, triagearr.AuditOutcomeOK, rows[2].Outcome)
+
+	// A durable reap evicts the torrent from the store so a later run can't
+	// re-target the dead hash.
+	require.Equal(t, []triagearr.Hash{"h1"}, src.forgot)
 }
 
 func TestActor_SeasonPack_8files_allOK(t *testing.T) {
@@ -299,6 +312,8 @@ func TestActor_QbitFail_ArrAlreadyDone(t *testing.T) {
 	require.Equal(t, []int64{1}, d.calls)
 	// qBit called exactly once (no retry on non-transient)
 	require.Len(t, q.calls, 1)
+	// qBit still holds the torrent → it must NOT be forgotten from the store.
+	require.Empty(t, src.forgot)
 }
 
 func TestActor_QbitTransientRetry(t *testing.T) {
@@ -409,6 +424,8 @@ func TestActor_T35_SkipsCrossSeed(t *testing.T) {
 	require.Equal(t, []int64{1}, d.calls, "*arr deletes already happened (not rolled back)")
 	require.Equal(t, triagearr.ActionSkippedCrossSeed, src.actions[1].Status)
 	require.Equal(t, int64(0), src.actions[1].FreedBytes)
+	// Torrent is still alive in qBit (cross-seed) → must NOT be forgotten.
+	require.Empty(t, src.forgot)
 
 	rows := src.audit[1]
 	require.Len(t, rows, 2) // 1 arr_delete OK + 1 nlink_check Skipped

@@ -28,11 +28,19 @@ const (
 	FactorSwarmBonus      = "swarm_health_bonus"
 	FactorHnRVeto         = "hnr_window_veto"
 	FactorTrackerDead     = "tracker_dead_bonus"
+	FactorCandidateBoost  = "candidate_boost"
 )
 
 // HnRVetoWeight is the hard-coded veto magnitude for in-window private torrents
 // served by a live tracker. SCORING.md §Factor 6: "non-configurable".
 const HnRVetoWeight = -10000.0
+
+// CandidateBoostWeight is the hard-coded magnitude of the user-driven
+// "prioritize deletion" override (SCORING.md §Factor 9, ADR-0030). It is large
+// enough to override the rare-content guard (-1000) but stays far below the HnR
+// veto (-10000), which remains the one inviolable veto. Non-configurable, like
+// HnRVetoWeight, because it is a per-torrent action rather than a tuning knob.
+const CandidateBoostWeight = 2000.0
 
 // Factor is one contribution to the final score. Contribution = Value × Weight,
 // unless Gate is set in which case Contribution is forced to 0 and the gate

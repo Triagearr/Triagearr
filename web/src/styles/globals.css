@@ -43,7 +43,7 @@
     --amber-2:   oklch(0.66  0.17  75);
     --amber-bg:  oklch(0.96  0.05  75);
     --green:     oklch(0.62  0.14  152);
-    --green-2:   oklch(0.55  0.14  152);
+    --green-2:   oklch(0.47  0.15  152);
     --green-bg:  oklch(0.96  0.04  152);
 
     /* Tailwind compat — keep existing utility classes working */
@@ -347,6 +347,10 @@
 
 /* ── Score cell ───────────────────────────────────────────────────────────── */
 .score-cell { display: inline-flex; align-items: center; gap: 7px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; color: var(--fg-2); }
+/* Fixed-width numeric column so every cell aligns regardless of magnitude
+   (scores span "0.00" to a +2000 boost or a −10000 HnR veto). The bar keeps its
+   fixed track and proportional fill; only the number was making cells jump. */
+.score-val  { min-width: 4.75rem; text-align: right; font-variant-numeric: tabular-nums; }
 .score-bar  { width: 40px; height: 4px; border-radius: 2px; background: var(--bg-2); overflow: hidden; flex: none; }
 .score-bar i { display: block; height: 100%; background: var(--green); }
 .score-cell.med  .score-bar i { background: var(--amber); }
@@ -885,6 +889,21 @@ input[type=range] { accent-color: var(--primary); }
 @media (max-width: 639px) {
   /* Burger drawer goes full-screen on phones */
   .sidebar-drawer { width: 100vw; box-shadow: none; }
+
+  /* The score bar + fixed-width number eat too much room on a phone card; the
+     tier color already conveys severity, so drop the bar and let the number
+     size to its content. */
+  .score-bar { display: none; }
+  .score-val { min-width: 0; }
+
+  /* Status badges on a phone collapse to icon-only — the full labels
+     ("prioritized", "tracker dead", …) wrapped onto a second line. The icon
+     keeps the meaning; the meta row stays on one line. Applies to the torrents
+     list card and the dashboard's reap-candidates rows. */
+  .torrent-card-meta .badge .badge-label,
+  .name-meta .badge .badge-label { display: none; }
+  .torrent-card-meta .badge,
+  .name-meta .badge { gap: 0; padding: 2px 5px; }
 
   .topbar { height: auto; padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
   .topbar-title { font-size: 13px; }

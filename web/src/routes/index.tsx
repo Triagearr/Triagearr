@@ -1,18 +1,66 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, Lock, RefreshCw, Unlock, Zap } from "lucide-react";
+import { AlertTriangle, Flame, Lock, RefreshCw, Skull, Unlock, Zap } from "lucide-react";
 import { memo } from "react";
-import { useSummary, useArrs, useTriggerRun } from "@/api/hooks";
+import {
+  useSummary,
+  useArrs,
+  useTriggerRun,
+  useSettings,
+  useArrConnections,
+  useTorrentClientConnections,
+  usePreviewRun,
+} from "@/api/hooks";
 import { PressureGauge } from "@/components/PressureGauge";
 import { ScoreCell } from "@/components/ScoreCell";
 import { humanBytes, relativeTime } from "@/lib/format";
-import type { ArrViewT } from "@/api/schemas";
+import type { ArrViewT, ClientViewT } from "@/api/schemas";
 import { ArrLogo } from "@/components/ArrLogo";
+import { TorrentClientLogo } from "@/components/TorrentClientLogo";
+import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
 
 function ModeBadge({ mode }: { mode: string }) {
   return mode === "live"
     ? <span className="badge badge-solid-danger">● {m.common_mode_live()}</span>
     : <span className="badge">{m.common_mode_dry_run()}</span>;
+}
+
+// Health-tile chips — same visual as the Settings connection tiles
+// (.arr-tile-toggles / .arr-chip), so the dashboard reads the per-instance
+// act/enabled/delete state at a glance.
+function TileChips({ chips }: { chips: { label: string; on: boolean; danger?: boolean }[] }) {
+  return (
+    <div className="arr-tile-toggles">
+      {chips.map((c) => (
+        <span key={c.label} className={cn("arr-chip", c.on && "on", c.on && c.danger && "danger")}>
+          <span className="arr-chip-dot" /> {c.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ModeStatCard — 5th stat card. Mirrors StatCard but is a coloured link to the
+// Mode settings: red/danger when armed (live), neutral in dry-run.
+function ModeStatCard({ mode }: { mode: string }) {
+  const live = mode === "live";
+  return (
+    <Link
+      to="/settings/mode"
+      className="card"
+      style={{
+        padding: 14,
+        textDecoration: "none",
+        ...(live ? { borderColor: "var(--red)", background: "var(--red-bg)" } : {}),
+      }}
+    >
+      <div className="stat-label">{m.settings_mode_title()}</div>
+      <div className="stat-value" style={{ color: live ? "var(--red-2)" : undefined }}>
+        {live ? m.common_mode_live() : m.common_mode_dry_run()}
+      </div>
+      <div className="stat-foot">{live ? m.dash_mode_foot_live() : m.dash_mode_foot_dry()}</div>
+    </Link>
+  );
 }
 
 type StatCardProps = {
@@ -32,34 +80,38 @@ const StatCard = memo(function StatCard({ label, value, foot, accent }: StatCard
   );
 });
 
-// ── *arr health tile — same visual as Settings tiles, uses real SVG logos ─────
-function ArrHealthCard({ arr }: { arr: ArrViewT }) {
-  const kind = arr.type.toLowerCase();
-  const state = !arr.healthy ? "down" : "healthy";
+// ── Health tile — shared shell for the *arr and torrent-client dashboard tiles.
+// Same visual as the Settings connection tiles; callers supply the logo, the
+// status chips, and the health fields.
+function HealthTile({ logo, name, url, healthy, chips, lastError, lastHealthCheck }: {
+  logo: React.ReactNode;
+  name: string;
+  url: string;
+  healthy: boolean;
+  chips?: { label: string; on: boolean; danger?: boolean }[];
+  lastError?: string | null;
+  lastHealthCheck?: string | null;
+}) {
   return (
-    <div className={`arr-tile state-${state}`} style={{ cursor: "default" }}>
+    <div className={`arr-tile state-${healthy ? "healthy" : "down"}`} style={{ cursor: "default" }}>
       <div className="arr-tile-head">
-        <ArrLogo kind={kind} size={34} />
+        {logo}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="arr-tile-name" style={{ textTransform: "capitalize" }}>{arr.name}</div>
-          <div className="arr-tile-tag">{kind}</div>
+          <div className="arr-tile-name" style={{ textTransform: "capitalize" }}>{name}</div>
         </div>
         <div className="arr-tile-state">
-          {arr.healthy
+          {healthy
             ? <><span className="dot green" /><span style={{ color: "var(--green-2)" }}>{m.common_healthy()}</span></>
             : <><span className="dot red pulse" /><span style={{ color: "var(--red-2)" }}>{m.dash_arr_down()}</span></>
           }
         </div>
       </div>
-      <div className="arr-tile-url">{arr.url}</div>
-      {arr.last_error && (
-        <div className="arr-tile-error">
-          {arr.last_error}
-        </div>
-      )}
+      <div className="arr-tile-url">{url}</div>
+      {chips && <TileChips chips={chips} />}
+      {lastError && <div className="arr-tile-error">{lastError}</div>}
       <div className="arr-tile-foot">
-        {arr.last_health_check
-          ? <span>{m.dash_arr_checked()} {relativeTime(arr.last_health_check)}</span>
+        {lastHealthCheck
+          ? <span>{m.dash_arr_checked()} {relativeTime(lastHealthCheck)}</span>
           : <span>{m.dash_arr_never_checked()}</span>
         }
       </div>
@@ -67,14 +119,57 @@ function ArrHealthCard({ arr }: { arr: ArrViewT }) {
   );
 }
 
+function ArrHealthCard({ arr, conn }: { arr: ArrViewT; conn?: { enabled: boolean; act: boolean } }) {
+  return (
+    <HealthTile
+      logo={<ArrLogo kind={arr.type.toLowerCase()} size={34} />}
+      name={arr.name}
+      url={arr.url}
+      healthy={arr.healthy}
+      chips={conn && [
+        { label: m.settings_chip_enabled(), on: conn.enabled },
+        { label: m.settings_chip_act(), on: conn.act, danger: true },
+      ]}
+      lastError={arr.last_error}
+      lastHealthCheck={arr.last_health_check}
+    />
+  );
+}
+
+// No per-client act flag exists, so the chips surface enabled + delete-files
+// (what governs the torrent client's participation in a live run).
+function ClientHealthCard({ client, conn }: {
+  client: ClientViewT;
+  conn?: { enabled: boolean; delete_with_files: boolean };
+}) {
+  return (
+    <HealthTile
+      logo={<TorrentClientLogo kind={client.kind} size={34} />}
+      name={client.kind}
+      url={client.url}
+      healthy={client.healthy}
+      chips={conn && [
+        { label: m.settings_chip_enabled(), on: conn.enabled },
+        { label: m.settings_chip_delete_files(), on: conn.delete_with_files, danger: true },
+      ]}
+      lastError={client.last_error}
+      lastHealthCheck={client.last_health_check}
+    />
+  );
+}
+
 function Dashboard() {
   const summary = useSummary();
   const arrsQuery = useArrs();
+  const settings = useSettings();
+  const arrConns = useArrConnections();
+  const clientConns = useTorrentClientConnections();
   const trigger = useTriggerRun();
   const navigate = useNavigate();
 
   const data = summary.data;
   const arrs = data?.arrs ?? arrsQuery.data?.arrs ?? [];
+  const torrentClients = data?.torrent_clients ?? [];
   const lastRuns = data?.last_runs ?? [];
   const topScore = data?.top_score ?? [];
   // Only positive scores are genuine reap candidates — negative scores are
@@ -82,6 +177,16 @@ function Dashboard() {
   // "would be deleted first in a live run" misrepresents what a run does.
   const reapCandidates = topScore.filter((t) => t.score > 0).slice(0, 10);
   const volume = data?.volume;
+
+  // Only scan the Decider when actually below target — when the volume already
+  // meets target there's nothing to free and the preview would just be 0.
+  const target = volume?.target_free_percent ?? 0;
+  const belowTarget = volume?.free_percent != null && target > 0 && volume.free_percent < target;
+  const preview = usePreviewRun(belowTarget, 30_000);
+
+  const mode = settings.data?.values.mode ?? "dry-run";
+  const arrConnByKind = new Map((arrConns.data?.connections ?? []).map((c) => [c.kind, c]));
+  const clientConnByKind = new Map((clientConns.data?.connections ?? []).map((c) => [c.kind, c]));
 
   const healthyArrs = arrs.filter((a) => a.healthy).length;
   const totalArrs = arrs.length;
@@ -123,7 +228,8 @@ function Dashboard() {
         {data && (
           <>
             {/* Stat cards */}
-            <div className="grid-resp" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
+            <div className="grid-resp" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 14 }}>
+              <ModeStatCard mode={mode} />
               <StatCard label={m.dash_stat_torrents_tracked()} value={data.counts.torrents} foot={m.dash_stat_in_qbittorrent()} />
               <StatCard label={m.dash_stat_scored()} value={data.counts.scored} foot={m.dash_stat_last_cycle()} />
               <StatCard label={m.dash_stat_actions_all_time()} value={data.counts.actions} foot={m.dash_stat_deletions_executed()} />
@@ -149,7 +255,12 @@ function Dashboard() {
                 </div>
                 <div className="card-body">
                   {volume
-                    ? <PressureGauge volume={volume} />
+                    ? <PressureGauge
+                        volume={volume}
+                        reclaimableBytes={belowTarget ? preview.data?.estimated_freed_bytes : undefined}
+                        targetReachable={belowTarget && preview.data ? preview.data.stop_reason === "target_reached" : undefined}
+                        previewPending={belowTarget && preview.isLoading}
+                      />
                     : <div style={{ color: "var(--fg-3)", fontSize: 12 }}>{m.dash_no_volume_configured()}</div>
                   }
                 </div>
@@ -212,11 +323,14 @@ function Dashboard() {
                             <div className="name-text">{t.name}</div>
                             <div className="name-meta">
                               {t.private
-                                ? <span className="badge"><Lock size={9} /> {m.dash_badge_private()}</span>
-                                : <span className="badge"><Unlock size={9} /> {m.dash_badge_public()}</span>
+                                ? <span className="badge"><Lock size={9} /> <span className="badge-label">{m.dash_badge_private()}</span></span>
+                                : <span className="badge"><Unlock size={9} /> <span className="badge-label">{m.dash_badge_public()}</span></span>
                               }
                               {!t.any_tracker_alive && (
-                                <span className="badge badge-danger">{m.dash_badge_tracker_dead()}</span>
+                                <span className="badge badge-danger"><Skull size={9} /> <span className="badge-label">{m.dash_badge_tracker_dead()}</span></span>
+                              )}
+                              {t.candidate_boost && (
+                                <span className="badge badge-danger"><Flame size={9} /> <span className="badge-label">{m.dash_badge_prioritized()}</span></span>
                               )}
                             </div>
                           </td>
@@ -229,15 +343,20 @@ function Dashboard() {
               </div>
             )}
 
-            {/* *arr health grid */}
-            {arrs.length > 0 && (
+            {/* Connection health — *arr instances + torrent clients in one grid */}
+            {(arrs.length > 0 || torrentClients.length > 0) && (
               <div className="card">
                 <div className="card-head">
-                  <span className="card-title">{m.dash_arr_instance_health()}</span>
+                  <span className="card-title">{m.dash_connection_health()}</span>
                   <span className="card-sub">{m.dash_polled_30s()}</span>
                 </div>
                 <div className="card-body arr-grid">
-                  {arrs.map((a) => <ArrHealthCard key={a.name} arr={a} />)}
+                  {arrs.map((a) => (
+                    <ArrHealthCard key={`arr-${a.name}`} arr={a} conn={arrConnByKind.get(a.type.toLowerCase())} />
+                  ))}
+                  {torrentClients.map((c) => (
+                    <ClientHealthCard key={`client-${c.kind}`} client={c} conn={clientConnByKind.get(c.kind)} />
+                  ))}
                 </div>
               </div>
             )}

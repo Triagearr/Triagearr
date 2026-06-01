@@ -15,6 +15,8 @@ type MaintenanceStore interface {
 	EnforceRetention(ctx context.Context, rawHorizon, dailyHorizon time.Duration) (rawDeleted, dailyDeleted int, err error)
 	PruneStaleTorrents(ctx context.Context, olderThan time.Duration) (int, error)
 	Vacuum(ctx context.Context, minReclaimBytes int64) (ran bool, reclaimable int64, err error)
+	CheckpointWAL(ctx context.Context) error
+	Optimize(ctx context.Context) error
 }
 
 // MaintenanceConfig groups the storage-maintenance knobs. Defaults are applied
@@ -118,6 +120,14 @@ func (m *Maintenance) runOnce(ctx context.Context) {
 		default:
 			logger.Debug("vacuum skipped", "reclaimable_bytes", reclaimable, "threshold_bytes", m.Config.VacuumMinReclaimBytes)
 		}
+	}
+
+	// Bound the WAL after the cleanup write burst, then refresh planner stats.
+	if err := m.Store.CheckpointWAL(ctx); err != nil {
+		logger.Warn("wal checkpoint failed", "err", err)
+	}
+	if err := m.Store.Optimize(ctx); err != nil {
+		logger.Warn("optimize failed", "err", err)
 	}
 
 	logger.Debug("maintenance run complete", "duration", time.Since(t0).String())

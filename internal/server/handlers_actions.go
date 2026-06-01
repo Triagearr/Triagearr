@@ -42,20 +42,21 @@ func (s *Server) handleListActions(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), hashesFromActions(rows))
 	writeJSON(w, http.StatusOK, actionListResponse{
-		Actions: viewsFromActions(rows, names), Total: total, Limit: limit, Offset: offset,
+		Actions: viewsFromActions(rows), Total: total, Limit: limit, Offset: offset,
 	})
 }
 
-func actionToView(a triagearr.Action, names map[triagearr.Hash]string) actionView {
+// actionToView maps a persisted action to its wire shape. The torrent name is
+// read straight off the row (snapshotted at action time, 0003 migration) so a
+// reaped torrent — already evicted from the torrents table — still shows its
+// title in the post-mortem.
+func actionToView(a triagearr.Action) actionView {
 	v := actionView{
 		ID: a.ID, RunID: a.RunID, Rank: a.Rank,
-		TorrentHash: string(a.TorrentHash), Status: string(a.Status),
+		TorrentHash: string(a.TorrentHash), TorrentName: a.TorrentName,
+		Status:    string(a.Status),
 		StartedAt: a.StartedAt, FreedBytes: a.FreedBytes,
-	}
-	if n, ok := names[a.TorrentHash]; ok {
-		v.TorrentName = n
 	}
 	if !a.FinishedAt.IsZero() {
 		finished := a.FinishedAt
@@ -64,20 +65,12 @@ func actionToView(a triagearr.Action, names map[triagearr.Hash]string) actionVie
 	return v
 }
 
-func viewsFromActions(rows []triagearr.Action, names map[triagearr.Hash]string) []actionView {
+func viewsFromActions(rows []triagearr.Action) []actionView {
 	out := make([]actionView, len(rows))
 	for i, a := range rows {
-		out[i] = actionToView(a, names)
+		out[i] = actionToView(a)
 	}
 	return out
-}
-
-func hashesFromActions(rows []triagearr.Action) []triagearr.Hash {
-	h := make([]triagearr.Hash, len(rows))
-	for i, a := range rows {
-		h[i] = a.TorrentHash
-	}
-	return h
 }
 
 func (s *Server) handleRunActions(w http.ResponseWriter, r *http.Request) {
@@ -90,8 +83,7 @@ func (s *Server) handleRunActions(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), hashesFromActions(rows))
-	writeJSON(w, http.StatusOK, map[string]any{"actions": viewsFromActions(rows, names)})
+	writeJSON(w, http.StatusOK, map[string]any{"actions": viewsFromActions(rows)})
 }
 
 type auditView struct {
@@ -128,9 +120,8 @@ func (s *Server) handleGetAction(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	names, _ := s.opts.Store.TorrentNamesByHashes(r.Context(), []triagearr.Hash{a.TorrentHash})
 	resp := actionDetailResponse{
-		Action: actionToView(a, names),
+		Action: actionToView(a),
 		Audit:  make([]auditView, len(audit)),
 	}
 	for i, e := range audit {

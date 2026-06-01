@@ -15,15 +15,16 @@ import (
 // for exclusions) into one struct so the scorer does not run separate queries
 // per field.
 type ScoringTorrent struct {
-	Hash         string     `db:"hash"`
-	Name         string     `db:"name"`
-	Category     string     `db:"category"`
-	Tags         string     `db:"tags"`
-	Size         int64      `db:"size"`
-	AddedOn      time.Time  `db:"added_on"`
-	CompletionOn *time.Time `db:"completion_on"`
-	Private      bool       `db:"private"`
-	Protected    bool       `db:"protected"`
+	Hash           string     `db:"hash"`
+	Name           string     `db:"name"`
+	Category       string     `db:"category"`
+	Tags           string     `db:"tags"`
+	Size           int64      `db:"size"`
+	AddedOn        time.Time  `db:"added_on"`
+	CompletionOn   *time.Time `db:"completion_on"`
+	Private        bool       `db:"private"`
+	Protected      bool       `db:"protected"`
+	CandidateBoost bool       `db:"candidate_boost"`
 }
 
 // GetTorrentForScoring loads one torrent's scoring fields. Returns sql.ErrNoRows
@@ -31,7 +32,7 @@ type ScoringTorrent struct {
 func (s *Store) GetTorrentForScoring(ctx context.Context, hash triagearr.Hash) (ScoringTorrent, error) {
 	var row ScoringTorrent
 	err := s.reader.GetContext(ctx, &row, `
-		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected
+		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected, candidate_boost
 		FROM torrents WHERE hash = ?
 	`, string(hash))
 	if err != nil {
@@ -44,7 +45,7 @@ func (s *Store) GetTorrentForScoring(ctx context.Context, hash triagearr.Hash) (
 func (s *Store) ListTorrentsForScoring(ctx context.Context) ([]ScoringTorrent, error) {
 	var rows []ScoringTorrent
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected
+		SELECT hash, name, category, tags, size, added_on, completion_on, private, protected, candidate_boost
 		FROM torrents ORDER BY hash
 	`); err != nil {
 		return nil, fmt.Errorf("listing torrents for scoring: %w", err)
@@ -66,6 +67,44 @@ type SnapshotStats struct {
 // zero velocity when the available history is shorter (the scorer treats this
 // as a documented "insufficient data" case and zeroes the factor).
 const velocityWindowDays = 30
+
+// velPoint is one (ts, uploaded) sample used to compute upload velocity. Ts is
+// scanned as a string because modernc.org/sqlite returns raw text for the
+// computed/UNION'd ts expressions (the daily branch synthesises
+// `day || 'T00:00:00Z'`), bypassing the time-value codec — see parseTS.
+type velPoint struct {
+	Ts sql.NullString `db:"ts"`
+	Up sql.NullInt64  `db:"uploaded"`
+}
+
+// velocityFromPoints derives bytes/day from the newest and anchor samples. It
+// is the single source of truth for the velocity math shared by the per-hash
+// ScoringSnapshotStats and the bulk ScoringSnapshotStatsAll, so the two can
+// never drift. Returns zero whenever either point is missing, a timestamp
+// fails to parse (treated as the documented "insufficient data" case), or the
+// span collapses to zero.
+func velocityFromPoints(newest, anchor velPoint) float64 {
+	if !newest.Ts.Valid || !anchor.Ts.Valid || !newest.Up.Valid || !anchor.Up.Valid {
+		return 0
+	}
+	newT, errN := parseTS(newest.Ts.String)
+	anchT, errA := parseTS(anchor.Ts.String)
+	if errN != nil || errA != nil {
+		return 0
+	}
+	span := newT.Sub(anchT).Hours() / 24.0
+	if span > velocityWindowDays {
+		span = velocityWindowDays
+	}
+	if span <= 0 {
+		return 0
+	}
+	delta := float64(newest.Up.Int64 - anchor.Up.Int64)
+	if delta < 0 {
+		delta = 0
+	}
+	return delta / span
+}
 
 // ScoringSnapshotStats computes the recent-window aggregates for one hash.
 // Returns zeroed values when no snapshots exist.
@@ -108,11 +147,6 @@ func (s *Store) ScoringSnapshotStats(ctx context.Context, hash triagearr.Hash, n
 	// distinguishing legacy zero from a genuine first-day zero requires a
 	// marker we don't store; treating zero as "no data" loses at most one day
 	// of velocity signal on freshly-added torrents.
-	type velPoint struct {
-		Ts sql.NullString `db:"ts"`
-		Up sql.NullInt64  `db:"uploaded"`
-	}
-
 	var newest velPoint
 	if err := s.reader.GetContext(ctx, &newest, `
 		SELECT ts, uploaded FROM (
@@ -145,22 +179,152 @@ func (s *Store) ScoringSnapshotStats(ctx context.Context, hash triagearr.Hash, n
 	if latestRatio.Valid {
 		out.LatestRatio = latestRatio.Float64
 	}
-	if newest.Ts.Valid && anchor.Ts.Valid && newest.Up.Valid && anchor.Up.Valid {
-		newT, errN := parseTS(newest.Ts.String)
-		anchT, errA := parseTS(anchor.Ts.String)
-		if errN == nil && errA == nil {
-			span := newT.Sub(anchT).Hours() / 24.0
-			if span > velocityWindowDays {
-				span = velocityWindowDays
-			}
-			if span > 0 {
-				delta := float64(newest.Up.Int64 - anchor.Up.Int64)
-				if delta < 0 {
-					delta = 0
-				}
-				out.VelocityBytesPerDay = delta / span
-			}
+	out.VelocityBytesPerDay = velocityFromPoints(newest, anchor)
+	return out, nil
+}
+
+// ScoringSnapshotStatsAll computes the same recent-window aggregates as
+// ScoringSnapshotStats, but for every torrent at once in four library-wide
+// queries instead of four per torrent. The scoring pass walks ~5k torrents on
+// every event-driven run, so the per-hash variant fanned out to ~20k SELECTs;
+// this collapses that to four. The result is keyed by torrent_hash; a hash
+// with no snapshots is simply absent (callers read the zero value, identical
+// to the per-hash path returning a zeroed SnapshotStats).
+//
+// Equivalence with the per-hash path is intentional and load-bearing — every
+// projected ts expression and ORDER BY matches ScoringSnapshotStats so the
+// lexical (text) ordering of RFC3339 / synthetic-daily timestamps lands on the
+// same rows, and the velocity math is the shared velocityFromPoints helper.
+func (s *Store) ScoringSnapshotStatsAll(ctx context.Context, now time.Time) (map[string]SnapshotStats, error) {
+	cutoff7d := ts(now.Add(-7 * 24 * time.Hour))
+	cutoff30d := ts(now.Add(-velocityWindowDays * 24 * time.Hour))
+
+	out := map[string]SnapshotStats{}
+
+	// Seeders average over the 7-day window, grouped by hash. AVG over the
+	// UNION ALL of raw + daily equals the per-hash AVG(s) FROM combined.
+	var seederRows []struct {
+		Hash string          `db:"torrent_hash"`
+		Avg  sql.NullFloat64 `db:"seeders_avg"`
+	}
+	if err := s.reader.SelectContext(ctx, &seederRows, `
+		SELECT torrent_hash, AVG(s) AS seeders_avg FROM (
+			SELECT torrent_hash, CAST(seeders AS REAL) AS s
+			FROM snapshots_raw WHERE ts >= ?
+			UNION ALL
+			SELECT torrent_hash, seeders_avg AS s
+			FROM snapshots_daily WHERE day >= date(?)
+		) GROUP BY torrent_hash
+	`, cutoff7d, cutoff7d); err != nil {
+		return nil, fmt.Errorf("computing seeders_avg_7d (all): %w", err)
+	}
+	for _, r := range seederRows {
+		if r.Avg.Valid {
+			v := out[r.Hash]
+			v.SeedersAvg7d = r.Avg.Float64
+			out[r.Hash] = v
 		}
+	}
+
+	// Latest ratio per hash: newest raw ratio, else newest daily ratio_avg.
+	// ROW_NUMBER picks the same row the per-hash ORDER BY ... LIMIT 1 would,
+	// because (torrent_hash, ts) and (torrent_hash, day) are unique PKs.
+	var ratioRows []struct {
+		Hash  string          `db:"torrent_hash"`
+		Ratio sql.NullFloat64 `db:"latest_ratio"`
+	}
+	if err := s.reader.SelectContext(ctx, &ratioRows, `
+		WITH raw_latest AS (
+			SELECT torrent_hash, ratio,
+			       ROW_NUMBER() OVER (PARTITION BY torrent_hash ORDER BY ts DESC) AS rn
+			FROM snapshots_raw
+		),
+		daily_latest AS (
+			SELECT torrent_hash, ratio_avg,
+			       ROW_NUMBER() OVER (PARTITION BY torrent_hash ORDER BY day DESC) AS rn
+			FROM snapshots_daily
+		)
+		SELECT h.torrent_hash, COALESCE(r.ratio, d.ratio_avg) AS latest_ratio
+		FROM (
+			SELECT torrent_hash FROM raw_latest   WHERE rn = 1
+			UNION
+			SELECT torrent_hash FROM daily_latest WHERE rn = 1
+		) h
+		LEFT JOIN raw_latest   r ON r.torrent_hash = h.torrent_hash AND r.rn = 1
+		LEFT JOIN daily_latest d ON d.torrent_hash = h.torrent_hash AND d.rn = 1
+	`); err != nil {
+		return nil, fmt.Errorf("loading latest ratio (all): %w", err)
+	}
+	for _, r := range ratioRows {
+		if r.Ratio.Valid {
+			v := out[r.Hash]
+			v.LatestRatio = r.Ratio.Float64
+			out[r.Hash] = v
+		}
+	}
+
+	// Velocity newest point per hash (unwindowed). The secondary `uploaded`
+	// sort only breaks the otherwise-undefined tie between a raw sample at
+	// exactly midnight and a daily synthetic `…T00:00:00Z` for the same day —
+	// the per-hash LIMIT 1 is itself nondeterministic on that tie, so a stable
+	// order is strictly an improvement (and effectively never hit: raw ts
+	// carries the sub-second poll instant).
+	newest, err := s.velocityPointsByHash(ctx, `
+		SELECT torrent_hash, ts, uploaded FROM (
+			SELECT torrent_hash, ts, uploaded,
+			       ROW_NUMBER() OVER (PARTITION BY torrent_hash ORDER BY ts DESC, uploaded DESC) AS rn
+			FROM (
+				SELECT torrent_hash, ts, uploaded FROM snapshots_raw
+				UNION ALL
+				SELECT torrent_hash, day || 'T00:00:00Z' AS ts, uploaded_max AS uploaded
+				FROM snapshots_daily WHERE uploaded_max > 0
+			)
+		) WHERE rn = 1
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("loading newest velocity points (all): %w", err)
+	}
+
+	// Velocity anchor point per hash, windowed to the last 30 days.
+	anchor, err := s.velocityPointsByHash(ctx, `
+		SELECT torrent_hash, ts, uploaded FROM (
+			SELECT torrent_hash, ts, uploaded,
+			       ROW_NUMBER() OVER (PARTITION BY torrent_hash ORDER BY ts ASC, uploaded ASC) AS rn
+			FROM (
+				SELECT torrent_hash, ts, uploaded FROM snapshots_raw WHERE ts >= ?
+				UNION ALL
+				SELECT torrent_hash, day || 'T00:00:00Z' AS ts, uploaded_max AS uploaded
+				FROM snapshots_daily WHERE day >= date(?) AND uploaded_max > 0
+			)
+		) WHERE rn = 1
+	`, cutoff30d, cutoff30d)
+	if err != nil {
+		return nil, fmt.Errorf("loading anchor velocity points (all): %w", err)
+	}
+
+	for hash, np := range newest {
+		v := out[hash]
+		v.VelocityBytesPerDay = velocityFromPoints(np, anchor[hash])
+		out[hash] = v
+	}
+	return out, nil
+}
+
+// velocityPointsByHash runs a rn=1 velocity-point query and returns one velPoint
+// per torrent_hash. ts is scanned as text (the velPoint contract) and parsed
+// later by velocityFromPoints.
+func (s *Store) velocityPointsByHash(ctx context.Context, query string, args ...any) (map[string]velPoint, error) {
+	var rows []struct {
+		Hash string         `db:"torrent_hash"`
+		Ts   sql.NullString `db:"ts"`
+		Up   sql.NullInt64  `db:"uploaded"`
+	}
+	if err := s.reader.SelectContext(ctx, &rows, query, args...); err != nil {
+		return nil, err
+	}
+	out := make(map[string]velPoint, len(rows))
+	for _, r := range rows {
+		out[r.Hash] = velPoint{Ts: r.Ts, Up: r.Up}
 	}
 	return out, nil
 }
@@ -270,6 +434,7 @@ type ScoreRow struct {
 	ExclusionReasons string    `db:"exclusion_reasons"`
 	FactorsJSON      string    `db:"factors_json"`
 	ComputedAt       time.Time `db:"computed_at"`
+	CandidateBoost   bool      `db:"candidate_boost"`
 }
 
 // UpsertScore writes (or replaces) one score row. The verdict and its factor
@@ -304,6 +469,64 @@ func (s *Store) UpsertScore(ctx context.Context, row ScoreRow) error {
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit upsert score %s: %w", row.Hash, err)
+	}
+	return nil
+}
+
+// UpsertScores batches UpsertScore for a whole scoring pass in one transaction
+// with two prepared statements, replacing one tx-per-torrent (~5k commits) on
+// the hot scoring path. The scores row is written before its score_factors row
+// within each iteration so the score_factors → scores foreign key (ON DELETE
+// CASCADE) always sees its parent.
+func (s *Store) UpsertScores(ctx context.Context, rows []ScoreRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	tx, err := s.writer.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin scores batch: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	scoreStmt, err := tx.PreparexContext(ctx, `
+		INSERT INTO scores(torrent_hash, score, private, any_tracker_alive, excluded, exclusion_reasons, computed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(torrent_hash) DO UPDATE SET
+			score=excluded.score,
+			private=excluded.private,
+			any_tracker_alive=excluded.any_tracker_alive,
+			excluded=excluded.excluded,
+			exclusion_reasons=excluded.exclusion_reasons,
+			computed_at=excluded.computed_at
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare scores upsert: %w", err)
+	}
+	defer func() { _ = scoreStmt.Close() }()
+
+	factorStmt, err := tx.PreparexContext(ctx, `
+		INSERT INTO score_factors(torrent_hash, factors_json)
+		VALUES (?, ?)
+		ON CONFLICT(torrent_hash) DO UPDATE SET factors_json=excluded.factors_json
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare score_factors upsert: %w", err)
+	}
+	defer func() { _ = factorStmt.Close() }()
+
+	for _, row := range rows {
+		if _, err := scoreStmt.ExecContext(ctx,
+			row.Hash, row.Score, row.Private, row.AnyTrackerAlive,
+			row.Excluded, row.ExclusionReasons, ts(row.ComputedAt),
+		); err != nil {
+			return fmt.Errorf("upserting score %s: %w", row.Hash, err)
+		}
+		if _, err := factorStmt.ExecContext(ctx, row.Hash, row.FactorsJSON); err != nil {
+			return fmt.Errorf("upserting score factors %s: %w", row.Hash, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit scores batch: %w", err)
 	}
 	return nil
 }
@@ -356,7 +579,8 @@ func (s *Store) ListScores(ctx context.Context, opts ListScoresOpts) ([]ScoreRow
 		SELECT sc.torrent_hash, sc.score, sc.private, sc.any_tracker_alive,
 		       sc.excluded, sc.exclusion_reasons, sc.computed_at,
 		       %s,
-		       COALESCE(t.name, sc.torrent_hash) AS name
+		       COALESCE(t.name, sc.torrent_hash) AS name,
+		       COALESCE(t.candidate_boost, 0) AS candidate_boost
 		FROM scores sc
 		LEFT JOIN torrents t ON t.hash = sc.torrent_hash
 		%s

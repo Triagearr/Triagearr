@@ -31,7 +31,7 @@ func seedLinkedMedia(t *testing.T, s interface {
 	}))
 	require.NoError(t, s.UpsertArrImport(ctx, triagearr.ArrTypeSonarr, triagearr.ImportRecord{
 		HistoryID: fileID, FileID: fileID, DownloadID: hash,
-		ImportedPath: "/m/e.mkv", Size: 10, ImportedAt: now,
+		ImportedPath: "/m/e.mkv", ImportedAt: now,
 	}))
 }
 

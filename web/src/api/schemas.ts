@@ -44,6 +44,7 @@ export const TorrentListItem = z.object({
   score: z.number().nullable().optional(),
   excluded: z.boolean().nullable().optional(),
   any_tracker_alive: z.boolean().nullable().optional(),
+  candidate_boost: z.boolean().nullable().optional(),
 });
 export type TorrentListItemT = z.infer<typeof TorrentListItem>;
 
@@ -96,6 +97,7 @@ export const ScoreView = z.object({
   factors: z.unknown().optional(),
   computed_at: ts,
   tracker_dead_eligible_at: ts.optional(),
+  candidate_boost: z.boolean().nullable().optional(),
 });
 
 export const TorrentDetail = z.object({
@@ -111,6 +113,8 @@ export const TorrentDetail = z.object({
   last_seen: ts,
   protected: z.boolean(),
   protected_at: ts.nullable().optional(),
+  candidate_boost: z.boolean(),
+  candidate_boost_at: ts.nullable().optional(),
   latest: z
     .object({
       ratio: z.number().nullable().optional(),
@@ -349,6 +353,7 @@ export const NotificationSettings = z.object({
   telegram: TelegramSettings,
 });
 const SettingsValues = z.object({
+  mode: RunMode,
   scoring: ScoringSettings,
   polling: PollingSettings,
   volume: VolumeSettings,

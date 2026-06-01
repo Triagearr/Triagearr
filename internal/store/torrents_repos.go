@@ -98,19 +98,27 @@ func (s *Store) UpsertTorrents(ctx context.Context, torrents []triagearr.Torrent
 	return nil
 }
 
-// SetTorrentProtected toggles the user-driven protection flag for one torrent.
-// Protecting stamps protected_at = now; unprotecting clears it. Returns
-// sql.ErrNoRows when the hash is unknown so callers can map to 404.
-func (s *Store) SetTorrentProtected(ctx context.Context, hash triagearr.Hash, protected bool) error {
+// setExclusiveFlag toggles one of a pair of mutually-exclusive user-driven
+// flags (protected vs candidate_boost, ADR-0030) on a torrent. Setting stamps
+// <col>_at = now and clears the opposite flag and its timestamp in the same
+// write so the two can never coexist; clearing zeroes <col>/<col>_at only.
+// Returns sql.ErrNoRows when the hash is unknown so callers can map to 404.
+// col/other are trusted internal identifiers, never user input.
+func (s *Store) setExclusiveFlag(ctx context.Context, hash triagearr.Hash, col, other string, on bool) error {
 	var stampedAt any
-	if protected {
+	if on {
 		stampedAt = ts(time.Now().UTC())
 	}
-	res, err := s.writer.ExecContext(ctx, `
-		UPDATE torrents SET protected = ?, protected_at = ? WHERE hash = ?
-	`, boolToInt(protected), stampedAt, string(hash))
+	query := fmt.Sprintf(`
+		UPDATE torrents
+		SET %[1]s = ?, %[1]s_at = ?,
+		    %[2]s = CASE WHEN ? THEN 0 ELSE %[2]s END,
+		    %[2]s_at = CASE WHEN ? THEN NULL ELSE %[2]s_at END
+		WHERE hash = ?
+	`, col, other)
+	res, err := s.writer.ExecContext(ctx, query, boolToInt(on), stampedAt, on, on, string(hash))
 	if err != nil {
-		return fmt.Errorf("updating protected for %s: %w", hash, err)
+		return fmt.Errorf("updating %s for %s: %w", col, hash, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
@@ -120,6 +128,14 @@ func (s *Store) SetTorrentProtected(ctx context.Context, hash triagearr.Hash, pr
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+// SetTorrentProtected toggles the user-driven protection flag for one torrent.
+// Protecting stamps protected_at = now; unprotecting clears it. Protect and
+// candidate_boost are opposite intents, so protecting also clears
+// candidate_boost (ADR-0030) in the same write — the two can never coexist.
+func (s *Store) SetTorrentProtected(ctx context.Context, hash triagearr.Hash, protected bool) error {
+	return s.setExclusiveFlag(ctx, hash, "protected", "candidate_boost", protected)
 }
 
 // GetTorrentProtected reads the protection flag and timestamp. Returns
@@ -134,6 +150,28 @@ func (s *Store) GetTorrentProtected(ctx context.Context, hash triagearr.Hash) (b
 		return false, nil, err
 	}
 	return protected != 0, at, nil
+}
+
+// SetTorrentCandidateBoost toggles the user-driven deletion-priority flag — the
+// inverse of protected (scorer Factor 9, ADR-0030). Boosting stamps
+// candidate_boost_at = now; un-boosting clears it. Boosting also clears
+// protected in the same write (the two are mutually exclusive).
+func (s *Store) SetTorrentCandidateBoost(ctx context.Context, hash triagearr.Hash, boost bool) error {
+	return s.setExclusiveFlag(ctx, hash, "candidate_boost", "protected", boost)
+}
+
+// GetTorrentCandidateBoost reads the candidate-boost flag and timestamp.
+// Returns sql.ErrNoRows when the hash is unknown.
+func (s *Store) GetTorrentCandidateBoost(ctx context.Context, hash triagearr.Hash) (bool, *time.Time, error) {
+	var boost int
+	var at *time.Time
+	err := s.reader.QueryRowContext(ctx, `
+		SELECT candidate_boost, candidate_boost_at FROM torrents WHERE hash = ?
+	`, string(hash)).Scan(&boost, &at)
+	if err != nil {
+		return false, nil, err
+	}
+	return boost != 0, at, nil
 }
 
 func boolToInt(b bool) int {
@@ -285,6 +323,7 @@ type TorrentRow struct {
 	Score           *float64 `db:"score"`
 	Excluded        *bool    `db:"excluded"`
 	AnyTrackerAlive *bool    `db:"any_tracker_alive"`
+	CandidateBoost  bool     `db:"candidate_boost"`
 }
 
 // ListTorrentsLatest returns torrents with their latest snapshot, sorted+limited.

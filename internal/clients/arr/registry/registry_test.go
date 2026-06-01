@@ -50,13 +50,12 @@ func TestBuildFromConfig_AllKinds(t *testing.T) {
 	cfg.Arrs.Sonarr = config.ArrInstanceConfig{Enabled: true, URL: "http://s", APIKey: "k"}
 	cfg.Arrs.Radarr = config.ArrInstanceConfig{Enabled: true, URL: "http://r", APIKey: "k"}
 	cfg.Arrs.Lidarr = config.ArrInstanceConfig{Enabled: true, URL: "http://l"}
-	cfg.Arrs.Readarr = config.ArrInstanceConfig{Enabled: true, URL: "http://b"}
-	cfg.Arrs.WhisparrV2 = config.ArrInstanceConfig{Enabled: true, URL: "http://w2"}
-	cfg.Arrs.WhisparrV3 = config.ArrInstanceConfig{Enabled: true, URL: "http://w3"}
+	cfg.Arrs.WhisparrV2 = config.ArrInstanceConfig{Enabled: true, URL: "http://w2", APIKey: "k"}
+	cfg.Arrs.WhisparrV3 = config.ArrInstanceConfig{Enabled: true, URL: "http://w3", APIKey: "k"}
 
 	r, err := registry.BuildFromConfig(cfg)
 	require.NoError(t, err)
-	require.Len(t, r.All(), 6, "one instance per enabled kind, including stubs")
+	require.Len(t, r.All(), 5, "one instance per enabled kind, including the Lidarr stub")
 }
 
 func TestAllPolling(t *testing.T) {
@@ -121,11 +120,16 @@ func TestTestConnection(t *testing.T) {
 		err := registry.TestConnection(context.Background(), "radarr", "http://h", "", 0)
 		require.Error(t, err)
 	})
-	for _, kind := range []string{"lidarr", "readarr", "whisparr_v2", "whisparr_v3"} {
-		t.Run(kind+" stub returns not-implemented", func(t *testing.T) {
-			// Stub kinds build fine but their HealthCheck reports "not implemented" — no network.
+	for _, kind := range []string{"whisparr_v2", "whisparr_v3"} {
+		t.Run(kind+" construction error surfaces", func(t *testing.T) {
+			// Whisparr clients require an APIKey; an empty one fails before any HTTP call.
 			err := registry.TestConnection(context.Background(), kind, "http://h", "", 0)
 			require.Error(t, err)
 		})
 	}
+	t.Run("lidarr stub returns not-implemented", func(t *testing.T) {
+		// The Lidarr stub builds fine but its HealthCheck reports "not implemented" — no network.
+		err := registry.TestConnection(context.Background(), "lidarr", "http://h", "", 0)
+		require.Error(t, err)
+	})
 }

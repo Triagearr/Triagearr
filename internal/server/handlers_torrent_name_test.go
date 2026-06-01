@@ -37,6 +37,7 @@ func seedTorrentAndRun(t *testing.T, s *store.Store) (int64, int64) {
 		RunID:       runID,
 		Rank:        1,
 		TorrentHash: "aabbccddeeff0011",
+		TorrentName: "My Great Show S01E01",
 		Score:       42.0,
 		SizeBytes:   1 << 30,
 	}}))
@@ -45,6 +46,7 @@ func seedTorrentAndRun(t *testing.T, s *store.Store) (int64, int64) {
 		RunID:       runID,
 		Rank:        1,
 		TorrentHash: "aabbccddeeff0011",
+		TorrentName: "My Great Show S01E01",
 		StartedAt:   time.Now().UTC(),
 		Status:      triagearr.ActionSucceeded,
 	})
@@ -161,6 +163,29 @@ func TestGetAction_CarryTorrentName(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Equal(t, "aabbccddeeff0011", body.Action.TorrentHash)
 	require.Equal(t, "My Great Show S01E01", body.Action.TorrentName)
+}
+
+// TestGetAction_NameSurvivesForget is the regression for the reap eviction:
+// after ForgetTorrent removes the torrent row, the action post-mortem must
+// still render the title (snapshotted at action time), not a bare hash.
+func TestGetAction_NameSurvivesForget(t *testing.T) {
+	_, s, h := buildSrv(t, "")
+	_, actionID := seedTorrentAndRun(t, s)
+
+	require.NoError(t, s.ForgetTorrent(context.Background(), "aabbccddeeff0011"))
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, authedReq(http.MethodGet, "/api/v1/actions/"+strconv.FormatInt(actionID, 10), ""))
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body struct {
+		Action struct {
+			TorrentName string `json:"torrent_name"`
+		} `json:"action"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Equal(t, "My Great Show S01E01", body.Action.TorrentName,
+		"name must outlive the torrent the reap deleted")
 }
 
 func TestGetRun_MissingTorrentOmitsTorrentName(t *testing.T) {

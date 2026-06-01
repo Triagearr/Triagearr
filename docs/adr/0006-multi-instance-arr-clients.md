@@ -10,7 +10,11 @@ Real-world *arr stacks rarely have just "one Sonarr." Common patterns:
 - Main Sonarr + 4K Sonarr (different quality tiers)
 - Main Sonarr + Anime Sonarr (different metadata source)
 - Per-user Radarrs in shared homelabs
-- Triagearr should support all the major *arrs: Sonarr, Radarr, Lidarr, Readarr, Whisparr (v2 and v3)
+- Triagearr should support the major *arrs: Sonarr, Radarr, Lidarr, Whisparr (v2 and v3)
+
+> **Update (2026-05-31):** Readarr was dropped from scope. The Servarr team
+> archived Readarr upstream, so building/maintaining a client for an unmaintained
+> app is not worthwhile. Its stub and wiring were removed.
 
 Additionally, the user explicitly asked for two independent dimensions per instance:
 - **Poll**: should Triagearr collect data from this *arr?
@@ -45,7 +49,6 @@ arrs:
       poll: true
       act: false       # read-only
   lidarr: []           # empty list = disabled
-  readarr: []
   whisparr_v2: []
   whisparr_v3: []
 ```
@@ -76,7 +79,7 @@ Whisparr v2 and v3 are listed separately because their APIs are not compatible (
 
 ## Implementation notes
 
-- Each client lives in its own package: `internal/clients/{sonarr,radarr,lidarr,readarr,whisparr_v2,whisparr_v3}`
+- Each client lives in its own package: `internal/clients/{sonarr,radarr,lidarr,whisparr_v2,whisparr_v3}`
 - A factory in `internal/clients/registry/registry.go` builds the live set from config at startup
 - Health checks run at startup and on a long interval; an unhealthy instance is logged and marked degraded but doesn't stop Triagearr from working with other instances
 - The mapper resolves "this media belongs to which instance" by querying every polling instance and matching by path/title (when paths overlap across instances, the first match wins, with a warning)

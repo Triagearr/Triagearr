@@ -43,7 +43,7 @@ processes:
   # Runs the pre-built binary only — no compile in this process, so a failed
   # rebuild can never take the daemon down (see `watch`).
   daemon:
-    command: ".dev/triagearrd serve --config config.dev.yml"
+    command: ".dev/triagearrd serve --config ${CONFIG:-config.dev.yml}"
     depends_on:
       build:
         condition: process_completed_successfully

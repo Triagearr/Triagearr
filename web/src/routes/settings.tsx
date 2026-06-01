@@ -1,8 +1,9 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { Bell, Database, Download, Gauge, Info, Link2, Settings, Shield, SlidersHorizontal, Timer } from "lucide-react";
+import { Bell, Database, Download, Gauge, Info, Link2, Power, Settings, Shield, SlidersHorizontal, Timer } from "lucide-react";
 import { m } from "@/paraglide/messages";
 
 const sections = [
+  { to: "/settings/mode",                       label: m.settings_nav_mode(),                Icon: Power },
   { to: "/settings/arr-connections",            label: m.settings_nav_arr_connections(),     Icon: Link2 },
   { to: "/settings/torrent-client-connections", label: m.settings_nav_torrent_connections(), Icon: Download },
   { to: "/settings/scoring",         label: m.settings_nav_scoring(),          Icon: SlidersHorizontal },
