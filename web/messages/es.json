@@ -69,6 +69,8 @@
   "settings_field_public_url": "URL pública",
   "settings_field_public_url_hint": "opcional, usada para enlaces clicables en esta interfaz",
   "settings_field_api_key": "Clave API",
+  "settings_secret_show": "Mostrar",
+  "settings_secret_hide": "Ocultar",
   "settings_field_timeout": "Tiempo de espera",
   "settings_field_timeout_hint": "segundos",
   "settings_field_tags_exclude": "Etiquetas a excluir",

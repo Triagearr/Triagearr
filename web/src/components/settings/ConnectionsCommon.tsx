@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Eye, EyeOff, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages";
 
@@ -53,6 +54,45 @@ export const noAutofillProps = {
   "data-bwignore": "true",
   "data-form-type": "other",
 } as const;
+
+// Secret field (API key, password) for connection drawers. Renders as
+// type=text masked in CSS rather than type=password, because password
+// managers force-fill the latter regardless of noAutofillProps — see
+// .secret-masked in globals.css. The toggle reveals the value (and is the
+// only way to unmask on Firefox, where -webkit-text-security has no effect).
+export function SecretInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn("pr-9", !revealed && "secret-masked")}
+        {...noAutofillProps}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setRevealed((r) => !r)}
+        aria-label={revealed ? m.settings_secret_hide() : m.settings_secret_show()}
+        title={revealed ? m.settings_secret_hide() : m.settings_secret_show()}
+        className="absolute inset-y-0 right-0 flex items-center px-2.5 text-muted-foreground hover:text-foreground"
+      >
+        {revealed ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+    </div>
+  );
+}
 
 // ── Shared connection tile ──────────────────────────────────────────────────────
 

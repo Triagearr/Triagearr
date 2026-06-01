@@ -26,6 +26,7 @@ import {
   validateTimeout,
   validatePublicUrl,
   noAutofillProps,
+  SecretInput,
   type ConnectionMutations,
   type VisualTileStatus,
 } from "./ConnectionsCommon";
@@ -243,8 +244,8 @@ function ConnectionDrawer({
               onChange={(e) => set("public_url", e.target.value)} {...noAutofillProps} />
           </FieldRow>
           <FieldRow label={m.settings_field_api_key()}>
-            <Input type="password" value={form.api_key} placeholder="••••••••"
-              onChange={(e) => set("api_key", e.target.value)} {...noAutofillProps} />
+            <SecretInput value={form.api_key} placeholder="••••••••"
+              onChange={(v) => set("api_key", v)} />
           </FieldRow>
           <FieldRow label={m.settings_field_timeout()} hint={m.settings_field_timeout_hint()}>
             <Input type="number" min={0} className="w-28" value={form.timeout_seconds}

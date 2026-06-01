@@ -69,6 +69,8 @@
   "settings_field_public_url": "URL publique",
   "settings_field_public_url_hint": "optionnel, utilisé pour les liens cliquables dans cette interface",
   "settings_field_api_key": "Clé API",
+  "settings_secret_show": "Afficher",
+  "settings_secret_hide": "Masquer",
   "settings_field_timeout": "Délai d'expiration",
   "settings_field_timeout_hint": "secondes",
   "settings_field_tags_exclude": "Tags à exclure",

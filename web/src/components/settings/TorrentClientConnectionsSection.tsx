@@ -25,6 +25,7 @@ import {
   validateTimeout,
   validatePublicUrl,
   noAutofillProps,
+  SecretInput,
   type ConnectionMutations,
   type VisualTileStatus,
 } from "./ConnectionsCommon";
@@ -239,8 +240,8 @@ function ConnectionDrawer({
               onChange={(e) => set("username", e.target.value)} {...noAutofillProps} />
           </FieldRow>
           <FieldRow label={m.settings_field_password()}>
-            <Input type="password" value={form.password} placeholder="••••••••"
-              onChange={(e) => set("password", e.target.value)} {...noAutofillProps} />
+            <SecretInput value={form.password} placeholder="••••••••"
+              onChange={(v) => set("password", v)} />
           </FieldRow>
           <FieldRow label={m.settings_field_timeout()} hint={m.settings_field_timeout_hint()}>
             <Input type="number" min={0} className="w-28" value={form.timeout_seconds}

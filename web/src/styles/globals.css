@@ -987,3 +987,13 @@ input[type=range] { accent-color: var(--primary); }
   .ds-drawer { width: min(520px, 92vw); }
 }
 
+/* Masks a secret value without using type=password — password managers
+   (LastPass &c.) force-fill any type=password field regardless of
+   data-lpignore/autocomplete, dragging the neighbouring URL in as the
+   "username". A type=text field masked in CSS sidesteps that detection.
+   -webkit-text-security covers Chromium/WebKit; Firefox shows the value,
+   so SecretInput pairs this with a show/hide toggle. */
+.secret-masked {
+  -webkit-text-security: disc;
+}
+

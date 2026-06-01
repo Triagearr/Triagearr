@@ -69,6 +69,8 @@
   "settings_field_public_url": "Public URL",
   "settings_field_public_url_hint": "optional, used for clickable links in this UI",
   "settings_field_api_key": "API key",
+  "settings_secret_show": "Show",
+  "settings_secret_hide": "Hide",
   "settings_field_timeout": "Timeout",
   "settings_field_timeout_hint": "seconds",
   "settings_field_tags_exclude": "Tags exclude",
