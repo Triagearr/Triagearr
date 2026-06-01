@@ -142,20 +142,20 @@ const OVERLAY_SCRIPT = `
       box-shadow: 0 0 0 9999px rgba(6,8,12,.5), 0 0 26px 4px rgba(90,162,255,.6);
     }
     #demo-badge {
-      position: fixed; z-index: 2147483601; left: 50%; bottom: 30px;
+      position: fixed; z-index: 2147483601; left: 50%; bottom: 34px;
       transform: translateX(-50%) translateY(8px); opacity: 0;
-      display: inline-flex; align-items: center; gap: 11px;
-      padding: 9px 16px; border-radius: 999px;
+      display: inline-flex; align-items: center; gap: 14px;
+      padding: 13px 24px; border-radius: 999px;
       background: rgba(13,17,23,.92); border: 1px solid rgba(255,255,255,.14);
-      box-shadow: 0 8px 28px rgba(0,0,0,.5);
-      font: 500 13.5px/1.2 ui-sans-serif, system-ui, sans-serif; color: #e7edf5;
+      box-shadow: 0 10px 32px rgba(0,0,0,.55);
+      font: 600 17px/1.2 ui-sans-serif, system-ui, sans-serif; color: #e7edf5;
       transition: opacity .4s ease, transform .4s cubic-bezier(.4,0,.2,1);
     }
     #demo-badge.on { opacity: 1; transform: translateX(-50%) translateY(0); }
     #demo-badge .demo-count {
-      font: 600 12px/1 'Geist Mono', ui-monospace, monospace; letter-spacing: .04em;
+      font: 700 15px/1 'Geist Mono', ui-monospace, monospace; letter-spacing: .04em;
       color: #5aa2ff; background: rgba(90,162,255,.13);
-      padding: 4px 8px; border-radius: 999px; flex: none;
+      padding: 6px 11px; border-radius: 999px; flex: none;
     }
   \`;
   document.head.appendChild(style);
@@ -170,10 +170,19 @@ const OVERLAY_SCRIPT = `
       badge.classList.add("on");
     },
     spot(x, y, w, h, pad) {
-      ring.style.left = (x - pad) + "px";
-      ring.style.top = (y - pad) + "px";
-      ring.style.width = (w + pad * 2) + "px";
-      ring.style.height = (h + pad * 2) + "px";
+      // Clamp the ring to stay this many px inside the viewport so its border is
+      // never clipped on an element that touches a screen edge (gauge card,
+      // full-width table). Edge elements get a ring that hugs the edge instead
+      // of bleeding off-screen.
+      const m = 8;
+      const left = Math.max(m, x - pad);
+      const top = Math.max(m, y - pad);
+      const right = Math.min(window.innerWidth - m, x + w + pad);
+      const bottom = Math.min(window.innerHeight - m, y + h + pad);
+      ring.style.left = left + "px";
+      ring.style.top = top + "px";
+      ring.style.width = Math.max(0, right - left) + "px";
+      ring.style.height = Math.max(0, bottom - top) + "px";
       ring.classList.add("on");
     },
     clear() { ring.classList.remove("on"); },
