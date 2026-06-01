@@ -105,16 +105,16 @@ func (s *Server) handleTorrentCategories(w http.ResponseWriter, r *http.Request)
 }
 
 type torrentDetailResponse struct {
-	Hash         string     `json:"hash"`
-	Name         string     `json:"name"`
-	Category     string     `json:"category"`
-	SavePath     string     `json:"save_path"`
-	Size         int64      `json:"size"`
-	AddedOn      time.Time  `json:"added_on"`
-	CompletionOn *time.Time `json:"completion_on,omitempty"`
-	Private      bool       `json:"private"`
-	Tags         string     `json:"tags"`
-	LastSeen     time.Time  `json:"last_seen"`
+	Hash             string     `json:"hash"`
+	Name             string     `json:"name"`
+	Category         string     `json:"category"`
+	SavePath         string     `json:"save_path"`
+	Size             int64      `json:"size"`
+	AddedOn          time.Time  `json:"added_on"`
+	CompletionOn     *time.Time `json:"completion_on,omitempty"`
+	Private          bool       `json:"private"`
+	Tags             string     `json:"tags"`
+	LastSeen         time.Time  `json:"last_seen"`
 	Protected        bool       `json:"protected"`
 	ProtectedAt      *time.Time `json:"protected_at,omitempty"`
 	CandidateBoost   bool       `json:"candidate_boost"`

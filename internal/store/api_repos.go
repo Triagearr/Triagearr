@@ -184,26 +184,26 @@ func (s *Store) GetTorrent(ctx context.Context, hash triagearr.Hash) (TorrentDet
 
 // TorrentDetailRow extends TorrentRow with save_path, completion_on, private, tags, uploaded.
 type TorrentDetailRow struct {
-	Hash         string     `db:"hash"`
-	Name         string     `db:"name"`
-	Category     string     `db:"category"`
-	SavePath     string     `db:"save_path"`
-	Size         int64      `db:"size"`
-	AddedOn      time.Time  `db:"added_on"`
-	CompletionOn *time.Time `db:"completion_on"`
-	Private      bool       `db:"private"`
-	Tags         string     `db:"tags"`
-	LastSeen     time.Time  `db:"last_seen"`
+	Hash             string     `db:"hash"`
+	Name             string     `db:"name"`
+	Category         string     `db:"category"`
+	SavePath         string     `db:"save_path"`
+	Size             int64      `db:"size"`
+	AddedOn          time.Time  `db:"added_on"`
+	CompletionOn     *time.Time `db:"completion_on"`
+	Private          bool       `db:"private"`
+	Tags             string     `db:"tags"`
+	LastSeen         time.Time  `db:"last_seen"`
 	Protected        bool       `db:"protected"`
 	ProtectedAt      *time.Time `db:"protected_at"`
 	CandidateBoost   bool       `db:"candidate_boost"`
 	CandidateBoostAt *time.Time `db:"candidate_boost_at"`
 	Ratio            *float64   `db:"ratio"`
-	Uploaded     *int64     `db:"uploaded"`
-	Seeders      *int       `db:"seeders"`
-	Leechers     *int       `db:"leechers"`
-	State        *string    `db:"state"`
-	SnapshotAt   *time.Time `db:"snap_ts"`
+	Uploaded         *int64     `db:"uploaded"`
+	Seeders          *int       `db:"seeders"`
+	Leechers         *int       `db:"leechers"`
+	State            *string    `db:"state"`
+	SnapshotAt       *time.Time `db:"snap_ts"`
 }
 
 // -----------------------------------------------------------------------------

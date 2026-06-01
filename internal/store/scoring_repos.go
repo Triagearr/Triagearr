@@ -15,16 +15,16 @@ import (
 // for exclusions) into one struct so the scorer does not run separate queries
 // per field.
 type ScoringTorrent struct {
-	Hash         string     `db:"hash"`
-	Name         string     `db:"name"`
-	Category     string     `db:"category"`
-	Tags         string     `db:"tags"`
-	Size         int64      `db:"size"`
-	AddedOn      time.Time  `db:"added_on"`
-	CompletionOn *time.Time `db:"completion_on"`
-	Private        bool `db:"private"`
-	Protected      bool `db:"protected"`
-	CandidateBoost bool `db:"candidate_boost"`
+	Hash           string     `db:"hash"`
+	Name           string     `db:"name"`
+	Category       string     `db:"category"`
+	Tags           string     `db:"tags"`
+	Size           int64      `db:"size"`
+	AddedOn        time.Time  `db:"added_on"`
+	CompletionOn   *time.Time `db:"completion_on"`
+	Private        bool       `db:"private"`
+	Protected      bool       `db:"protected"`
+	CandidateBoost bool       `db:"candidate_boost"`
 }
 
 // GetTorrentForScoring loads one torrent's scoring fields. Returns sql.ErrNoRows
@@ -84,7 +84,7 @@ type velPoint struct {
 // fails to parse (treated as the documented "insufficient data" case), or the
 // span collapses to zero.
 func velocityFromPoints(newest, anchor velPoint) float64 {
-	if !(newest.Ts.Valid && anchor.Ts.Valid && newest.Up.Valid && anchor.Up.Valid) {
+	if !newest.Ts.Valid || !anchor.Ts.Valid || !newest.Up.Valid || !anchor.Up.Valid {
 		return 0
 	}
 	newT, errN := parseTS(newest.Ts.String)
