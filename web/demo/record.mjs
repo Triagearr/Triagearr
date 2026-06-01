@@ -3,29 +3,37 @@
 // reap story end to end. A demo-only overlay (injected, not part of the app)
 // adds a step counter and spotlights the element each beat is about.
 //
-// Storyboard (6 beats, each waits on real daemon state — not a fixed sleep — so
+// Storyboard (7 beats, each waits on real daemon state — not a fixed sleep — so
 // the recording stays in sync no matter how fast the machine is):
 //
-//   1/6 Dashboard — a healthy volume, nothing to reap.
-//   2/6 Torrents  — the scored library.
-//   3/6 Grab      — a fresh 4K release is added; it appears in the list.
-//   4/6 Pressure  — back on the dashboard, the volume tips below threshold.
-//   5/7 Actions   — the live run that fired on its own; the graveyard reaped.
+//   1/7 Dashboard — a healthy volume, nothing to reap. (Off camera: the
+//                   operator protects one archive and prioritizes one grab.)
+//   2/7 Torrents  — the scored library: guards and operator overrides flagged.
+//   3/7 Grab      — a fresh 4K release is added; it appears in the list.
+//   4/7 Pressure  — back on the dashboard, the volume tips below threshold.
+//   5/7 Actions   — the live run that fired on its own reaps, in order: the
+//                   operator-boosted grab, the dead-tracker graveyards, and the
+//                   ratio-paid private seed. Protected/rare/HnR seeds are spared.
 //   6/7 Recover   — back on the dashboard, the freed space is reclaimed.
-//   7/7 Library   — back to the list: the reaped graveyard is gone for good.
+//   7/7 Library   — back to the list: the reaped torrents are gone for good.
 //
 // Run via scripts/record-demo.sh (it boots the armed demo stack first). Output
-// is a .webm the wrapper converts to an animated WebP.
+// is a run of deviceScaleFactor:2 screenshots plus an ffconcat manifest of their
+// real durations; the wrapper assembles them into an animated WebP. We capture
+// screenshots rather than recordVideo because Playwright's video records at the
+// viewport's CSS resolution and ignores deviceScaleFactor (its docs tie video
+// size to the viewport only), so its text comes out soft — whereas screenshots
+// honor deviceScaleFactor, giving the same layout at 2x density and crisp text.
 //
 // Env:
 //   UI_URL    dashboard base URL        (default http://127.0.0.1:5173)
 //   API_URL   daemon API base           (default http://127.0.0.1:9494)
 //   QBIT_URL  fake qBit control base    (default http://127.0.0.1:18090)
 //   DISK_URL  fake disk control base    (default http://127.0.0.1:18091/disk/dev)
-//   OUT_DIR   where the .webm is written (default ./.dev/demo)
+//   OUT_DIR   where frames + manifest are written (default ./.dev/demo)
 
 import { chromium } from "playwright";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 
 const UI = process.env.UI_URL ?? "http://127.0.0.1:5173";
 const API = process.env.API_URL ?? "http://127.0.0.1:9494";
@@ -38,10 +46,21 @@ const TOTAL_STEPS = 7;
 // The fresh grab: private + a live tracker + grabbed just now → the HnR-window
 // veto (-10000) keeps it off the reap list even though it caused the pressure.
 const GRAB_NAME = "Fresh.4K.Remux.S01.2160p.WEB-FAKE";
-// Exactly 165 GiB so the UI (which formats in GiB) reads "165 GB", matching the
-// step-3 caption. A 4K remux season pack.
-const GRAB_SIZE = 165 * 1024 ** 3; // 177_167_503_360
-const FREED_BYTES = 160_000_000_000; // what the graveyard reap actually frees
+// Exactly 220 GiB so the UI (which formats in GiB) reads "220 GB", matching the
+// step-3 caption. A 4K remux season pack. Sized so the post-fill volume needs
+// five deletions to recover — the operator-boosted grab, the three graveyards,
+// and the ratio-paid private seed — rather than stopping sooner.
+const GRAB_SIZE = 220 * 1024 ** 3; // 236_223_201_280
+// What the reap frees: boosted grab (30) + 3 graveyards (45+60+55) + the
+// ratio-paid Severance seed (40) = 230 GB. Matched to the fixtures so beat 6
+// recovers to green.
+const FREED_BYTES = 230_000_000_000;
+
+// qBit-only fixtures whose per-torrent overrides are DB-only columns the
+// scenario YAML can't seed — record.mjs sets them via the API at runtime
+// (handlers_torrents: PUT .../protected and .../candidate_boost).
+const BOOST_HASH = "d000000000000000000000000000000000000007"; // Prioritize deletion
+const PROTECT_HASH = "d000000000000000000000000000000000000008"; // Protect
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -63,6 +82,17 @@ async function api(path) {
   const res = await fetch(`${API}/api/v1${path}`);
   if (!res.ok) throw new Error(`GET ${path}: HTTP ${res.status}`);
   return res.json();
+}
+
+// Set a per-torrent override flag (protect / candidate_boost) the way the UI
+// toggle does. The handler rescores the single hash synchronously, so the badge
+// and ranking are live by the time we hold on the list.
+async function apiPut(path, body) {
+  const res = await fetch(`${API}/api/v1${path}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`PUT ${path}: HTTP ${res.status}`);
 }
 
 // Poll a predicate against the API until it holds (or we give up). Keeps the
@@ -232,6 +262,43 @@ function gaugeCard(page) {
     .filter({ has: page.locator(".card-title", { hasText: "Disk pressure" }) });
 }
 
+// ── Frame capture ────────────────────────────────────────────────────────────
+// Each frame is a deviceScaleFactor:2 viewport screenshot (2560x1600, lossless)
+// timestamped at grab time, so the wrapper can rebuild real-time pacing.
+const frames = [];
+let frameIdx = 0;
+
+async function snap(page) {
+  const file = `f_${String(frameIdx++).padStart(5, "0")}.png`;
+  await page.screenshot({ path: `${OUT_DIR}/${file}` });
+  frames.push({ file, t: Date.now() });
+}
+
+// Hold the current scene "on camera" for ms, grabbing frames the whole time.
+// The screenshot latency itself paces the loop (no fixed sleep), so a CSS
+// transition playing during the hold is captured across several frames. A
+// static hold yields byte-identical frames the WebP encoder dedupes.
+async function holdFrames(page, ms) {
+  const end = Date.now() + ms;
+  do {
+    await snap(page);
+  } while (Date.now() < end);
+}
+
+// Emit the ffconcat manifest with each frame's real on-screen duration (the gap
+// to the next grab), so the wrapper's constant-fps resample plays back at the
+// captured wall-clock speed. ffconcat ignores the last entry's duration unless
+// the file is repeated, hence the trailing line.
+async function writeManifest() {
+  let m = "ffconcat version 1.0\n";
+  for (let i = 0; i < frames.length; i++) {
+    const dur = i < frames.length - 1 ? (frames[i + 1].t - frames[i].t) / 1000 : 0.6;
+    m += `file '${frames[i].file}'\nduration ${dur.toFixed(3)}\n`;
+  }
+  m += `file '${frames[frames.length - 1].file}'\n`;
+  await writeFile(`${OUT_DIR}/frames.txt`, m);
+}
+
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
 
@@ -240,7 +307,6 @@ async function main() {
     viewport: { width: 1280, height: 800 },
     deviceScaleFactor: 2,
     colorScheme: "dark",
-    recordVideo: { dir: OUT_DIR, size: { width: 1280, height: 800 } },
   });
   // Pin dark theme before any app script runs, so every full navigation loads
   // consistently dark instead of flashing the light default (the app reads
@@ -256,40 +322,49 @@ async function main() {
   const page = await context.newPage();
 
   try {
-    // ── Beat 1/7: a healthy volume. Land on the dashboard, settle on healthy
-    // data, spotlight the gauge.
-    await gotoSettled(page, UI);
+    // ── Beat 1/7: a healthy volume. Wait (via the API, no page yet) for the
+    // daemon to ingest + score the seeded library, then apply the operator's two
+    // manual overrides the way the UI toggles do: protect the irreplaceable
+    // archive (excluded despite a top-tier score) and prioritize the bloated
+    // grab for deletion (+2000 → reaped first). Setting them BEFORE the first
+    // page load means beat 1's candidate list already reflects them — boosted on
+    // top, protected dropped — instead of a stale pre-override snapshot. Both are
+    // also honored by the pressure run that fires later.
     await until("baseline scored", async () => {
       const s = await api("/summary");
-      return s.counts.torrents >= 5 && s.volume.free_percent >= 25;
+      return s.counts.torrents >= 8 && s.volume.free_percent >= 25;
     });
+    await apiPut(`/torrents/${PROTECT_HASH}/protected`, { protected: true });
+    await apiPut(`/torrents/${BOOST_HASH}/candidate_boost`, { candidate_boost: true });
+    // Land on the dashboard now that the data is settled and the overrides hold.
+    await gotoSettled(page, UI);
     await step(page, 1, "A healthy volume — nothing to reap");
     await spotlight(page, gaugeCard(page));
-    await sleep(3800);
+    await holdFrames(page, 3800);
 
     // ── Beat 2/7: the scored library. Move to the Torrents list.
     await clearSpot(page);
     await clickNav(page, "Torrents");
     await page.locator("table.tbl tbody tr").first().waitFor({ state: "visible", timeout: 15_000 });
-    await sleep(500);
-    await step(page, 2, "Your library, scored for deletion");
+    await holdFrames(page, 500);
+    await step(page, 2, "Your library, scored — guards and overrides flagged");
     await spotlight(page, page.locator("table.tbl"), 6);
-    await sleep(3000);
+    await holdFrames(page, 3000);
     // Inject the grab and let the poller ingest it while the list is still
     // spotlit, so beat 3 can sort + highlight it with no focus-less wait.
     await injectFreshGrab();
-    await until("grab in store", async () => (await api("/summary")).counts.torrents >= 6);
+    await until("grab in store", async () => (await api("/summary")).counts.torrents >= 9);
 
-    // ── Beat 3/7: a fresh grab lands. Sort by size so the 165 GB release jumps
+    // ── Beat 3/7: a fresh grab lands. Sort by size so the 220 GB release jumps
     // to the top (and the query refetches), and spotlight the new row.
     await clearSpot(page);
     await page.locator("th.sortable", { hasText: "Size" }).click();
     const grabRow = page.locator("tr.clickable", { hasText: "Fresh.4K.Remux" });
     await grabRow.first().waitFor({ state: "visible", timeout: 15_000 });
-    await sleep(400);
-    await step(page, 3, "A fresh 4K grab lands — 165 GB");
+    await holdFrames(page, 400);
+    await step(page, 3, "A fresh 4K grab lands — 220 GB");
     await spotlight(page, grabRow, 4);
-    await sleep(2800);
+    await holdFrames(page, 2800);
     // Fill the volume and wait for the daemon to go red while the grab is still
     // spotlit, so beat 4 cuts straight to the red gauge — no focus-less wait.
     await diskDelta("fill", GRAB_SIZE);
@@ -303,13 +378,17 @@ async function main() {
     await clearSpot(page);
     await clickNav(page, "Dashboard");
     await page.getByRole("button", { name: "Refresh" }).click();
-    await sleep(700);
+    await holdFrames(page, 700);
     await step(page, 4, "Disk pressure rises past the threshold");
     await spotlight(page, gaugeCard(page));
-    await sleep(3500);
+    await holdFrames(page, 3500);
 
     // ── Beat 5/7: the reap. The disk-pressure trigger fired a LIVE run on its
     // own (during beat 4); open Actions and surface the run's named deletions.
+    // In score order the run reaps: the operator-BOOSTED grab first (+2000), the
+    // three dead-tracker graveyards, then Severance.S02 — a private seed on a
+    // LIVE tracker whose ratio + seed-time obligation is paid and whose HnR
+    // window has long cleared. The protected archive and rare seed are left be.
     await until(
       "live pressure run",
       async () => {
@@ -323,10 +402,10 @@ async function main() {
     const runRow = page.locator(".runrow").first();
     await runRow.waitFor({ state: "visible", timeout: 15_000 });
     await runRow.click(); // open the run → its per-torrent deletions, by name
-    await sleep(700);
-    await step(page, 5, "Triagearr reaps the dead-tracker graveyard");
+    await holdFrames(page, 700);
+    await step(page, 5, "Your pick first, then dead trackers and a paid-off seed");
     await spotlight(page, page.locator(".split-detail"), 6);
-    await sleep(4500);
+    await holdFrames(page, 4500);
     // Hand the reaped space back and wait for the daemon to re-sample it while
     // the run detail is still spotlit, so beat 6 cuts to the recovered gauge.
     await diskDelta("free", FREED_BYTES);
@@ -339,29 +418,39 @@ async function main() {
     await clearSpot(page);
     await clickNav(page, "Dashboard");
     await page.getByRole("button", { name: "Refresh" }).click();
-    await sleep(700);
+    await holdFrames(page, 700);
     await step(page, 6, "Space reclaimed — back to healthy");
     await spotlight(page, gaugeCard(page));
-    await sleep(3500);
+    await holdFrames(page, 3500);
 
     // ── Beat 7/7: the cleaned library. Back to the Torrents list — the reaped
-    // graveyard is gone (ForgetTorrent evicted it from the store), leaving only
-    // the spared releases. Wait for a graveyard row to detach so we hold on the
-    // refreshed, pruned list rather than a stale cached one.
+    // rows are gone (ForgetTorrent evicted them from the store), leaving only
+    // the spared releases. Wait for a graveyard row AND the ratio-paid Severance
+    // seed to detach, so we hold on the refreshed, pruned list (both reap
+    // regimes proven gone) rather than a stale cached one.
     await clearSpot(page);
     await clickNav(page, "Torrents");
     await page.locator("table.tbl tbody tr").first().waitFor({ state: "visible", timeout: 15_000 });
+    // Generous timeout: wait for the list's post-reap refetch + re-render to
+    // catch up to the daemon's own eviction (we're waiting on the UI, not the
+    // reap), so we hold on the pruned list rather than a stale cached one.
     await page
       .locator("tr.clickable", { hasText: "Defunct.Crime" })
-      .waitFor({ state: "detached", timeout: 20_000 });
-    await sleep(500);
+      .waitFor({ state: "detached", timeout: 40_000 });
+    await page
+      .locator("tr.clickable", { hasText: "Severance.S02" })
+      .waitFor({ state: "detached", timeout: 40_000 });
+    await holdFrames(page, 500);
     await step(page, 7, "The dead weight is gone from your library");
     await spotlight(page, page.locator("table.tbl"), 6);
-    await sleep(4500);
+    await holdFrames(page, 4500);
     await clearSpot(page);
-    await sleep(600);
+    await holdFrames(page, 600);
+
+    // Emit the manifest now that every frame is on disk; the wrapper builds the
+    // animated WebP from it.
+    await writeManifest();
   } finally {
-    // Closing the context flushes the video to disk.
     await context.close();
     await browser.close();
   }

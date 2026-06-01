@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha-orange)](docs/ROADMAP.md)
 
-<img src="docs/assets/demo.webp" alt="A fresh download fills the disk; Triagearr reaps the dead-tracker graveyard and the space comes back — while the new grab and rare seeds are spared." width="900">
+<img src="docs/assets/demo.webp" alt="A fresh download fills the disk past the threshold; a live run reaps the operator-prioritized grab, the dead-tracker graveyard and a private seed whose ratio is paid, and the space comes back — while the protected archive, the rare seed and the in-window grab are spared." width="900">
 
 </div>
 

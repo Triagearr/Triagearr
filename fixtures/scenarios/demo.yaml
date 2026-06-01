@@ -4,10 +4,20 @@
 #   1. Disk sits healthy (~28% free, above the 15% threshold).
 #   2. A fresh grab lands (injected at runtime via the qBit control endpoint)
 #      and tips the volume below threshold — pressure fires.
-#   3. The scorer's top reap candidates are all dead-tracker graveyard items.
-#   4. A human arms + confirms a live run; the graveyard is reaped.
-#   5. The freshly-grabbed release is SPARED (HnR window veto, -10000) and the
-#      rare low-seeder release is SPARED (seeders guard) — only dead weight goes.
+#   3. The scored library shows the full spread of regimes and overrides:
+#      dead-tracker graveyards, a ratio-paid private seed, an operator-boosted
+#      grab, an operator-protected archive, rare content, a saturated public
+#      seed. (protected + candidate_boost are DB-only; record.mjs sets them via
+#      the API at runtime — the scenario can't seed them.)
+#   4. A human arms + confirms a live run. It reaps, in score order: the
+#      operator-BOOSTED grab first (+2000 jumps it to the top), then the three
+#      graveyards, then the ratio-paid private seed (Severance) — enough to clear
+#      the pressure.
+#   5. SPARED: the freshly-grabbed release (HnR window veto, -10000), the rare
+#      low-seeder release (seeders guard), the operator-PROTECTED archive (high
+#      score but excluded by hand), and the saturated public seed (a candidate,
+#      but never reached — target met first). Guard rails and operator intent
+#      both hold; nothing the swarm still needs is touched.
 #
 # Hashes are deterministic 40-hex info-hash-shaped strings (not real torrents).
 # Timestamps are unix seconds relative to ~2026-06-01 (1748736000).
@@ -90,6 +100,32 @@ qbit:
       trackers:
         - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "tracker offline" }
 
+    # ── Ratio paid in full: private, alive tracker, ratio 2.4 (≥ 1.0) and seed
+    # time well past 30d, HnR window long cleared, healthy swarm. Obligation met
+    # → ratio_obligation_met (+50) credited; no veto applies. Scores just below
+    # the graveyards, so the pressure run reaps it as the fourth candidate once
+    # the three graveyards aren't enough to hit target. REAPED.
+    - hash: "d000000000000000000000000000000000000006"
+      name: "Severance.S02.MULTi.1080p.WEB.H265-FAKE"
+      category: "tv-sonarr"
+      save_path: "/tmp/triagearr-dev/torrents/tv"
+      size: 40000000000            # 40 GB
+      added_on: 1720000000         # ~2024-07 (≈ 330d before the 2026-06 "now")
+      completion_on: 1720100000
+      ratio: 2.4
+      uploaded: 96000000000
+      num_complete: 40             # healthy swarm — well above the rare threshold
+      num_incomplete: 2
+      state: "uploading"
+      last_activity: 1748600000
+      private: true
+      tags: ""
+      files:
+        - { name: "Severance.S02E01.mkv", size: 20000000000, progress: 1.0 }
+        - { name: "Severance.S02E02.mkv", size: 20000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://tracker.alive.example.org/announce", status: 2 }
+
     # ── Rare content the swarm still depends on: alive tracker but almost no
     # seeders → seeders_low_guard (-1000) protects it. SPARED.
     - hash: "d000000000000000000000000000000000000004"
@@ -132,6 +168,56 @@ qbit:
       trackers:
         - { url: "udp://tracker.opentrackr.example.org:1337/announce", status: 2 }
 
+    # ── User override: PRIORITIZE DELETION. A healthy, actively-seeding manual
+    # grab (qBit-only, no *arr) that would normally rank near the bottom — the
+    # swarm doesn't need it gone. The operator flips "Prioritize deletion" in the
+    # UI (candidate_boost, +2000, set at runtime by record.mjs), so it jumps to
+    # the very top of the queue and is REAPED FIRST. Shows the operator can force
+    # anything out, regardless of score.
+    - hash: "d000000000000000000000000000000000000007"
+      name: "Bloated.4K.Test.Footage.2160p-FAKE"
+      category: ""
+      save_path: "/tmp/triagearr-dev/torrents/orphans"
+      size: 30000000000            # 30 GB
+      added_on: 1745000000         # recent — low age, would rank low on its own
+      completion_on: 1745100000
+      ratio: 0.5
+      uploaded: 15000000000
+      num_complete: 60             # healthy swarm — not rare, not vetoed
+      num_incomplete: 8
+      state: "uploading"
+      last_activity: 1748700000
+      private: false
+      tags: ""
+      files:
+        - { name: "Bloated.4K.Test.Footage.mkv", size: 30000000000, progress: 1.0 }
+      trackers:
+        - { url: "udp://tracker.opentrackr.example.org:1337/announce", status: 2 }
+
+    # ── User override: PROTECT. A dead-tracker archive that scores like a top
+    # graveyard candidate (~140) — but it's irreplaceable, so the operator flips
+    # "Protect" in the UI (torrents.protected, set at runtime by record.mjs). The
+    # Decider drops it from the candidate set entirely: high score, never touched.
+    - hash: "d000000000000000000000000000000000000008"
+      name: "Personal.Archive.S01.COMPLETE-FAKE"
+      category: ""
+      save_path: "/tmp/triagearr-dev/torrents/orphans"
+      size: 50000000000            # 50 GB
+      added_on: 1690000000         # ~2023-07 — old, so age stacks the score high
+      completion_on: 1690100000
+      ratio: 0.2
+      uploaded: 10000000000
+      num_complete: 0
+      num_incomplete: 0
+      state: "stalledUP"
+      last_activity: 1695000000
+      private: true
+      tags: "ygg"
+      files:
+        - { name: "Personal.Archive.S01.COMPLETE.mkv", size: 50000000000, progress: 1.0 }
+      trackers:
+        - { url: "https://yggtorrent.dead.example.org/announce", status: 4, msg: "tracker offline" }
+
 sonarr:
   api_key: "dev-key-sonarr"
   tags:
@@ -156,6 +242,16 @@ sonarr:
       files:
         - { id: 104, seriesId: 2, path: "/data/tv/Forgotten Nature Docu/S02E01.mkv", size: 27500000000 }
         - { id: 105, seriesId: 2, path: "/data/tv/Forgotten Nature Docu/S02E02.mkv", size: 27500000000 }
+    # Not graveyard-tagged: a current series whose seed simply paid its dues.
+    - id: 3
+      title: "Severance"
+      titleSlug: "severance"
+      path: "/data/tv/Severance"
+      tags: []
+      statistics: { sizeOnDisk: 40000000000 }
+      files:
+        - { id: 106, seriesId: 3, path: "/data/tv/Severance/S02E01.mkv", size: 20000000000 }
+        - { id: 107, seriesId: 3, path: "/data/tv/Severance/S02E02.mkv", size: 20000000000 }
   history:
     - id: 1001
       date: 2023-11-15T00:00:00Z
@@ -182,6 +278,16 @@ sonarr:
       eventType: "downloadFolderImported"
       downloadId: "d000000000000000000000000000000000000003"
       data: { fileId: "105", downloadClient: "qBittorrent", importedPath: "/data/tv/Forgotten Nature Docu/S02E02.mkv", size: "27500000000" }
+    - id: 1006
+      date: 2024-07-04T00:00:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "d000000000000000000000000000000000000006"
+      data: { fileId: "106", downloadClient: "qBittorrent", importedPath: "/data/tv/Severance/S02E01.mkv", size: "20000000000" }
+    - id: 1007
+      date: 2024-07-04T00:05:00Z
+      eventType: "downloadFolderImported"
+      downloadId: "d000000000000000000000000000000000000006"
+      data: { fileId: "107", downloadClient: "qBittorrent", importedPath: "/data/tv/Severance/S02E02.mkv", size: "20000000000" }
 
 radarr:
   api_key: "dev-key-radarr"

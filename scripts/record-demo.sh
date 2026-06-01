@@ -2,12 +2,14 @@
 # Record the README demo and bake it to an animated WebP, in one command.
 #
 # Boots the ARMED demo stack (config.demo.yml + the `demo` scenario) on a fresh
-# DB, drives the dashboard through the autonomous-reap story with Playwright,
-# converts the captured video, and tears the stack down. Re-run after a UI or
-# scenario change to regenerate docs/assets/demo.webp.
+# DB, drives the dashboard through the autonomous-reap story with Playwright
+# (grabbing deviceScaleFactor:2 screenshots), assembles them into an animated
+# WebP, and tears the stack down. Re-run after a UI or scenario change to
+# regenerate docs/assets/demo.webp.
 #
 # Deps: the dev stack (process-compose/watchexec/bun), Playwright + system
 # Chrome (web/ devDep, driven via channel:chrome), and ffmpeg with libwebp.
+# (No Playwright video → no bundled-ffmpeg dependency; screenshots are native.)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,16 +19,6 @@ OUT_DIR="$ROOT/.dev/demo"
 OUTPUT="$ROOT/docs/assets/demo.webp"
 
 command -v ffmpeg >/dev/null || { echo "[demo] ffmpeg not found (needed for WebP)" >&2; exit 1; }
-
-# Playwright records video through its own bundled ffmpeg, which it refuses to
-# install on unsupported distros (e.g. WSL's ubuntu26.04). The encode args are
-# stock, so point its expected path at the system ffmpeg when it's missing.
-PW_FFMPEG="$HOME/.cache/ms-playwright/ffmpeg-1011/ffmpeg-linux"
-if [ ! -e "$PW_FFMPEG" ]; then
-  echo "[demo] linking system ffmpeg for Playwright video capture"
-  mkdir -p "$(dirname "$PW_FFMPEG")"
-  ln -sf "$(command -v ffmpeg)" "$PW_FFMPEG"
-fi
 
 cleanup() { scripts/dev.sh down >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -43,30 +35,28 @@ export SCENARIO=demo CONFIG=config.demo.yml
 scripts/dev.sh up demo
 scripts/dev.sh ready 120
 
-echo "[demo] recording (Playwright → webm)"
+echo "[demo] recording (Playwright → 2x screenshots)"
 # node resolves `playwright` from web/node_modules, so run with web/ as cwd;
-# OUT_DIR is absolute so the video still lands in .dev/demo.
+# OUT_DIR is absolute so the frames + manifest still land in .dev/demo.
 ( cd web && OUT_DIR="$OUT_DIR" node demo/record.mjs )
 
-WEBM="$(ls -t "$OUT_DIR"/*.webm 2>/dev/null | head -1 || true)"
-[ -n "$WEBM" ] || { echo "[demo] no video produced" >&2; exit 1; }
-echo "[demo] captured $(basename "$WEBM")"
+MANIFEST="$OUT_DIR/frames.txt"
+[ -f "$MANIFEST" ] || { echo "[demo] no frames produced" >&2; exit 1; }
+echo "[demo] captured $(ls "$OUT_DIR"/f_*.png 2>/dev/null | wc -l) frames"
 
-echo "[demo] converting → $OUTPUT"
-# Playwright starts recording at context creation, so the clip opens on ~1s of
-# black before the dashboard's first paint. Detect that leading black segment
-# and seek past it so the WebP opens straight on beat 1. blackdetect only flags
-# the true-black lead-in — the dark UI has enough content to stay unflagged.
-TRIM="$(ffmpeg -hide_banner -i "$WEBM" -vf "blackdetect=d=0.05:pix_th=0.10:pic_th=0.98" -an -f null - 2>&1 \
-  | grep -oP 'black_start:0(\.0+)? black_end:\K[0-9.]+' | head -1)"
-TRIM="${TRIM:-0}"
-echo "[demo] trimming ${TRIM}s of leading black"
-
-# 12 fps is plenty for a UI walkthrough and keeps the file small; lanczos
-# downscale stays crisp on the gauge/score text. -loop 0 = loop forever.
-ffmpeg -y -loglevel error -ss "$TRIM" -i "$WEBM" \
-  -vf "fps=12,scale=1280:-1:flags=lanczos" \
-  -loop 0 -compression_level 6 -q:v 62 \
+echo "[demo] assembling → $OUTPUT"
+# The frames are 2560x1600 (deviceScaleFactor:2) lossless PNGs; the manifest
+# carries each one's real on-screen duration. fps=12 resamples that variable
+# timeline to a constant 12 fps that plays back at the captured wall-clock speed
+# (long holds duplicate frames → the WebP encoder dedupes them, so the file
+# stays small). Downscale to 900px with lanczos to match the README's display
+# width 1:1 (GitHub's README column caps width near 900): a sharp supersample of
+# the dense 2x capture, with no soft browser-side shrink.
+# q:v 90: the source frames are pristine, so a high quality keeps text crisp and
+# the focus beats' dimmed regions band-free; the deduped holds keep size down.
+ffmpeg -y -loglevel error -f concat -safe 0 -i "$MANIFEST" \
+  -vf "fps=12,scale=900:-1:flags=lanczos" \
+  -loop 0 -compression_level 6 -q:v 90 \
   "$OUTPUT"
 
 SIZE="$(du -h "$OUTPUT" | cut -f1)"
