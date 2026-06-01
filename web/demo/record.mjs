@@ -256,7 +256,7 @@ async function main() {
   const page = await context.newPage();
 
   try {
-    // ── Beat 1/6: a healthy volume. Land on the dashboard, settle on healthy
+    // ── Beat 1/7: a healthy volume. Land on the dashboard, settle on healthy
     // data, spotlight the gauge.
     await gotoSettled(page, UI);
     await until("baseline scored", async () => {
@@ -267,48 +267,49 @@ async function main() {
     await spotlight(page, gaugeCard(page));
     await sleep(3800);
 
-    // ── Beat 2/6: the scored library. Move to the Torrents list.
+    // ── Beat 2/7: the scored library. Move to the Torrents list.
     await clearSpot(page);
     await clickNav(page, "Torrents");
     await page.locator("table.tbl tbody tr").first().waitFor({ state: "visible", timeout: 15_000 });
     await sleep(500);
     await step(page, 2, "Your library, scored for deletion");
     await spotlight(page, page.locator("table.tbl"), 6);
-    await sleep(3200);
-
-    // ── Beat 3/6: a fresh grab lands. Inject it, then sort by size so the
-    // 165 GB release jumps to the top (and the query refetches), and spotlight
-    // the new row appearing.
-    await clearSpot(page);
+    await sleep(3000);
+    // Inject the grab and let the poller ingest it while the list is still
+    // spotlit, so beat 3 can sort + highlight it with no focus-less wait.
     await injectFreshGrab();
     await until("grab in store", async () => (await api("/summary")).counts.torrents >= 6);
+
+    // ── Beat 3/7: a fresh grab lands. Sort by size so the 165 GB release jumps
+    // to the top (and the query refetches), and spotlight the new row.
+    await clearSpot(page);
     await page.locator("th.sortable", { hasText: "Size" }).click();
     const grabRow = page.locator("tr.clickable", { hasText: "Fresh.4K.Remux" });
     await grabRow.first().waitFor({ state: "visible", timeout: 15_000 });
     await sleep(400);
     await step(page, 3, "A fresh 4K grab lands — 165 GB");
     await spotlight(page, grabRow, 4);
-    await sleep(3800);
-
-    // ── Beat 4/6: pressure rises. The grab's bytes fill the volume below
-    // threshold; back on the dashboard the gauge goes red.
-    await clearSpot(page);
+    await sleep(2800);
+    // Fill the volume and wait for the daemon to go red while the grab is still
+    // spotlit, so beat 4 cuts straight to the red gauge — no focus-less wait.
     await diskDelta("fill", GRAB_SIZE);
-    // Wait for the daemon to re-sample the filled disk BEFORE reloading, so the
-    // Refresh fetches the red figure rather than the still-green cached one.
     await until("gauge red", async () => {
       const v = (await api("/summary")).volume;
       return v.free_percent < v.target_free_percent;
     });
+
+    // ── Beat 4/7: pressure rises. Back on the dashboard the gauge is red (the
+    // fill + daemon re-sample already happened under beat 3's spotlight).
+    await clearSpot(page);
     await clickNav(page, "Dashboard");
     await page.getByRole("button", { name: "Refresh" }).click();
     await sleep(700);
     await step(page, 4, "Disk pressure rises past the threshold");
     await spotlight(page, gaugeCard(page));
-    await sleep(3800);
+    await sleep(3500);
 
-    // ── Beat 5/6: the reap. The disk-pressure trigger fires a LIVE run on its
-    // own; open Actions and surface the run's named deletions.
+    // ── Beat 5/7: the reap. The disk-pressure trigger fired a LIVE run on its
+    // own (during beat 4); open Actions and surface the run's named deletions.
     await until(
       "live pressure run",
       async () => {
@@ -326,25 +327,22 @@ async function main() {
     await step(page, 5, "Triagearr reaps the dead-tracker graveyard");
     await spotlight(page, page.locator(".split-detail"), 6);
     await sleep(4500);
-
-    // ── Beat 6/6: recovery. Hand the reaped space back, wait for the daemon to
-    // re-sample it, then reload the dashboard so the final frame shows green.
-    await clearSpot(page);
+    // Hand the reaped space back and wait for the daemon to re-sample it while
+    // the run detail is still spotlit, so beat 6 cuts to the recovered gauge.
     await diskDelta("free", FREED_BYTES);
     await until("gauge recovered", async () => {
       const v = (await api("/summary")).volume;
       return v.free_percent >= v.target_free_percent;
     });
+
+    // ── Beat 6/7: recovery. Reload the dashboard so the gauge shows green.
+    await clearSpot(page);
     await clickNav(page, "Dashboard");
     await page.getByRole("button", { name: "Refresh" }).click();
-    await until("dashboard reflects recovery", async () => {
-      const s = await api("/summary");
-      return s.volume.free_percent >= s.volume.target_free_percent && s.counts.actions >= 3;
-    });
-    await sleep(500);
+    await sleep(700);
     await step(page, 6, "Space reclaimed — back to healthy");
     await spotlight(page, gaugeCard(page));
-    await sleep(3800);
+    await sleep(3500);
 
     // ── Beat 7/7: the cleaned library. Back to the Torrents list — the reaped
     // graveyard is gone (ForgetTorrent evicted it from the store), leaving only
