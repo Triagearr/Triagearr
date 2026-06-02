@@ -349,8 +349,12 @@ export const TelegramSettings = z.object({
   bot_token: z.string().optional(),
   chat_id: z.string().optional(),
 });
+export const TargetUnreachableSettings = z.object({
+  reminder_interval: z.string().optional(),
+});
 export const NotificationSettings = z.object({
   telegram: TelegramSettings,
+  target_unreachable: TargetUnreachableSettings,
 });
 const SettingsValues = z.object({
   mode: RunMode,

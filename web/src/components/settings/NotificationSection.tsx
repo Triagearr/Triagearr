@@ -181,6 +181,7 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
   }, [settings.dataUpdatedAt]);
 
   const tg = settings.data?.values.notifications.telegram ?? {};
+  const tu = settings.data?.values.notifications.target_unreachable ?? {};
   const overridden = new Set(settings.data?.overridden_keys ?? []);
 
   function field(key: string, fallback: string | boolean | undefined): string {
@@ -278,6 +279,26 @@ function TelegramDrawer({ open, onClose }: { open: boolean; onClose: () => void 
               dirty={dirty("notifications.telegram.chat_id")}
               overridden={overr("notifications.telegram.chat_id")}
               onRevert={() => set("notifications.telegram.chat_id", null)}
+            />
+          </div>
+
+          {/* Disk-pressure alerts — cadence of the always-on target-unreachable
+              reminder (ADR-0032); the alert itself rides on configured providers. */}
+          <div className="space-y-3 pt-2 border-t border-border">
+            <div>
+              <div className="text-sm font-medium">{m.settings_notif_alerts_title()}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{m.settings_notif_reminder_interval_hint()}</div>
+            </div>
+            <CredentialField
+              label={m.settings_notif_reminder_interval()}
+              keyName="notifications.target_unreachable.reminder_interval"
+              type="text"
+              placeholder="24h"
+              value={field("notifications.target_unreachable.reminder_interval", tu.reminder_interval)}
+              onChange={(v) => set("notifications.target_unreachable.reminder_interval", v)}
+              dirty={dirty("notifications.target_unreachable.reminder_interval")}
+              overridden={overr("notifications.target_unreachable.reminder_interval")}
+              onRevert={() => set("notifications.target_unreachable.reminder_interval", null)}
             />
           </div>
 
