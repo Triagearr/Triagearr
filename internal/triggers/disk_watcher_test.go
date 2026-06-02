@@ -14,14 +14,15 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-// fakeNotifier records every message it is handed.
+// fakeNotifier records every event it is handed.
 type fakeNotifier struct {
-	got []notify.Message
+	got []notify.Event
 }
 
-func (f *fakeNotifier) Name() string { return "fake" }
-func (f *fakeNotifier) Send(_ context.Context, m notify.Message) error {
-	f.got = append(f.got, m)
+func (f *fakeNotifier) Name() string            { return "fake" }
+func (f *fakeNotifier) Routing() notify.Routing { return notify.Routing{} }
+func (f *fakeNotifier) Send(_ context.Context, ev notify.Event) error {
+	f.got = append(f.got, ev)
 	return nil
 }
 
@@ -175,7 +176,10 @@ func TestDiskWatcher_NotifyRun(t *testing.T) {
 
 	require.Len(t, fn.got, 1)
 	msg := fn.got[0]
-	require.Equal(t, notify.EventRunReport, msg.Kind)
+	// One success + one qbit failure → a partial run (ADR-0033).
+	require.Equal(t, notify.EventRunPartial, msg.Kind)
+	require.Equal(t, notify.SeverityWarning, msg.Severity)
+	require.NotNil(t, msg.Run)
 	// The provider sees formatted text (ADR-0032); assert the run details landed.
 	require.Contains(t, msg.Text, `disk pressure on "data"`)
 	require.Contains(t, msg.Text, "5.0% -> 22.0%")

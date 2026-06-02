@@ -13,6 +13,8 @@ import {
   AuthEnableResponse,
   ConfigShape,
   SettingsView,
+  NotificationCatalogue,
+  NotificationDeliveries,
   RunActionList,
   RunList,
   RunPreview,
@@ -57,6 +59,8 @@ export const queryKeys = {
   trackerPolicies: ["scoring", "tracker-policies"] as const,
   config: ["config"] as const,
   settings: ["settings"] as const,
+  notificationCatalogue: ["notifications", "catalogue"] as const,
+  notificationDeliveries: ["notifications", "deliveries"] as const,
 };
 
 export function useSession() {
@@ -403,10 +407,33 @@ export function useUpdateSettings() {
 
 // POST /api/v1/notifications/test — delivers a synthetic notification through
 // the saved provider config so the operator can verify credentials. Tests the
-// currently-loaded config, so unsaved edits must be saved first.
+// currently-loaded config, so unsaved edits must be saved first. An empty opts
+// tests every provider with the generic event; provider/kind narrow the test.
+export type TestNotificationOpts = { provider?: string; kind?: string };
 export function useTestNotification() {
   return useMutation({
-    mutationFn: () => apiFetchVoid("/api/v1/notifications/test", { method: "POST" }),
+    mutationFn: (opts: TestNotificationOpts = {}) =>
+      apiFetchVoid("/api/v1/notifications/test", {
+        method: "POST",
+        body: JSON.stringify(opts),
+      }),
+  });
+}
+
+// GET /api/v1/notifications/catalogue — the static event taxonomy + severities.
+export function useNotificationCatalogue() {
+  return useQuery({
+    queryKey: queryKeys.notificationCatalogue,
+    queryFn: () => apiFetch("/api/v1/notifications/catalogue", NotificationCatalogue),
+    staleTime: Infinity, // the catalogue is build-static
+  });
+}
+
+// GET /api/v1/notifications/deliveries — recent fan-out attempts (in-memory).
+export function useNotificationDeliveries() {
+  return useQuery({
+    queryKey: queryKeys.notificationDeliveries,
+    queryFn: () => apiFetch("/api/v1/notifications/deliveries", NotificationDeliveries),
   });
 }
 

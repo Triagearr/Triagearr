@@ -344,18 +344,79 @@ export const VolumeSettings = z.object({
   name: z.string(),
   disk_pressure: VolumeDiskPressure,
 });
-export const TelegramSettings = z.object({
+// ProviderRouting is the per-provider severity-threshold routing (ADR-0033),
+// flattened into every provider object by the backend.
+export const ProviderRouting = z.object({
+  min_severity: z.string().optional(),
+  mute: z.array(z.string()).nullable().optional(),
+});
+export const TelegramSettings = ProviderRouting.extend({
   enabled: z.boolean().optional(),
   bot_token: z.string().optional(),
   chat_id: z.string().optional(),
+});
+export const DiscordSettings = ProviderRouting.extend({
+  enabled: z.boolean().optional(),
+  webhook_url: z.string().optional(),
+});
+export const NtfySettings = ProviderRouting.extend({
+  enabled: z.boolean().optional(),
+  server: z.string().optional(),
+  topic: z.string().optional(),
+  username: z.string().optional(),
+  password: z.string().optional(),
+});
+export const EmailSettings = ProviderRouting.extend({
+  enabled: z.boolean().optional(),
+  host: z.string().optional(),
+  port: z.number().optional(),
+  username: z.string().optional(),
+  password: z.string().optional(),
+  from: z.string().optional(),
+  to: z.array(z.string()).nullable().optional(),
+  use_starttls: z.boolean().optional(),
+});
+export const SlackSettings = ProviderRouting.extend({
+  enabled: z.boolean().optional(),
+  webhook_url: z.string().optional(),
+});
+export const WebhookSettings = ProviderRouting.extend({
+  enabled: z.boolean().optional(),
+  url: z.string().optional(),
+  secret: z.string().optional(),
 });
 export const TargetUnreachableSettings = z.object({
   reminder_interval: z.string().optional(),
 });
 export const NotificationSettings = z.object({
   telegram: TelegramSettings,
+  discord: DiscordSettings,
+  ntfy: NtfySettings,
+  email: EmailSettings,
+  slack: SlackSettings,
+  webhook: WebhookSettings,
   target_unreachable: TargetUnreachableSettings,
 });
+
+// NotificationCatalogue lists the event taxonomy + each kind's fixed severity.
+export const NotificationCatalogueEntry = z.object({
+  kind: z.string(),
+  severity: z.string(),
+});
+export const NotificationCatalogue = z.array(NotificationCatalogueEntry);
+export type NotificationCatalogueT = z.infer<typeof NotificationCatalogue>;
+
+// NotificationDelivery is one recent fan-out attempt (in-memory ring).
+export const NotificationDelivery = z.object({
+  provider: z.string(),
+  kind: z.string(),
+  severity: z.string(),
+  ok: z.boolean(),
+  error: z.string().optional(),
+  at: z.string(),
+});
+export const NotificationDeliveries = z.array(NotificationDelivery);
+export type NotificationDeliveryT = z.infer<typeof NotificationDelivery>;
 const SettingsValues = z.object({
   mode: RunMode,
   scoring: ScoringSettings,

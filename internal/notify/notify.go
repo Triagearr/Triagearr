@@ -1,13 +1,16 @@
-// Package notify delivers operator-facing notifications when Triagearr
-// executes a destructive run. Per ADR-0021 the only notified event is a
-// disk-pressure run that actually reached the Actor: manual HTTP/CLI runs are
-// deliberately silent (the operator triggered them knowingly).
+// Package notify delivers operator-facing notifications for Triagearr's
+// advisory events: a disk-pressure run that reached the Actor (ADR-0021), a
+// "target unreachable" disk shortfall (ADR-0032), and connection-health
+// transitions. Manual HTTP/CLI runs stay silent — the operator triggered them
+// knowingly.
 //
-// A Report is the provider-agnostic payload. Concrete providers (Telegram in
-// internal/notify/telegram, more later) implement Notifier; the Dispatcher
-// fans a Report out to every configured provider best-effort — a provider
-// failure is logged, never propagated, so a broken bot token cannot abort or
-// taint a run.
+// Events flow through one typed seam (ADR-0033). An Event carries a fixed
+// Severity, a universal plain-text fallback (Text) and, for providers that can
+// render structure, the typed payload (Report/Alert/HealthEvent). Text sinks
+// (every shoutrrr-backed channel) read Text; the native webhook serialises the
+// typed payload to JSON. The Dispatcher fans an Event out to every provider
+// whose Routing admits it, best-effort: a provider failure is logged, never
+// propagated, so a broken bot token cannot abort or taint a run.
 package notify
 
 import (
@@ -15,111 +18,187 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
-
-	"github.com/Triagearr/Triagearr/internal/triagearr"
+	"sync"
+	"time"
 )
 
-// ReportItem is one torrent the Actor attempted to delete during the run.
-type ReportItem struct {
-	Name      string
-	Hash      triagearr.Hash
-	SizeBytes int64
-	Status    triagearr.ActionStatus
-}
+// Severity ranks an event so a provider can subscribe to a floor instead of
+// enumerating every kind (ADR-0033). Ordered: info < warning < error.
+type Severity int
 
-// Succeeded reports whether the candidate was fully deleted (*arr + qBit).
-func (it ReportItem) Succeeded() bool {
-	return it.Status == triagearr.ActionSucceeded
-}
+const (
+	SeverityInfo Severity = iota
+	SeverityWarning
+	SeverityError
+)
 
-// Report is the payload describing one executed disk-pressure run. Byte
-// counts for free space come from a real statfs sample before (at fire time)
-// and after the Actor finished — never inferred from media sizes.
-type Report struct {
-	VolumeName      string
-	Mode            string
-	RunID           int64
-	FreePctBefore   float64
-	FreeBytesBefore uint64
-	FreePctAfter    float64
-	FreeBytesAfter  uint64
-	TargetFreePct   float64
-	Items           []ReportItem
-	// TotalFreedBytes is the sum of freed_bytes across succeeded actions —
-	// the "a priori" freed total, distinct from the before/after disk delta.
-	TotalFreedBytes int64
-	// RealFreedBytes is the observed disk delta (FreeBytesAfter -
-	// FreeBytesBefore) measured by the post-action statfs re-sample. Signed:
-	// concurrent writes from other processes during the action window can
-	// produce a negative value. Zero when no after-sample was taken.
-	RealFreedBytes int64
-}
-
-// testText is the synthetic connectivity-check body for the dashboard
-// "send test" action (see Dispatcher.SendTest).
-const testText = "Triagearr — test notification\n" +
-	"If you can read this, notifications are wired up correctly."
-
-// SucceededCount returns how many items were fully deleted.
-func (r Report) SucceededCount() int {
-	n := 0
-	for _, it := range r.Items {
-		if it.Succeeded() {
-			n++
-		}
+// String renders the severity as the stable lowercase token used in config,
+// the API and logs.
+func (s Severity) String() string {
+	switch s {
+	case SeverityInfo:
+		return "info"
+	case SeverityWarning:
+		return "warning"
+	case SeverityError:
+		return "error"
+	default:
+		return fmt.Sprintf("severity(%d)", int(s))
 	}
-	return n
 }
 
-// EventKind discriminates the notification events. Providers are plain-text
-// sinks (ADR-0032): the kind is carried for logging and lets a future provider
-// branch on event type without re-plumbing the Dispatcher.
+// ParseSeverity maps a token back to a Severity. An empty string defaults to
+// info (the most permissive floor — a provider with no configured floor sees
+// everything).
+func ParseSeverity(s string) (Severity, error) {
+	switch s {
+	case "", "info":
+		return SeverityInfo, nil
+	case "warning":
+		return SeverityWarning, nil
+	case "error":
+		return SeverityError, nil
+	default:
+		return SeverityInfo, fmt.Errorf("unknown severity %q (want info|warning|error)", s)
+	}
+}
+
+// EventKind is the stable, dotted taxonomy of notification events. The kind is
+// the routing identity (providers mute by kind) and the wire value the webhook
+// emits, so these strings must not change casually.
 type EventKind string
 
 const (
-	EventRunReport         EventKind = "run_report"
-	EventTargetUnreachable EventKind = "target_unreachable"
+	EventRunExecuted       EventKind = "run.executed"
+	EventRunPartial        EventKind = "run.partial"
+	EventRunFailed         EventKind = "run.failed"
+	EventTargetUnreachable EventKind = "disk.target_unreachable"
+	EventHealthDegraded    EventKind = "health.degraded"
+	EventHealthRecovered   EventKind = "health.recovered"
 	EventTest              EventKind = "test"
 )
 
-// Message is the provider-facing payload: a kind tag plus the already-formatted
-// plain text. All event-specific formatting happens in this package
-// (FormatRunReport / FormatAlert), so providers never see structured events.
-type Message struct {
-	Kind EventKind
-	Text string
+// kindSeverity is the single source of truth mapping each kind to its fixed
+// severity. Severity is intrinsic to the kind, not operator-tunable: routing
+// happens by floor (MinSeverity) + mute, never by reclassifying an event.
+var kindSeverity = map[EventKind]Severity{
+	EventRunExecuted:       SeverityInfo,
+	EventRunPartial:        SeverityWarning,
+	EventRunFailed:         SeverityError,
+	EventTargetUnreachable: SeverityWarning,
+	EventHealthDegraded:    SeverityError,
+	EventHealthRecovered:   SeverityInfo,
+	EventTest:              SeverityInfo,
 }
 
-// Alert is the payload for the "disk-pressure target is unreachable" event
-// (ADR-0032): even after deleting every eligible candidate the volume would not
-// reach target_free_percent.
-type Alert struct {
-	VolumeName       string
-	Mode             string
-	FreePct          float64
-	TargetFreePct    float64
-	NeedBytes        int64 // bytes to free to reach target
-	ReclaimableBytes int64 // bytes a run would actually free (eligible candidates)
-	CandidateCount   int
+// Severity returns the fixed severity for the kind (info for an unknown kind).
+func (k EventKind) Severity() Severity { return kindSeverity[k] }
+
+// Known reports whether the kind is part of the taxonomy — used to validate a
+// provider's mute list at config time.
+func (k EventKind) Known() bool {
+	_, ok := kindSeverity[k]
+	return ok
 }
 
-// Notifier delivers one preformatted Message to a single provider.
+// Catalogue returns every event kind with its severity, in a stable order, for
+// the settings UI (event catalogue + mute pickers).
+func Catalogue() []CatalogueEntry {
+	order := []EventKind{
+		EventRunExecuted, EventRunPartial, EventRunFailed,
+		EventTargetUnreachable, EventHealthDegraded, EventHealthRecovered,
+		EventTest,
+	}
+	out := make([]CatalogueEntry, 0, len(order))
+	for _, k := range order {
+		out = append(out, CatalogueEntry{Kind: k, Severity: k.Severity()})
+	}
+	return out
+}
+
+// CatalogueEntry is one row of the event catalogue.
+type CatalogueEntry struct {
+	Kind     EventKind
+	Severity Severity
+}
+
+// HealthEvent is the payload for a connection-health transition: a configured
+// *arr or torrent-client instance became unreachable, or recovered.
+type HealthEvent struct {
+	Component string // instance kind label, e.g. "sonarr", "qbittorrent"
+	Kind      string // "arr" | "torrent_client"
+	Healthy   bool
+	LastError string
+}
+
+// Event is the typed notification seam (ADR-0033). Exactly one payload pointer
+// is set, matching Kind. Text is always populated as the plain-text fallback so
+// a text-only provider never needs to read the payload.
+type Event struct {
+	Kind     EventKind
+	Severity Severity
+	Title    string // short one-liner for providers with a title slot
+	Text     string // universal plain-text body
+
+	Run    *Report      // run.executed / run.partial / run.failed
+	Alert  *Alert       // disk.target_unreachable
+	Health *HealthEvent // health.degraded / health.recovered
+}
+
+// Routing is a provider's subscription: every event at or above MinSeverity,
+// minus the muted kinds (ADR-0033). The zero value (info floor, no mutes)
+// admits everything.
+type Routing struct {
+	MinSeverity Severity
+	Mute        map[EventKind]bool
+}
+
+// Allows reports whether the event should be delivered to a provider with this
+// routing.
+func (r Routing) Allows(ev Event) bool {
+	if r.Mute[ev.Kind] {
+		return false
+	}
+	return ev.Severity >= r.MinSeverity
+}
+
+// Notifier delivers one Event to a single provider. Text providers read
+// ev.Text; the webhook reads the typed payload.
 type Notifier interface {
-	// Send delivers the message. A 5xx/timeout failure is wrapped with
-	// triagearr.ErrTransient so callers could retry; the Dispatcher does not.
-	Send(ctx context.Context, m Message) error
-	// Name identifies the provider in logs (e.g. "telegram").
+	// Send delivers the event. A transient failure (5xx/timeout) may be wrapped
+	// with triagearr.ErrTransient; the Dispatcher does not retry either way.
+	Send(ctx context.Context, ev Event) error
+	// Name identifies the provider in logs and the delivery log (e.g. "telegram").
 	Name() string
+	// Routing returns this provider's severity floor + mute set.
+	Routing() Routing
 }
 
-// Dispatcher fans a Report out to every configured Notifier.
+// deliveryRingSize bounds the in-memory recent-deliveries log surfaced by the
+// dashboard. Advisory data only — it does not survive a restart (ADR-0033).
+const deliveryRingSize = 100
+
+// Delivery is one recorded fan-out attempt for the recent-deliveries view.
+type Delivery struct {
+	Provider string
+	Kind     EventKind
+	Severity Severity
+	OK       bool
+	Err      string
+	At       time.Time
+}
+
+// Dispatcher fans an Event out to every configured Notifier whose Routing
+// admits it, and keeps a bounded ring of recent deliveries.
 type Dispatcher struct {
 	notifiers []Notifier
+
+	mu         sync.Mutex
+	deliveries []Delivery // ring buffer, oldest first
 }
 
-// NewDispatcher builds a Dispatcher over the given notifiers. A nil/empty
-// slice yields a Dispatcher whose Dispatch is a no-op.
+// NewDispatcher builds a Dispatcher over the given notifiers. A nil/empty slice
+// yields a Dispatcher whose dispatch methods are no-ops.
 func NewDispatcher(notifiers ...Notifier) *Dispatcher {
 	return &Dispatcher{notifiers: notifiers}
 }
@@ -129,124 +208,120 @@ func (d *Dispatcher) Empty() bool {
 	return d == nil || len(d.notifiers) == 0
 }
 
-// Dispatch delivers an executed-run report to every provider, best-effort.
+// Dispatch delivers an executed-run report. The kind (executed/partial/failed)
+// is derived from the run outcome; an empty run is silently dropped.
 func (d *Dispatcher) Dispatch(ctx context.Context, r Report) {
-	d.send(ctx, FormatRunReport(r))
+	ev := FormatRun(r)
+	if ev.Kind == "" {
+		return
+	}
+	d.dispatch(ctx, ev)
 }
 
-// DispatchAlert delivers a target-unreachable alert to every provider,
-// best-effort (ADR-0032). Same advisory contract as Dispatch.
+// DispatchAlert delivers a target-unreachable alert (ADR-0032), best-effort.
 func (d *Dispatcher) DispatchAlert(ctx context.Context, a Alert) {
-	d.send(ctx, FormatAlert(a))
+	d.dispatch(ctx, FormatAlert(a))
 }
 
-// send fans a Message out to every notifier best-effort. Each failure is logged
-// and swallowed: notifications are advisory and must never affect run outcome.
-func (d *Dispatcher) send(ctx context.Context, m Message) {
+// DispatchHealth delivers a connection-health transition, best-effort.
+func (d *Dispatcher) DispatchHealth(ctx context.Context, h HealthEvent) {
+	d.dispatch(ctx, FormatHealth(h))
+}
+
+// dispatch fans an Event out to every admitting notifier best-effort. Each
+// failure is logged, recorded and swallowed: notifications are advisory and
+// must never affect run outcome.
+func (d *Dispatcher) dispatch(ctx context.Context, ev Event) {
 	if d == nil {
 		return
 	}
 	for _, n := range d.notifiers {
-		if err := n.Send(ctx, m); err != nil {
-			slog.Warn("notification delivery failed", "provider", n.Name(), "kind", string(m.Kind), "err", err)
+		if !n.Routing().Allows(ev) {
 			continue
 		}
-		slog.Info("notification delivered", "provider", n.Name(), "kind", string(m.Kind))
+		err := n.Send(ctx, ev)
+		d.record(n.Name(), ev, err)
+		if err != nil {
+			slog.Warn("notification delivery failed", "provider", n.Name(), "kind", string(ev.Kind), "err", err)
+			continue
+		}
+		slog.Info("notification delivered", "provider", n.Name(), "kind", string(ev.Kind))
 	}
 }
 
-// SendTest delivers a synthetic connectivity-check message to every configured
-// provider. Unlike send it surfaces failures (joined, prefixed by provider
-// name) so the dashboard "send test" action can show the operator a bad token.
+// record appends a delivery to the bounded ring (oldest dropped first).
+func (d *Dispatcher) record(provider string, ev Event, err error) {
+	if d == nil {
+		return
+	}
+	del := Delivery{
+		Provider: provider,
+		Kind:     ev.Kind,
+		Severity: ev.Severity,
+		OK:       err == nil,
+		At:       time.Now().UTC(),
+	}
+	if err != nil {
+		del.Err = err.Error()
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.deliveries = append(d.deliveries, del)
+	if len(d.deliveries) > deliveryRingSize {
+		d.deliveries = d.deliveries[len(d.deliveries)-deliveryRingSize:]
+	}
+}
+
+// Deliveries returns a copy of the recent-deliveries ring, newest first.
+func (d *Dispatcher) Deliveries() []Delivery {
+	if d == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]Delivery, len(d.deliveries))
+	for i, del := range d.deliveries {
+		out[len(d.deliveries)-1-i] = del
+	}
+	return out
+}
+
+// TestOptions narrows a test send. An empty Provider targets every enabled
+// provider; an empty Kind sends the generic connectivity-check event.
+type TestOptions struct {
+	Provider string
+	Kind     EventKind
+}
+
+// SendTest delivers a generic connectivity-check to every configured provider.
 func (d *Dispatcher) SendTest(ctx context.Context) error {
+	return d.SendTestEvent(ctx, TestOptions{})
+}
+
+// SendTestEvent delivers a representative event to the targeted provider(s).
+// Unlike dispatch it bypasses routing (a test must reach the provider it
+// targets regardless of floor/mute) and surfaces failures joined by provider
+// name so the dashboard can show the operator a bad credential.
+func (d *Dispatcher) SendTestEvent(ctx context.Context, opts TestOptions) error {
 	if d.Empty() {
 		return errors.New("no notification provider is enabled")
 	}
-	m := Message{Kind: EventTest, Text: testText}
+	ev := sampleEvent(opts.Kind)
 	var errs []error
+	matched := false
 	for _, n := range d.notifiers {
-		if err := n.Send(ctx, m); err != nil {
+		if opts.Provider != "" && n.Name() != opts.Provider {
+			continue
+		}
+		matched = true
+		err := n.Send(ctx, ev)
+		d.record(n.Name(), ev, err)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", n.Name(), err))
 		}
 	}
+	if !matched {
+		return fmt.Errorf("provider %q is not enabled", opts.Provider)
+	}
 	return errors.Join(errs...)
-}
-
-// FormatRunReport renders an executed-run Report as a plain-text Message. No
-// markup is used so torrent names containing Markdown/HTML metacharacters need
-// no escaping.
-func FormatRunReport(r Report) Message {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Triagearr — disk pressure on %q\n", r.VolumeName)
-	fmt.Fprintf(&b, "Free space: %.1f%% -> %.1f%% (target %.1f%%)\n",
-		r.FreePctBefore, r.FreePctAfter, r.TargetFreePct)
-	// disk free bytes physically cannot exceed int64 max (9.2 EB)
-	fmt.Fprintf(&b, "Disk free: %s -> %s\n",
-		HumanBytes(int64(r.FreeBytesBefore)), HumanBytes(int64(r.FreeBytesAfter))) //nolint:gosec // bounded disk free bytes
-	fmt.Fprintf(&b, "Run #%d · %s mode\n\n", r.RunID, r.Mode)
-
-	fmt.Fprintf(&b, "Deleted %d/%d items, %s freed:\n",
-		r.SucceededCount(), len(r.Items), HumanBytes(r.TotalFreedBytes))
-	if r.RealFreedBytes != 0 && r.TotalFreedBytes > 0 {
-		fmt.Fprintf(&b, "Disk delta: %s (claimed %s)\n",
-			HumanBytes(r.RealFreedBytes), HumanBytes(r.TotalFreedBytes))
-	}
-	for _, it := range r.Items {
-		name := it.Name
-		if name == "" {
-			name = string(it.Hash)
-		}
-		fmt.Fprintf(&b, "  • %s — %s [%s]\n", name, HumanBytes(it.SizeBytes), itemMark(it.Status))
-	}
-	return Message{Kind: EventRunReport, Text: strings.TrimRight(b.String(), "\n")}
-}
-
-// FormatAlert renders a target-unreachable Alert as a plain-text Message
-// (ADR-0032). It states the gap to target, what a run could actually reclaim,
-// and the residual shortfall the operator cannot close by deleting more.
-func FormatAlert(a Alert) Message {
-	shortfall := a.NeedBytes - a.ReclaimableBytes
-	if shortfall < 0 {
-		shortfall = 0
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Triagearr — disk-pressure target unreachable on %q\n", a.VolumeName)
-	fmt.Fprintf(&b, "Free space: %.1f%% (target %.1f%%)\n", a.FreePct, a.TargetFreePct)
-	fmt.Fprintf(&b, "Need %s to reach target; only %s reclaimable from %d candidate(s).\n",
-		HumanBytes(a.NeedBytes), HumanBytes(a.ReclaimableBytes), a.CandidateCount)
-	fmt.Fprintf(&b, "Shortfall: %s — not enough eligible content to delete.\n", HumanBytes(shortfall))
-	fmt.Fprintf(&b, "Mode: %s", a.Mode)
-	return Message{Kind: EventTargetUnreachable, Text: b.String()}
-}
-
-// itemMark renders an action status as a short tag for the message body.
-func itemMark(s triagearr.ActionStatus) string {
-	switch s {
-	case triagearr.ActionSucceeded:
-		return "ok"
-	case triagearr.ActionAbortedArrFail:
-		return "failed: arr"
-	case triagearr.ActionAbortedNlinkCheck:
-		return "aborted: nlink check"
-	case triagearr.ActionFailedQbit:
-		return "failed: qbit"
-	case triagearr.ActionSkippedCrossSeed:
-		return "skipped: cross-seed"
-	default:
-		return string(s)
-	}
-}
-
-// HumanBytes renders a byte count in binary units with one decimal place.
-func HumanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for v := n / unit; v >= unit; v /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

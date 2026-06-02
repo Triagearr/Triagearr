@@ -65,6 +65,17 @@ This document captures every dependency Triagearr commits to, the version pin, a
 
 These are all `golang.org/x` packages — stdlib-adjacent, maintained by the Go team, no third-party transitive surface. They satisfy ADR-0001's "justify every dep" bar by being feature-scoped (auth, rate limiting, syscalls).
 
+## Notifications
+
+| | Choice | Version | Alternatives considered |
+|---|---|---|---|
+| Multi-channel fan-out | `github.com/unraid/apprise-go` | **v0.2.6** | `containrrr/shoutrrr` (stale, Aug 2023), hand-written `net/http` per channel |
+| Structured webhook | `net/http` (stdlib) | n/a | — |
+
+**Why Apprise (ADR-0033):** human channels (Telegram, Discord, ntfy, email, Slack) are delivered through `unraid/apprise-go`, a maintained 1:1 Go port of the standard Apprise URL schema. It is **+1 direct dependency** (transitive tree: `gomarkdown/markdown` + `golang.org/x/crypto` + `golang.org/x/net`, no heavy SDKs) and exposes a semantic `NotifyType` that maps onto Triagearr's event severity, so each service renders priority/colour natively. This overrides ADR-0001's stdlib-first default for a scoped, high-leverage gain — hand-writing a `net/http` adapter per channel (the ADR-0021 Telegram bar) does not scale to five channels. `containrrr/shoutrrr` was the obvious Go pick but is ~2 years stale and lacks a semantic notification type. The native Telegram adapter from ADR-0021 is **removed** — Telegram now rides Apprise.
+
+**Why the webhook stays stdlib:** Apprise is a text sink and cannot emit arbitrary structured JSON. The native webhook (`internal/notify/webhook`, ~60 lines `net/http` + HMAC-SHA256) is the one provider that serialises the typed event for machine consumers (automation), realising ADR-0032's deferred "Option B" exactly where it pays off.
+
 ## Web UI
 
 | | Choice | Version | Alternatives considered |

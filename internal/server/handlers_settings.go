@@ -3,10 +3,13 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/Triagearr/Triagearr/internal/config"
+	"github.com/Triagearr/Triagearr/internal/notify"
 	"github.com/Triagearr/Triagearr/internal/store"
 )
 
@@ -44,6 +47,11 @@ type settingsValues struct {
 
 type notificationsDTO struct {
 	Telegram          telegramDTO          `json:"telegram"`
+	Discord           discordDTO           `json:"discord"`
+	Ntfy              ntfyDTO              `json:"ntfy"`
+	Email             emailDTO             `json:"email"`
+	Slack             slackDTO             `json:"slack"`
+	Webhook           webhookDTO           `json:"webhook"`
 	TargetUnreachable targetUnreachableDTO `json:"target_unreachable"`
 }
 
@@ -54,13 +62,62 @@ type targetUnreachableDTO struct {
 	ReminderInterval string `json:"reminder_interval"`
 }
 
-// telegramDTO carries the Telegram provider settings. bot_token is sent
-// verbatim (not redacted) because the operator opted into editing it from the
-// dashboard — the field is rendered as a password input client-side.
+// routingDTO is the per-provider severity-threshold routing (ADR-0033), shared
+// across every provider DTO.
+type routingDTO struct {
+	MinSeverity string   `json:"min_severity"`
+	Mute        []string `json:"mute"`
+}
+
+// Provider secrets (bot_token, password, webhook URLs, …) are sent verbatim
+// rather than redacted: the operator opted into editing them from the dashboard
+// and they are rendered as password inputs client-side.
+
 type telegramDTO struct {
 	Enabled  bool   `json:"enabled"`
 	BotToken string `json:"bot_token"`
 	ChatID   string `json:"chat_id"`
+	routingDTO
+}
+
+type discordDTO struct {
+	Enabled    bool   `json:"enabled"`
+	WebhookURL string `json:"webhook_url"`
+	routingDTO
+}
+
+type ntfyDTO struct {
+	Enabled  bool   `json:"enabled"`
+	Server   string `json:"server"`
+	Topic    string `json:"topic"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	routingDTO
+}
+
+type emailDTO struct {
+	Enabled     bool     `json:"enabled"`
+	Host        string   `json:"host"`
+	Port        int      `json:"port"`
+	Username    string   `json:"username"`
+	Password    string   `json:"password"`
+	From        string   `json:"from"`
+	To          []string `json:"to"`
+	UseStartTLS bool     `json:"use_starttls"`
+	routingDTO
+}
+
+type slackDTO struct {
+	Enabled    bool   `json:"enabled"`
+	WebhookURL string `json:"webhook_url"`
+	routingDTO
+}
+
+type webhookDTO struct {
+	Enabled bool   `json:"enabled"`
+	URL     string `json:"url"`
+	Secret  string `json:"secret"`
+	routingDTO
 }
 
 type scoringDTO struct {
@@ -83,6 +140,7 @@ type pollingDTO struct {
 	ArrFileMinInterval    string `json:"arr_file_min_interval"`
 	TrackerInterval       string `json:"tracker_interval"`
 	DiskInterval          string `json:"disk_interval"`
+	HealthInterval        string `json:"health_interval"`
 	MaintainerrInterval   string `json:"maintainerr_interval"`
 	DownsampleCron        string `json:"downsample_cron"`
 }
@@ -119,17 +177,58 @@ func pollingToDTO(p config.PollingConfig) pollingDTO {
 		ArrFileMinInterval:    p.ArrFileMinInterval.String(),
 		TrackerInterval:       p.TrackerInterval.String(),
 		DiskInterval:          p.DiskInterval.String(),
+		HealthInterval:        p.HealthInterval.String(),
 		MaintainerrInterval:   p.MaintainerrInterval.String(),
 		DownsampleCron:        p.DownsampleCron,
 	}
 }
 
+func routingToDTO(r config.ProviderRouting) routingDTO {
+	return routingDTO{MinSeverity: r.MinSeverity, Mute: r.Mute}
+}
+
 func notificationsToDTO(n config.NotificationsConfig) notificationsDTO {
 	return notificationsDTO{
 		Telegram: telegramDTO{
-			Enabled:  n.Telegram.Enabled,
-			BotToken: n.Telegram.BotToken,
-			ChatID:   n.Telegram.ChatID,
+			Enabled:    n.Telegram.Enabled,
+			BotToken:   n.Telegram.BotToken,
+			ChatID:     n.Telegram.ChatID,
+			routingDTO: routingToDTO(n.Telegram.ProviderRouting),
+		},
+		Discord: discordDTO{
+			Enabled:    n.Discord.Enabled,
+			WebhookURL: n.Discord.WebhookURL,
+			routingDTO: routingToDTO(n.Discord.ProviderRouting),
+		},
+		Ntfy: ntfyDTO{
+			Enabled:    n.Ntfy.Enabled,
+			Server:     n.Ntfy.Server,
+			Topic:      n.Ntfy.Topic,
+			Username:   n.Ntfy.Username,
+			Password:   n.Ntfy.Password,
+			routingDTO: routingToDTO(n.Ntfy.ProviderRouting),
+		},
+		Email: emailDTO{
+			Enabled:     n.Email.Enabled,
+			Host:        n.Email.Host,
+			Port:        n.Email.Port,
+			Username:    n.Email.Username,
+			Password:    n.Email.Password,
+			From:        n.Email.From,
+			To:          n.Email.To,
+			UseStartTLS: n.Email.UseStartTLS,
+			routingDTO:  routingToDTO(n.Email.ProviderRouting),
+		},
+		Slack: slackDTO{
+			Enabled:    n.Slack.Enabled,
+			WebhookURL: n.Slack.WebhookURL,
+			routingDTO: routingToDTO(n.Slack.ProviderRouting),
+		},
+		Webhook: webhookDTO{
+			Enabled:    n.Webhook.Enabled,
+			URL:        n.Webhook.URL,
+			Secret:     n.Webhook.Secret,
+			routingDTO: routingToDTO(n.Webhook.ProviderRouting),
 		},
 		TargetUnreachable: targetUnreachableDTO{
 			ReminderInterval: n.TargetUnreachable.ReminderInterval.String(),
@@ -303,10 +402,18 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleTestNotification delivers a synthetic notification through every
-// configured provider so the operator can verify credentials from the
-// dashboard. Unlike the run-time dispatch this surfaces provider failures.
-// It tests the currently-loaded config, so unsaved edits must be saved first.
+// testNotificationRequest narrows a test send (ADR-0033). Both fields are
+// optional: an empty body tests every provider with the generic event; provider
+// targets one channel; kind sends a representative sample of that event type.
+type testNotificationRequest struct {
+	Provider string `json:"provider"`
+	Kind     string `json:"kind"`
+}
+
+// handleTestNotification delivers a synthetic notification through the targeted
+// provider(s) so the operator can verify credentials from the dashboard. Unlike
+// the run-time dispatch this surfaces provider failures. It tests the
+// currently-loaded config, so unsaved edits must be saved first.
 func (s *Server) handleTestNotification(w http.ResponseWriter, r *http.Request) {
 	notifier := s.engine().Notifier
 	if notifier == nil || notifier.Empty() {
@@ -314,11 +421,68 @@ func (s *Server) handleTestNotification(w http.ResponseWriter, r *http.Request) 
 			"no notification provider is enabled — enable one and save before testing")
 		return
 	}
-	if err := notifier.SendTest(r.Context()); err != nil {
+	// An empty body is valid (test everything, generic event).
+	var req testNotificationRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			writeError(w, http.StatusBadRequest, "decoding request: "+err.Error())
+			return
+		}
+	}
+	if err := notifier.SendTestEvent(r.Context(), notify.TestOptions{
+		Provider: req.Provider,
+		Kind:     notify.EventKind(req.Kind),
+	}); err != nil {
 		writeError(w, http.StatusBadGateway, "test notification failed: "+err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// catalogueEntryDTO is one row of the event catalogue: a stable event kind and
+// its fixed severity (ADR-0033). Drives the UI catalogue and mute pickers.
+type catalogueEntryDTO struct {
+	Kind     string `json:"kind"`
+	Severity string `json:"severity"`
+}
+
+// handleNotificationCatalogue returns the static event taxonomy.
+func (s *Server) handleNotificationCatalogue(w http.ResponseWriter, _ *http.Request) {
+	cat := notify.Catalogue()
+	out := make([]catalogueEntryDTO, 0, len(cat))
+	for _, e := range cat {
+		out = append(out, catalogueEntryDTO{Kind: string(e.Kind), Severity: e.Severity.String()})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// deliveryDTO is one recent fan-out attempt for the dashboard deliveries panel.
+type deliveryDTO struct {
+	Provider string `json:"provider"`
+	Kind     string `json:"kind"`
+	Severity string `json:"severity"`
+	OK       bool   `json:"ok"`
+	Error    string `json:"error,omitempty"`
+	At       string `json:"at"`
+}
+
+// handleNotificationDeliveries returns the in-memory recent-deliveries ring,
+// newest first. The ring does not survive a restart (advisory data, ADR-0033).
+func (s *Server) handleNotificationDeliveries(w http.ResponseWriter, _ *http.Request) {
+	notifier := s.engine().Notifier
+	dels := notifier.Deliveries()
+	out := make([]deliveryDTO, 0, len(dels))
+	for _, d := range dels {
+		out = append(out, deliveryDTO{
+			Provider: d.Provider,
+			Kind:     string(d.Kind),
+			Severity: d.Severity.String(),
+			OK:       d.OK,
+			Error:    d.Err,
+			At:       d.At.Format(time.RFC3339),
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // mergeOverrides folds a PUT request onto the existing rows: upserts replace

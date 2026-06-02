@@ -80,6 +80,77 @@ func TestGetSettings_ReturnsValuesAndOverrides(t *testing.T) {
 	require.Contains(t, body.Editable, "mode")
 }
 
+func TestGetSettings_NotificationsAllProviders(t *testing.T) {
+	h, _, _ := buildSettingsSrv(t)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/settings", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body struct {
+		Values struct {
+			Notifications map[string]json.RawMessage `json:"notifications"`
+		} `json:"values"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	for _, p := range []string{"telegram", "discord", "ntfy", "email", "slack", "webhook", "target_unreachable"} {
+		require.Contains(t, body.Values.Notifications, p, "notifications DTO missing %q", p)
+	}
+	// Routing keys flatten into each provider object.
+	var tg struct {
+		MinSeverity string   `json:"min_severity"`
+		Mute        []string `json:"mute"`
+	}
+	require.NoError(t, json.Unmarshal(body.Values.Notifications["telegram"], &tg))
+}
+
+func TestNotificationCatalogue(t *testing.T) {
+	h, _, _ := buildSettingsSrv(t)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/notifications/catalogue", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var cat []struct {
+		Kind     string `json:"kind"`
+		Severity string `json:"severity"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&cat))
+	require.NotEmpty(t, cat)
+	kinds := map[string]string{}
+	for _, e := range cat {
+		kinds[e.Kind] = e.Severity
+	}
+	require.Equal(t, "warning", kinds["disk.target_unreachable"])
+	require.Equal(t, "error", kinds["run.failed"])
+}
+
+func TestNotificationDeliveries_EmptyByDefault(t *testing.T) {
+	h, _, _ := buildSettingsSrv(t)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/notifications/deliveries", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var dels []map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&dels))
+	require.Empty(t, dels)
+}
+
+func TestTestNotification_NoProviderEnabled(t *testing.T) {
+	h, _, _ := buildSettingsSrv(t)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/notifications/test", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	// No notifier wired into the test engine → 400.
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestPutSettings_PersistsAndReloads(t *testing.T) {
 	h, s, reloadCalled := buildSettingsSrv(t)
 

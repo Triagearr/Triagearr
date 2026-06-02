@@ -12,7 +12,7 @@ Triagearr does not replace any part of a normal *arr setup — it plugs in along
 flowchart TB
     user["👤 Operator"]
     plex["Plex / Jellyfin / Emby<br/>(streaming — not touched)"]
-    notify["Notifier<br/>(Telegram today)"]
+    notify["Notifier<br/>(Apprise + webhook)"]
 
     subgraph stack["Typical *arr stack"]
         tc["Torrent client<br/>(qBittorrent today)"]
@@ -131,8 +131,9 @@ The internal component breakdown below zooms *inside* the Triagearr box.
 │                └────────────┬─────────────┘  │     API       │  │
 │                             │                 └───────────────┘  │
 │                ┌────────────▼─────────────┐  ┌───────────────┐  │
-│                │       Notifier           │─►│  Telegram     │  │
-│                │  per-action templates    │  │  webhook…     │  │
+│                │  Notifier + Routing      │─►│ Apprise (TG/  │  │
+│                │  (typed events, ADR-0033)│  │ Discord/ntfy/ │  │
+│                │                          │  │ …) + webhook  │  │
 │                └──────────────────────────┘  └───────────────┘  │
 │                                                                  │
 │   ┌──────────────────────────────────────────────────────────┐  │
@@ -265,17 +266,20 @@ type TorrentClient interface {
     Delete(ctx context.Context, h Hash, opts DeleteOpts) error
 }
 
-// Notifier delivers one post-action Report to a single provider.
-// Defined in internal/notify (not types.go); see ADR-0021.
+// Notifier delivers one typed Event to a single provider, subject to its
+// severity-threshold Routing. Defined in internal/notify; see ADR-0021/0033.
 type Notifier interface {
-    Send(ctx context.Context, r notify.Report) error
+    Send(ctx context.Context, ev notify.Event) error
     Name() string
+    Routing() notify.Routing
 }
 ```
 
+Events are a typed union (`notify.Event{Kind, Severity, Text, Run|Alert|Health}`, ADR-0033): the `run.*`, `disk.target_unreachable`, `health.*` and `test` kinds carry a fixed severity. Apprise-backed providers (`internal/notify/apprisex`: Telegram, Discord, ntfy, email, Slack) read the plain-text fallback; the native `internal/notify/webhook` reads the typed payload and emits structured JSON. The `Dispatcher` applies each provider's `Routing` (min-severity floor + mute list) before delivery, best-effort, and records recent attempts in an in-memory ring. Health transitions are emitted by a dedicated `HealthWatcher` poller (`internal/triggers/health_watcher.go`) reading persisted instance health.
+
 The scorer is not a single-method interface: `internal/scorer` reads the store directly and persists per-torrent `scores` + `score_factors` rows; per-tracker policy and the rare-content default come from the `tracker_policies` / `scoring_defaults` tables (ADR-0026), not from a `ScoringConfig` value.
 
-Concrete implementations live under `internal/clients/arr/{sonarr,radarr,lidarr,whisparr_v2,whisparr_v3,stub}/`, `internal/clients/torrent/qbit/`, `internal/scorer/`, and `internal/notify/telegram/`. The two registries (`internal/clients/arr/registry`, `internal/clients/torrent/torrentregistry`) build the live client set from the DB-owned connection rows (ADR-0022, ADR-0025).
+Concrete implementations live under `internal/clients/arr/{sonarr,radarr,lidarr,whisparr_v2,whisparr_v3,stub}/`, `internal/clients/torrent/qbit/`, `internal/scorer/`, and the notification providers `internal/notify/{apprisex,webhook}/`. The two registries (`internal/clients/arr/registry`, `internal/clients/torrent/torrentregistry`) build the live client set from the DB-owned connection rows (ADR-0022, ADR-0025).
 
 ## Storage schema
 

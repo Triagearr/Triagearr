@@ -270,8 +270,27 @@ export function Field(p: FieldProps) {
 // backend re-validates via config.LoadWithOverrides — so this is just a
 // best-effort serialization, not a security boundary.
 export function parseValueForKey(key: string, raw: string): unknown | Error {
-  // Boolean toggle — value is always "true"/"false", never empty.
-  if (key === "notifications.telegram.enabled") return raw === "true";
+  // Boolean toggles — value is always "true"/"false", never empty. Every
+  // provider's enable flag plus email's StartTLS flag (ADR-0033).
+  if (/^notifications\.[a-z_]+\.enabled$/.test(key)) return raw === "true";
+  if (key === "notifications.email.use_starttls") return raw === "true";
+  // List fields are pre-serialised to a JSON array by the caller, e.g. the mute
+  // multi-select and email recipients. Parse them back to an array.
+  if (key.endsWith(".mute") || key === "notifications.email.to") {
+    try {
+      const v = JSON.parse(raw);
+      if (!Array.isArray(v)) return new Error(m.settings_field_error_empty());
+      return v;
+    } catch {
+      return new Error(m.settings_field_error_empty());
+    }
+  }
+  // Email port is numeric.
+  if (key === "notifications.email.port") {
+    const n = Number(raw);
+    if (Number.isNaN(n)) return new Error(m.settings_field_error_nan({ value: JSON.stringify(raw) }));
+    return n;
+  }
   // Mode is the dry-run/live enum string ("live"/"dry-run").
   if (key === "mode") return raw;
   if (raw.trim() === "") {

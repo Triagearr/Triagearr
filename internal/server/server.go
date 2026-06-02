@@ -183,6 +183,8 @@ func New(opts Options, eng *Engine) *Server {
 	mux.HandleFunc("PUT /api/v1/settings", s.security(s.auth(s.handlePutSettings)))
 	mux.HandleFunc("DELETE /api/v1/settings/{key}", s.security(s.auth(s.handleDeleteSetting)))
 	mux.HandleFunc("POST /api/v1/notifications/test", s.security(s.auth(s.handleTestNotification)))
+	mux.HandleFunc("GET /api/v1/notifications/catalogue", s.security(s.auth(s.handleNotificationCatalogue)))
+	mux.HandleFunc("GET /api/v1/notifications/deliveries", s.security(s.auth(s.handleNotificationDeliveries)))
 	mux.HandleFunc("GET /api/v1/scoring/defaults", s.security(s.auth(s.handleGetScoringDefaults)))
 	mux.HandleFunc("PUT /api/v1/scoring/defaults", s.security(s.auth(s.handlePutScoringDefaults)))
 	mux.HandleFunc("POST /api/v1/scoring/simulate", s.security(s.auth(s.handleSimulateScoring)))

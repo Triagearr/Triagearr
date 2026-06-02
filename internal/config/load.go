@@ -11,6 +11,8 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
+
+	"github.com/Triagearr/Triagearr/internal/notify"
 )
 
 // Load reads the YAML config at path, expands ${VAR} and ${VAR:-default}
@@ -134,6 +136,9 @@ func applyDefaults(c *Config) {
 	if c.Polling.DiskInterval == 0 {
 		c.Polling.DiskInterval = defaultDiskInterval
 	}
+	if c.Polling.HealthInterval == 0 {
+		c.Polling.HealthInterval = defaultHealthInterval
+	}
 	if c.Polling.ArrFileMinInterval == 0 {
 		c.Polling.ArrFileMinInterval = defaultArrFileMinInterval
 	}
@@ -214,6 +219,58 @@ func applyNotificationDefaults(n *NotificationsConfig) {
 	}
 }
 
+// validateNotifications checks each enabled provider's required fields and
+// every provider's routing block (severity floor + mute kinds). Required-field
+// checks are strict so a half-configured provider fails fast at boot/PUT.
+func validateNotifications(n *NotificationsConfig) error {
+	type providerCheck struct {
+		name    string
+		enabled bool
+		routing ProviderRouting
+		// required maps a field label to its value; an enabled provider with an
+		// empty required value is rejected.
+		required map[string]string
+	}
+	checks := []providerCheck{
+		{"telegram", n.Telegram.Enabled, n.Telegram.ProviderRouting, map[string]string{"bot_token": n.Telegram.BotToken, "chat_id": n.Telegram.ChatID}},
+		{"discord", n.Discord.Enabled, n.Discord.ProviderRouting, map[string]string{"webhook_url": n.Discord.WebhookURL}},
+		{"ntfy", n.Ntfy.Enabled, n.Ntfy.ProviderRouting, map[string]string{"topic": n.Ntfy.Topic}},
+		{"email", n.Email.Enabled, n.Email.ProviderRouting, map[string]string{"host": n.Email.Host, "from": n.Email.From}},
+		{"slack", n.Slack.Enabled, n.Slack.ProviderRouting, map[string]string{"webhook_url": n.Slack.WebhookURL}},
+		{"webhook", n.Webhook.Enabled, n.Webhook.ProviderRouting, map[string]string{"url": n.Webhook.URL}},
+	}
+	for _, c := range checks {
+		if c.enabled {
+			for field, val := range c.required {
+				if val == "" {
+					return fmt.Errorf("notifications.%s.%s: required when enabled", c.name, field)
+				}
+			}
+			if c.name == "email" && len(n.Email.To) == 0 {
+				return fmt.Errorf("notifications.email.to: at least one recipient required when enabled")
+			}
+		}
+		if err := validateRouting(c.name, c.routing); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRouting rejects an unknown severity floor or mute kind so a typo is
+// caught at config time rather than silently dropping events.
+func validateRouting(provider string, r ProviderRouting) error {
+	if _, err := notify.ParseSeverity(r.MinSeverity); err != nil {
+		return fmt.Errorf("notifications.%s.min_severity: %w", provider, err)
+	}
+	for _, k := range r.Mute {
+		if !notify.EventKind(k).Known() {
+			return fmt.Errorf("notifications.%s.mute: unknown event kind %q", provider, k)
+		}
+	}
+	return nil
+}
+
 func applyArrDefaults(inst *ArrInstanceConfig) {
 	if inst.Timeout == 0 {
 		inst.Timeout = defaultArrTimeout
@@ -272,13 +329,8 @@ func Validate(c *Config) error {
 		return tcErr
 	}
 
-	if tg := c.Notifications.Telegram; tg.Enabled {
-		if tg.BotToken == "" {
-			return fmt.Errorf("notifications.telegram.bot_token: required when enabled")
-		}
-		if tg.ChatID == "" {
-			return fmt.Errorf("notifications.telegram.chat_id: required when enabled")
-		}
+	if err := validateNotifications(&c.Notifications); err != nil {
+		return err
 	}
 
 	if dp := c.Volume.DiskPressure; dp.Enabled {

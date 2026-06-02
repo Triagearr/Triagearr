@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Multi-channel notifications (ADR-0033). Beyond Telegram, notifications now
+  fan out to Discord, ntfy, email (SMTP) and Slack via `unraid/apprise-go`, plus
+  a native structured-JSON webhook (HMAC-signed) for automation. New event kinds
+  — `run.partial`/`run.failed` (from action outcomes) and
+  `health.degraded`/`health.recovered` (a new `HealthWatcher` watches configured
+  *arr/torrent-client reachability). Events carry a fixed severity; each provider
+  routes by a `min_severity` floor plus a per-kind `mute` list (default-on,
+  opt-out). The Settings → Notifications view gains per-provider tiles, routing
+  controls, an event catalogue, a recent-deliveries panel and a per-event test
+  (`GET /api/v1/notifications/{catalogue,deliveries}`).
 - Whisparr v2 and v3 are now functional *arr clients (previously stubs).
   `internal/clients/arr/whisparr_v2` mirrors the Sonarr client (series /
   episode files); `whisparr_v3` mirrors Radarr (movies / movie files). Both
@@ -25,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The YAML `arrs:` block is now a one-time seed: on first boot, when
   `arr_connections` is empty, its instances are imported. Existing configs
   migrate transparently.
+
+### Changed
+- **Notifications config is a clean cut** (alpha, no back-compat). The
+  `notifications.telegram` block gains siblings `discord`/`ntfy`/`email`/`slack`/
+  `webhook`, each with `min_severity` + `mute`. The hand-written Telegram adapter
+  (`internal/notify/telegram`) is removed — Telegram now rides Apprise. The
+  `Notifier` seam is `Send(ctx, Event)` + `Routing()` (was `Send(ctx, Message)`).
+  New `polling.health_interval` (default 5m) drives the health watcher.
 
 ### Removed
 - Readarr support (stub client + all wiring). Readarr was archived upstream by
