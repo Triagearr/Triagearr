@@ -26,6 +26,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/notify/telegram"
 	"github.com/Triagearr/Triagearr/internal/pollers"
 	"github.com/Triagearr/Triagearr/internal/preflight"
+	"github.com/Triagearr/Triagearr/internal/runlock"
 	"github.com/Triagearr/Triagearr/internal/scorer"
 	"github.com/Triagearr/Triagearr/internal/server"
 	"github.com/Triagearr/Triagearr/internal/store"
@@ -60,6 +61,17 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("applying settings_overrides: %w", err)
 	}
 
+	// One run-lock for the daemon's whole life, shared by the HTTP server and
+	// every (reload-rebuilt) disk-pressure watcher so live runs can't overlap.
+	// Created here, not in buildEngine: the server is built once and survives
+	// reloads, so a per-reload lock would drift apart from it. The backing file
+	// also fences the separate `triagearr run --live` process.
+	runLock, err := runlock.Open(runLockPath(cfg))
+	if err != nil {
+		return fmt.Errorf("opening run lock: %w", err)
+	}
+	defer func() { _ = runLock.Close() }()
+
 	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -71,7 +83,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 
 	// Build the initial engine + pollers. A failure here (e.g. ADR-0023
 	// preflight) is fatal at boot, unlike a reload failure which is recoverable.
-	eng, ps, err := buildEngine(signalCtx, s, cfg)
+	eng, ps, err := buildEngine(signalCtx, s, cfg, runLock)
 	if err != nil {
 		return fmt.Errorf("building engine: %w", err)
 	}
@@ -83,7 +95,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	var httpSrv *server.Server
 	httpErrCh := make(chan error, 1)
 	if cfg.HTTP.Bind != "" {
-		httpSrv, err = newHTTPServer(cfg, s, eng, path, reloadCh)
+		httpSrv, err = newHTTPServer(cfg, s, eng, path, reloadCh, runLock)
 		if err != nil {
 			return err
 		}
@@ -114,7 +126,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
 		}
-		newEng, newPs, err := buildEngine(signalCtx, s, newCfg)
+		newEng, newPs, err := buildEngine(signalCtx, s, newCfg, runLock)
 		if err != nil {
 			return fmt.Errorf("building engine: %w", err)
 		}
@@ -162,7 +174,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 // poller set is run by the caller under an engine-scoped context. An error
 // (including preflight failure) means nothing was started — the caller keeps
 // the previous engine on reload, or fails to boot.
-func buildEngine(ctx context.Context, s *store.Store, cfg *config.Config) (*server.Engine, []pollers.Poller, error) {
+func buildEngine(ctx context.Context, s *store.Store, cfg *config.Config, runLock *runlock.Lock) (*server.Engine, []pollers.Poller, error) {
 	reg, err := registry.BuildFromConfig(cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building client registry: %w", err)
@@ -285,6 +297,7 @@ func buildEngine(ctx context.Context, s *store.Store, cfg *config.Config) (*serv
 			Actor:      act,
 			Notifier:   notifier,
 			Sampler:    pollers.Statfs,
+			RunLock:    runLock,
 		})
 	}
 
@@ -304,7 +317,7 @@ func buildEngine(ctx context.Context, s *store.Store, cfg *config.Config) (*serv
 // `${data_dir}/api_key` (Sonarr-style), auto-generated if absent. The Reload
 // hook funnels settings/connection saves into serveAction's reload controller
 // and blocks until the swap is live, so the handler reports the real outcome.
-func newHTTPServer(cfg *config.Config, s *store.Store, eng *server.Engine, cfgPath string, reloadCh chan<- reloadRequest) (*server.Server, error) {
+func newHTTPServer(cfg *config.Config, s *store.Store, eng *server.Engine, cfgPath string, reloadCh chan<- reloadRequest, runLock *runlock.Lock) (*server.Server, error) {
 	keyPath := filepath.Join(filepath.Dir(cfg.Storage.SQLitePath), "api_key")
 	apiKey, generated, err := server.LoadOrGenerateAPIKey(keyPath)
 	if err != nil {
@@ -343,7 +356,14 @@ func newHTTPServer(cfg *config.Config, s *store.Store, eng *server.Engine, cfgPa
 			_, err := config.LoadWithOverrides(cfgPath, ovs)
 			return err
 		},
+		RunLock: runLock,
 	}, eng), nil
+}
+
+// runLockPath is the file backing the cross-process run-lock, alongside the
+// SQLite DB and api_key in the data dir (mirrors the api_key path derivation).
+func runLockPath(cfg *config.Config) string {
+	return filepath.Join(filepath.Dir(cfg.Storage.SQLitePath), "run.lock")
 }
 
 // registryDeleter adapts the registry's typed accessor into the

@@ -31,6 +31,8 @@ type fakeSource struct {
 	insErr   error            // optional: error on InsertAction
 	linksErr error            // optional: error on LinksByHash
 	forgot   []triagearr.Hash // hashes evicted via ForgetTorrent
+
+	stopReason string // set by MarkRunStopped
 }
 
 func newFakeSource(run triagearr.Run, items []triagearr.RunItem, links map[triagearr.Hash][]triagearr.Link) *fakeSource {
@@ -56,6 +58,14 @@ func (f *fakeSource) MarkRunStatus(_ context.Context, id int64, status string) e
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.runs[id] = status
+	return nil
+}
+
+func (f *fakeSource) MarkRunStopped(_ context.Context, id int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.runs[id] = "stopped"
+	f.stopReason = string(triagearr.StopUserStopped)
 	return nil
 }
 
@@ -121,6 +131,7 @@ type fakeQbit struct {
 	filesFailN int   // first N TorrentFiles calls fail with filesErr
 	filesErr   error
 	filesCalls int
+	onDelete   func(h triagearr.Hash) // optional: fired after recording each Delete
 }
 
 func (q *fakeQbit) TorrentFiles(_ context.Context, h triagearr.Hash) ([]triagearr.TorrentFile, error) {
@@ -143,10 +154,17 @@ func (q *fakeQbit) TorrentFiles(_ context.Context, h triagearr.Hash) ([]triagear
 
 func (q *fakeQbit) Delete(_ context.Context, h triagearr.Hash, _ triagearr.DeleteOpts) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	q.calls = append(q.calls, h)
+	failN := q.failN
 	if q.failN > 0 {
 		q.failN--
+	}
+	hook := q.onDelete
+	q.mu.Unlock()
+	if hook != nil {
+		hook(h)
+	}
+	if failN > 0 {
 		return q.failErr
 	}
 	return nil
@@ -240,6 +258,38 @@ func TestActor_HappyPath_singleFile(t *testing.T) {
 	// A durable reap evicts the torrent from the store so a later run can't
 	// re-target the dead hash.
 	require.Equal(t, []triagearr.Hash{"h1"}, src.forgot)
+}
+
+// TestActor_StopBetweenCandidates verifies an operator stop (ctx cancelled
+// mid-run) halts cleanly: the candidate in flight finishes fully, the next one
+// is never touched, and the run lands in the dedicated "stopped" terminal state.
+func TestActor_StopBetweenCandidates(t *testing.T) {
+	items := []triagearr.RunItem{
+		{Rank: 0, TorrentHash: "h1", TorrentName: "First", SizeBytes: 1000},
+		{Rank: 1, TorrentHash: "h2", TorrentName: "Second", SizeBytes: 2000},
+	}
+	src := newFakeSource(liveRun(items), items, map[triagearr.Hash][]triagearr.Link{
+		"h1": {{ArrType: triagearr.ArrTypeSonarr, FileID: 1}},
+		"h2": {{ArrType: triagearr.ArrTypeSonarr, FileID: 2}},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel once the first candidate's qBit delete has been issued: candidate
+	// h1 still completes (forget happens after Delete returns), and the loop
+	// observes the cancellation before reaching h2.
+	q := &fakeQbit{onDelete: func(_ triagearr.Hash) { cancel() }}
+	d := newFakeDeleter("sonarr")
+	a := actor.New(actor.Options{Source: src, Client: q, Deleter: resolverFor(d)})
+
+	require.NoError(t, a.Execute(ctx, 1))
+
+	require.Equal(t, "stopped", src.runs[1])
+	require.Equal(t, string(triagearr.StopUserStopped), src.stopReason)
+	// Only the first candidate ran, and it ran to completion.
+	require.Equal(t, []triagearr.Hash{"h1"}, q.calls)
+	require.Equal(t, []int64{1}, d.calls)
+	require.Equal(t, []triagearr.Hash{"h1"}, src.forgot, "second candidate must be untouched")
+	require.Len(t, src.actions, 1)
+	require.Equal(t, triagearr.ActionSucceeded, src.actions[1].Status)
 }
 
 func TestActor_SeasonPack_8files_allOK(t *testing.T) {

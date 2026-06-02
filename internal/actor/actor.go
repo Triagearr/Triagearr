@@ -31,6 +31,9 @@ import (
 type Source interface {
 	GetRun(ctx context.Context, id int64) (triagearr.Run, []triagearr.RunItem, error)
 	MarkRunStatus(ctx context.Context, id int64, status string) error
+	// MarkRunStopped records an operator-requested clean stop (status "stopped",
+	// reason user_stopped), distinct from MarkRunStatus's error/normal states.
+	MarkRunStopped(ctx context.Context, id int64) error
 	InsertAction(ctx context.Context, a triagearr.Action) (int64, error)
 	FinishAction(ctx context.Context, id int64, status triagearr.ActionStatus, finishedAt time.Time, freedBytes int64) error
 	AppendAudit(ctx context.Context, e triagearr.AuditEntry) error
@@ -114,7 +117,14 @@ func New(opts Options) *Actor {
 // triggers outside the allowed set (cron, future schedulers) are refused
 // per ADR-0015.
 func (a *Actor) Execute(ctx context.Context, runID int64) error {
-	run, items, err := a.opts.Source.GetRun(ctx, runID)
+	// opCtx shields the setup reads, the per-candidate pipeline, and the
+	// bookkeeping writes from the stop signal: a clean stop must never tear down
+	// a candidate mid-flight (the arr→qBit order is atomic, ADR-0003) nor fail
+	// loading the run. Cancellation is observed only between candidates via ctx,
+	// while the work itself runs on opCtx.
+	opCtx := context.WithoutCancel(ctx)
+
+	run, items, err := a.opts.Source.GetRun(opCtx, runID)
 	if err != nil {
 		return fmt.Errorf("actor: loading run %d: %w", runID, err)
 	}
@@ -129,17 +139,25 @@ func (a *Actor) Execute(ctx context.Context, runID int64) error {
 		return fmt.Errorf("actor: trigger %q is not allowed to execute (ADR-0015)", run.TriggeredBy)
 	}
 
-	if err := a.opts.Source.MarkRunStatus(ctx, runID, "running"); err != nil {
+	if err := a.opts.Source.MarkRunStatus(opCtx, runID, "running"); err != nil {
 		return fmt.Errorf("actor: marking run running: %w", err)
 	}
 
 	limit := a.opts.MaxDeletionsPerRun
+	stopped := false
 	for i, item := range items {
+		// An operator stop takes effect at the next candidate boundary, leaving
+		// the previous candidate fully completed.
+		if ctx.Err() != nil {
+			slog.Info("actor: stop requested, halting between candidates", "run_id", runID, "processed", i)
+			stopped = true
+			break
+		}
 		if limit > 0 && i >= limit {
 			slog.Info("actor: rate cap reached", "run_id", runID, "cap", limit, "processed", i)
 			break
 		}
-		if err := a.processCandidate(ctx, runID, item); err != nil {
+		if err := a.processCandidate(opCtx, runID, item); err != nil {
 			// processCandidate already persisted its terminal state.
 			slog.Warn("actor: candidate aborted", "run_id", runID, "hash", item.TorrentHash, "err", err)
 		}
@@ -148,7 +166,16 @@ func (a *Actor) Execute(ctx context.Context, runID int64) error {
 		}
 	}
 
-	if err := a.opts.Source.MarkRunStatus(ctx, runID, "completed"); err != nil {
+	if stopped {
+		// Return nil: the run reached a clean terminal state, so the caller must
+		// not overwrite it with "aborted".
+		if err := a.opts.Source.MarkRunStopped(opCtx, runID); err != nil {
+			return fmt.Errorf("actor: marking run stopped: %w", err)
+		}
+		return nil
+	}
+
+	if err := a.opts.Source.MarkRunStatus(opCtx, runID, "completed"); err != nil {
 		return fmt.Errorf("actor: marking run completed: %w", err)
 	}
 	return nil

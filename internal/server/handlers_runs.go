@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -81,14 +82,20 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 
 	// A live run executes asynchronously (see executeRunAsync); reserve the
 	// single-run slot before persisting anything so a concurrent trigger gets
-	// a clean 409 instead of a half-created run that never executes.
+	// a clean 409 instead of a half-created run that never executes. The slot is
+	// released here on any pre-launch failure; on success ownership transfers to
+	// the goroutine (handoff = true) so this defer becomes a no-op.
+	handoff := false
 	if live {
-		select {
-		case s.liveRun <- struct{}{}:
-		default:
+		if !s.runLock.TryAcquire() {
 			writeError(w, http.StatusConflict, "a live run is already in progress")
 			return
 		}
+		defer func() {
+			if !handoff {
+				s.runLock.Release()
+			}
+		}()
 	}
 
 	// Live runs start "pending" and are driven to a terminal state by the
@@ -109,21 +116,20 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.opts.Store.InsertRun(r.Context(), run)
 	if err != nil {
-		if live {
-			<-s.liveRun
-		}
 		writeInternal(w, fmt.Errorf("persisting run: %w", err))
 		return
 	}
 	if err := s.opts.Store.InsertRunItems(r.Context(), id, plan.Items); err != nil {
-		if live {
-			<-s.liveRun
-		}
 		writeInternal(w, fmt.Errorf("persisting items: %w", err))
 		return
 	}
 	if live {
-		go s.executeRunAsync(id, eng.Actor)
+		// Arm the stop registry before launching so a stop racing an instant
+		// click can't find the run unarmed (status "pending" but no cancel yet).
+		runCtx, cancel := context.WithCancel(s.baseCtx)
+		s.runLock.Arm(id, cancel)
+		go s.executeRunAsync(id, eng.Actor, runCtx, cancel)
+		handoff = true
 	}
 	// Re-read so the response carries persisted state. The live goroutine may
 	// not have started yet, so this typically returns the "pending" run plus
@@ -138,17 +144,53 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // executeRunAsync drives a live run's destructive pipeline detached from the
-// HTTP request. It runs on the daemon-lifetime baseCtx so a long deletion
-// outlives the request, and always releases the single-run slot. On Actor
-// failure the run is marked "aborted" so the UI stops showing it in-flight.
-func (s *Server) executeRunAsync(id int64, act *actor.Actor) {
-	defer func() { <-s.liveRun }()
-	if err := act.Execute(s.baseCtx, id); err != nil {
+// HTTP request. runCtx is a cancellable child of baseCtx — cancelling it (via
+// the stop endpoint) makes the Actor halt cleanly between candidates and mark
+// the run "stopped" itself. The deletion outlives the request, and the slot is
+// always released. On Actor failure the run is marked "aborted" so the UI stops
+// showing it in-flight. The terminal "aborted" write uses baseCtx, not runCtx,
+// so a stop-driven cancellation doesn't also fail the bookkeeping write.
+func (s *Server) executeRunAsync(id int64, act *actor.Actor, runCtx context.Context, cancel context.CancelFunc) {
+	defer cancel()
+	defer s.runLock.Release()
+	if err := act.Execute(runCtx, id); err != nil {
 		slog.Warn("actor execute failed", "run_id", id, "err", err)
 		if mErr := s.opts.Store.MarkRunStatus(s.baseCtx, id, "aborted"); mErr != nil {
 			slog.Error("marking aborted run failed", "run_id", id, "err", mErr)
 		}
 	}
+}
+
+// handleStopRun requests a clean stop of an in-flight live run. The stop is
+// cooperative and asynchronous: the Actor finishes the candidate it is on, then
+// marks the run "stopped". This returns 202 with the run's current state; the
+// UI polls GET /runs/{id} until the status settles.
+func (s *Server) handleStopRun(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDPath(w, r)
+	if !ok {
+		return
+	}
+	run, items, err := s.opts.Store.GetRun(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "run not found")
+			return
+		}
+		writeInternal(w, err)
+		return
+	}
+	if run.Status != "pending" && run.Status != "running" {
+		writeError(w, http.StatusConflict, "run is not in progress")
+		return
+	}
+	// RequestStop fails when the run isn't the one this process is driving (e.g.
+	// a CLI run in another process): it holds the cross-process flock but never
+	// armed our in-memory cancel.
+	if !s.runLock.RequestStop(id) {
+		writeError(w, http.StatusConflict, "run is not controllable from this process")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, buildResponse(run, items))
 }
 
 // handlePreviewRun returns the deletion plan the Decider would produce right

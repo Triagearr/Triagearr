@@ -6,6 +6,7 @@ package triggers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -14,8 +15,14 @@ import (
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/notify"
 	"github.com/Triagearr/Triagearr/internal/pollers"
+	"github.com/Triagearr/Triagearr/internal/runlock"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
+
+// errRunInProgress reports that a live pressure fire was skipped because the
+// shared run-lock was held by another trigger. tick() treats it as a benign
+// skip — not a failure — and leaves lastFire untouched so the next tick retries.
+var errRunInProgress = errors.New("live run already in progress")
 
 // NewDiskWatcher constructs a DiskWatcher for the single watched volume.
 func NewDiskWatcher(rule VolumeRule, d *decider.Decider, store RunStore, interval time.Duration) *DiskWatcher {
@@ -74,6 +81,11 @@ type DiskWatcher struct {
 	// than an inferred one. Nil skips the "after" figure. Wired to
 	// pollers.Statfs.
 	Sampler func(path string) (triagearr.DiskUsage, error)
+	// RunLock is the single-run guard shared with the HTTP server (and, via its
+	// file lock, the CLI). A pressure run that resolves to live must hold it
+	// across Actor.Execute so it can't race a concurrent live run from another
+	// trigger. Nil disables guarding (dry-run daemons / tests that never act).
+	RunLock *runlock.Lock
 
 	now func() time.Time
 	// lastFire is the time of the most recent fire. firingNow tracks whether
@@ -120,7 +132,12 @@ func (w *DiskWatcher) tick(ctx context.Context, grace time.Duration) error {
 		return nil
 	}
 	if err := w.fire(ctx, *snap); err != nil {
-		slog.Warn("disk_watcher fire failed", "err", err)
+		// A skip (another trigger holds the run-lock) is benign: leave lastFire
+		// untouched so the next tick retries promptly once the slot frees, rather
+		// than waiting out the re-fire grace for a run that never happened.
+		if !errors.Is(err, errRunInProgress) {
+			slog.Warn("disk_watcher fire failed", "err", err)
+		}
 		return nil
 	}
 	w.lastFire = now
@@ -129,6 +146,22 @@ func (w *DiskWatcher) tick(ctx context.Context, grace time.Duration) error {
 
 func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error {
 	r := w.Rule
+	// Resolve the mode up front (it depends only on DaemonLive, not the plan) so
+	// a live run can claim the shared single-run slot BEFORE planning/persisting.
+	// That way we never write a live run record that won't execute, and a
+	// concurrent HTTP/CLI run blocks this fire cleanly instead of racing the
+	// destructive pipeline.
+	mode := triagearr.ResolveRunMode(w.DaemonLive, triagearr.RunTriggerDiskPressure, false)
+	live := mode == triagearr.RunModeLive && w.Actor != nil
+	if live && w.RunLock != nil {
+		if !w.RunLock.TryAcquire() {
+			slog.Info("skipping pressure run, a live run is already in progress",
+				"free_pct", snap.FreePercent, "target_pct", r.TargetFreePercent)
+			return errRunInProgress
+		}
+		defer w.RunLock.Release()
+	}
+
 	v := decider.Volume{
 		Name:              r.Name,
 		Path:              r.Path,
@@ -142,7 +175,6 @@ func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error 
 	if err != nil {
 		return fmt.Errorf("planning: %w", err)
 	}
-	mode := triagearr.ResolveRunMode(w.DaemonLive, triagearr.RunTriggerDiskPressure, false)
 	run := triagearr.Run{
 		TriggeredBy:         triagearr.RunTriggerDiskPressure,
 		TriggeredAt:         w.now(),
@@ -169,8 +201,17 @@ func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error 
 		"stop_reason", string(plan.StopReason),
 		"mode", string(mode),
 	)
-	if mode == triagearr.RunModeLive && w.Actor != nil {
-		if err := w.Actor.Execute(ctx, id); err != nil {
+	if live {
+		// Arm the stop registry so an operator can halt this autonomous run from
+		// the UI; the Actor observes the cancellation between candidates.
+		runCtx := ctx
+		if w.RunLock != nil {
+			var cancel context.CancelFunc
+			runCtx, cancel = context.WithCancel(ctx)
+			defer cancel()
+			w.RunLock.Arm(id, cancel)
+		}
+		if err := w.Actor.Execute(runCtx, id); err != nil {
 			return fmt.Errorf("actor execute: %w", err)
 		}
 		w.notifyRun(ctx, snap, id, mode, plan.Items)
