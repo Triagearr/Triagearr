@@ -47,14 +47,18 @@ type VolumeRule struct {
 	TargetFreePercent    float64
 }
 
-// RunStore is the subset of store ops the watcher writes through. The last two
-// methods are read-only and serve the post-action notification (ADR-0021).
+// RunStore is the subset of store ops the watcher writes through. The action/
+// name lookups serve the post-action notification (ADR-0021); the notification-
+// state trio backs the throttled target-unreachable alert (ADR-0032).
 type RunStore interface {
 	InsertRun(ctx context.Context, r triagearr.Run) (int64, error)
 	InsertRunItems(ctx context.Context, runID int64, items []triagearr.RunItem) error
 	LatestDiskUsage(ctx context.Context) (*triagearr.DiskUsage, error)
 	ListActionsByRun(ctx context.Context, runID int64) ([]triagearr.Action, error)
 	TorrentNamesByHashes(ctx context.Context, hashes []triagearr.Hash) (map[triagearr.Hash]string, error)
+	GetNotificationState(ctx context.Context, eventKey string) (time.Time, bool, error)
+	MarkNotificationSent(ctx context.Context, eventKey string, at time.Time) error
+	ClearNotificationState(ctx context.Context, eventKey string) error
 }
 
 // DiskWatcher fires Decider runs when the volume drops below its threshold.
@@ -86,6 +90,10 @@ type DiskWatcher struct {
 	// across Actor.Execute so it can't race a concurrent live run from another
 	// trigger. Nil disables guarding (dry-run daemons / tests that never act).
 	RunLock *runlock.Lock
+	// TargetUnreachableReminder is the minimum delay between two
+	// target-unreachable reminders while the shortfall persists (ADR-0032).
+	// Zero falls back to the config default at wiring time.
+	TargetUnreachableReminder time.Duration
 
 	now func() time.Time
 	// lastFire is the time of the most recent fire. firingNow tracks whether
@@ -216,7 +224,54 @@ func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error 
 		}
 		w.notifyRun(ctx, snap, id, mode, plan.Items)
 	}
+	// Advisory, mode-independent: warn the operator when even deleting every
+	// eligible candidate can't reach target. Runs after a live execute so the
+	// message reflects what was actually reclaimable.
+	w.maybeAlertShortfall(ctx, snap, plan, mode)
 	return nil
+}
+
+// maybeAlertShortfall emits the throttled "target unreachable" alert (ADR-0032)
+// when the plan stopped on no_more_candidates — the volume can't reach target
+// even after deleting everything eligible. Best-effort: every failure is logged
+// and swallowed so it never taints the run. When the condition does not hold the
+// throttle is cleared so a future episode alerts immediately.
+func (w *DiskWatcher) maybeAlertShortfall(ctx context.Context, snap triagearr.DiskUsage, plan decider.RunPlan, mode triagearr.RunMode) {
+	const eventPrefix = "target_unreachable:"
+	key := eventPrefix + w.Rule.Name
+
+	if plan.StopReason != triagearr.StopNoMoreCandidates {
+		if err := w.Store.ClearNotificationState(ctx, key); err != nil {
+			slog.Warn("notify: clearing target-unreachable state failed", "err", err)
+		}
+		return
+	}
+	if w.Notifier == nil || w.Notifier.Empty() {
+		return
+	}
+
+	last, sent, err := w.Store.GetNotificationState(ctx, key)
+	if err != nil {
+		slog.Warn("notify: reading target-unreachable state failed", "err", err)
+		return
+	}
+	now := w.now()
+	if sent && now.Sub(last) < w.TargetUnreachableReminder {
+		return // still inside the reminder window
+	}
+
+	w.Notifier.DispatchAlert(ctx, notify.Alert{
+		VolumeName:       w.Rule.Name,
+		Mode:             string(mode),
+		FreePct:          snap.FreePercent,
+		TargetFreePct:    w.Rule.TargetFreePercent,
+		NeedBytes:        decider.NeededBytes(snap.TotalBytes, snap.FreePercent, w.Rule.TargetFreePercent),
+		ReclaimableBytes: plan.EstimatedFreedBytes,
+		CandidateCount:   len(plan.Items),
+	})
+	if err := w.Store.MarkNotificationSent(ctx, key, now); err != nil {
+		slog.Warn("notify: recording target-unreachable state failed", "err", err)
+	}
 }
 
 // notifyRun builds and dispatches the post-action report for a live

@@ -394,3 +394,12 @@ CREATE TABLE torrent_client_connections (
     created_at        TIMESTAMP NOT NULL,
     updated_at        TIMESTAMP NOT NULL
 );
+
+-- Throttle state for re-emitted notifications (ADR-0032). One row per logical
+-- alert (event_key, e.g. "target_unreachable:<volume>"); last_sent_at lets the
+-- watcher rate-limit reminders across config reloads and restarts. Cleared when
+-- the underlying condition resolves so a fresh episode alerts immediately.
+CREATE TABLE notification_state (
+    event_key    TEXT      PRIMARY KEY,
+    last_sent_at TIMESTAMP NOT NULL
+);

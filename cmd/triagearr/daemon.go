@@ -289,15 +289,16 @@ func buildEngine(ctx context.Context, s *store.Store, cfg *config.Config, runLoc
 
 	if rule, ok := pressureRule(cfg); ok {
 		ps = append(ps, &triggers.DiskWatcher{
-			Rule:       rule,
-			Decider:    dec,
-			Store:      s,
-			Interval:   cfg.Polling.DiskInterval,
-			DaemonLive: daemonLive,
-			Actor:      act,
-			Notifier:   notifier,
-			Sampler:    pollers.Statfs,
-			RunLock:    runLock,
+			Rule:                      rule,
+			Decider:                   dec,
+			Store:                     s,
+			Interval:                  cfg.Polling.DiskInterval,
+			DaemonLive:                daemonLive,
+			Actor:                     act,
+			Notifier:                  notifier,
+			Sampler:                   pollers.Statfs,
+			RunLock:                   runLock,
+			TargetUnreachableReminder: cfg.Notifications.TargetUnreachable.ReminderInterval,
 		})
 	}
 

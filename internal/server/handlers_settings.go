@@ -43,7 +43,15 @@ type settingsValues struct {
 }
 
 type notificationsDTO struct {
-	Telegram telegramDTO `json:"telegram"`
+	Telegram          telegramDTO          `json:"telegram"`
+	TargetUnreachable targetUnreachableDTO `json:"target_unreachable"`
+}
+
+// targetUnreachableDTO carries the recurring target-unreachable alert cadence
+// (ADR-0032). reminder_interval is a duration string (e.g. "24h0m0s"), matching
+// how polling intervals are exposed.
+type targetUnreachableDTO struct {
+	ReminderInterval string `json:"reminder_interval"`
 }
 
 // telegramDTO carries the Telegram provider settings. bot_token is sent
@@ -122,6 +130,9 @@ func notificationsToDTO(n config.NotificationsConfig) notificationsDTO {
 			Enabled:  n.Telegram.Enabled,
 			BotToken: n.Telegram.BotToken,
 			ChatID:   n.Telegram.ChatID,
+		},
+		TargetUnreachable: targetUnreachableDTO{
+			ReminderInterval: n.TargetUnreachable.ReminderInterval.String(),
 		},
 	}
 }

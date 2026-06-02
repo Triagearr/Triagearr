@@ -54,10 +54,12 @@ type Report struct {
 	// concurrent writes from other processes during the action window can
 	// produce a negative value. Zero when no after-sample was taken.
 	RealFreedBytes int64
-	// Test marks a report produced by the dashboard "send test" action; it
-	// carries no run data and renders as a short connectivity-check message.
-	Test bool
 }
+
+// testText is the synthetic connectivity-check body for the dashboard
+// "send test" action (see Dispatcher.SendTest).
+const testText = "Triagearr — test notification\n" +
+	"If you can read this, notifications are wired up correctly."
 
 // SucceededCount returns how many items were fully deleted.
 func (r Report) SucceededCount() int {
@@ -70,11 +72,43 @@ func (r Report) SucceededCount() int {
 	return n
 }
 
-// Notifier delivers one Report to a single provider.
+// EventKind discriminates the notification events. Providers are plain-text
+// sinks (ADR-0032): the kind is carried for logging and lets a future provider
+// branch on event type without re-plumbing the Dispatcher.
+type EventKind string
+
+const (
+	EventRunReport         EventKind = "run_report"
+	EventTargetUnreachable EventKind = "target_unreachable"
+	EventTest              EventKind = "test"
+)
+
+// Message is the provider-facing payload: a kind tag plus the already-formatted
+// plain text. All event-specific formatting happens in this package
+// (FormatRunReport / FormatAlert), so providers never see structured events.
+type Message struct {
+	Kind EventKind
+	Text string
+}
+
+// Alert is the payload for the "disk-pressure target is unreachable" event
+// (ADR-0032): even after deleting every eligible candidate the volume would not
+// reach target_free_percent.
+type Alert struct {
+	VolumeName       string
+	Mode             string
+	FreePct          float64
+	TargetFreePct    float64
+	NeedBytes        int64 // bytes to free to reach target
+	ReclaimableBytes int64 // bytes a run would actually free (eligible candidates)
+	CandidateCount   int
+}
+
+// Notifier delivers one preformatted Message to a single provider.
 type Notifier interface {
-	// Send delivers the report. A 5xx/timeout failure is wrapped with
+	// Send delivers the message. A 5xx/timeout failure is wrapped with
 	// triagearr.ErrTransient so callers could retry; the Dispatcher does not.
-	Send(ctx context.Context, r Report) error
+	Send(ctx context.Context, m Message) error
 	// Name identifies the provider in logs (e.g. "telegram").
 	Name() string
 }
@@ -95,45 +129,53 @@ func (d *Dispatcher) Empty() bool {
 	return d == nil || len(d.notifiers) == 0
 }
 
-// Dispatch delivers the report to every notifier best-effort. Each failure is
-// logged and swallowed: notifications are advisory and must never affect run
-// outcome.
+// Dispatch delivers an executed-run report to every provider, best-effort.
 func (d *Dispatcher) Dispatch(ctx context.Context, r Report) {
+	d.send(ctx, FormatRunReport(r))
+}
+
+// DispatchAlert delivers a target-unreachable alert to every provider,
+// best-effort (ADR-0032). Same advisory contract as Dispatch.
+func (d *Dispatcher) DispatchAlert(ctx context.Context, a Alert) {
+	d.send(ctx, FormatAlert(a))
+}
+
+// send fans a Message out to every notifier best-effort. Each failure is logged
+// and swallowed: notifications are advisory and must never affect run outcome.
+func (d *Dispatcher) send(ctx context.Context, m Message) {
 	if d == nil {
 		return
 	}
 	for _, n := range d.notifiers {
-		if err := n.Send(ctx, r); err != nil {
-			slog.Warn("notification delivery failed", "provider", n.Name(), "run_id", r.RunID, "err", err)
+		if err := n.Send(ctx, m); err != nil {
+			slog.Warn("notification delivery failed", "provider", n.Name(), "kind", string(m.Kind), "err", err)
 			continue
 		}
-		slog.Info("notification delivered", "provider", n.Name(), "run_id", r.RunID)
+		slog.Info("notification delivered", "provider", n.Name(), "kind", string(m.Kind))
 	}
 }
 
-// SendTest delivers a synthetic connectivity-check report to every configured
-// provider. Unlike Dispatch it surfaces failures (joined, prefixed by provider
+// SendTest delivers a synthetic connectivity-check message to every configured
+// provider. Unlike send it surfaces failures (joined, prefixed by provider
 // name) so the dashboard "send test" action can show the operator a bad token.
 func (d *Dispatcher) SendTest(ctx context.Context) error {
 	if d.Empty() {
 		return errors.New("no notification provider is enabled")
 	}
+	m := Message{Kind: EventTest, Text: testText}
 	var errs []error
 	for _, n := range d.notifiers {
-		if err := n.Send(ctx, Report{Test: true}); err != nil {
+		if err := n.Send(ctx, m); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", n.Name(), err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-// FormatText renders a Report as a plain-text message. No markup is used so
-// torrent names containing Markdown/HTML metacharacters need no escaping.
-func FormatText(r Report) string {
-	if r.Test {
-		return "Triagearr — test notification\n" +
-			"If you can read this, notifications are wired up correctly."
-	}
+// FormatRunReport renders an executed-run Report as a plain-text Message. No
+// markup is used so torrent names containing Markdown/HTML metacharacters need
+// no escaping.
+func FormatRunReport(r Report) Message {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Triagearr — disk pressure on %q\n", r.VolumeName)
 	fmt.Fprintf(&b, "Free space: %.1f%% -> %.1f%% (target %.1f%%)\n",
@@ -156,7 +198,25 @@ func FormatText(r Report) string {
 		}
 		fmt.Fprintf(&b, "  • %s — %s [%s]\n", name, HumanBytes(it.SizeBytes), itemMark(it.Status))
 	}
-	return strings.TrimRight(b.String(), "\n")
+	return Message{Kind: EventRunReport, Text: strings.TrimRight(b.String(), "\n")}
+}
+
+// FormatAlert renders a target-unreachable Alert as a plain-text Message
+// (ADR-0032). It states the gap to target, what a run could actually reclaim,
+// and the residual shortfall the operator cannot close by deleting more.
+func FormatAlert(a Alert) Message {
+	shortfall := a.NeedBytes - a.ReclaimableBytes
+	if shortfall < 0 {
+		shortfall = 0
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Triagearr — disk-pressure target unreachable on %q\n", a.VolumeName)
+	fmt.Fprintf(&b, "Free space: %.1f%% (target %.1f%%)\n", a.FreePct, a.TargetFreePct)
+	fmt.Fprintf(&b, "Need %s to reach target; only %s reclaimable from %d candidate(s).\n",
+		HumanBytes(a.NeedBytes), HumanBytes(a.ReclaimableBytes), a.CandidateCount)
+	fmt.Fprintf(&b, "Shortfall: %s — not enough eligible content to delete.\n", HumanBytes(shortfall))
+	fmt.Fprintf(&b, "Mode: %s", a.Mode)
+	return Message{Kind: EventTargetUnreachable, Text: b.String()}
 }
 
 // itemMark renders an action status as a short tag for the message body.

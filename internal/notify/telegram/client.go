@@ -72,10 +72,10 @@ type sendMessageRequest struct {
 // Send implements notify.Notifier. A 5xx response or transport error is
 // wrapped with triagearr.ErrTransient; a 4xx is a hard failure (bad token,
 // unknown chat) the caller cannot fix by retrying.
-func (c *Client) Send(ctx context.Context, r notify.Report) error {
+func (c *Client) Send(ctx context.Context, m notify.Message) error {
 	payload, err := json.Marshal(sendMessageRequest{
 		ChatID: c.chatID,
-		Text:   notify.FormatText(r),
+		Text:   m.Text,
 	})
 	if err != nil {
 		return fmt.Errorf("telegram: encoding sendMessage: %w", err)

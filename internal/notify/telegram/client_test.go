@@ -75,7 +75,7 @@ func TestSend(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			err = c.Send(context.Background(), sampleReport())
+			err = c.Send(context.Background(), notify.FormatRunReport(sampleReport()))
 
 			if tt.wantErr && err == nil {
 				t.Fatal("Send: expected error, got nil")
@@ -109,7 +109,7 @@ func TestSendTransportErrorIsTransient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	err = c.Send(context.Background(), sampleReport())
+	err = c.Send(context.Background(), notify.FormatRunReport(sampleReport()))
 	if err == nil {
 		t.Fatal("expected transport error")
 	}

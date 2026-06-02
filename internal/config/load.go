@@ -163,6 +163,7 @@ func applyDefaults(c *Config) {
 	}
 	applyScoringDefaults(&c.Scoring)
 	applyActionDefaults(&c.Action)
+	applyNotificationDefaults(&c.Notifications)
 	c.Arrs.EachPtr(func(_ string, inst *ArrInstanceConfig) {
 		applyArrDefaults(inst)
 	})
@@ -201,6 +202,15 @@ func applyActionDefaults(a *ActionConfig) {
 	}
 	if a.InterActionDelay == 0 {
 		a.InterActionDelay = defaultInterActionDelay
+	}
+}
+
+func applyNotificationDefaults(n *NotificationsConfig) {
+	switch {
+	case n.TargetUnreachable.ReminderInterval == 0:
+		n.TargetUnreachable.ReminderInterval = defaultTargetUnreachableReminder
+	case n.TargetUnreachable.ReminderInterval < minTargetUnreachableReminder:
+		n.TargetUnreachable.ReminderInterval = minTargetUnreachableReminder
 	}
 }
 

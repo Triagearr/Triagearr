@@ -43,6 +43,19 @@ type Config struct {
 // provider is independently toggled; an empty/disabled section is a no-op.
 type NotificationsConfig struct {
 	Telegram TelegramConfig `koanf:"telegram"`
+
+	// TargetUnreachable tunes the "disk-pressure target can't be reached"
+	// alert (ADR-0032). The alert itself is not toggleable — it rides on
+	// whatever providers are configured; only its reminder cadence is tunable.
+	TargetUnreachable TargetUnreachableConfig `koanf:"target_unreachable"`
+}
+
+// TargetUnreachableConfig configures the recurring "target unreachable" alert.
+type TargetUnreachableConfig struct {
+	// ReminderInterval is the minimum delay between two reminders while the
+	// shortfall persists. Unset defaults to 24h; any set value is clamped to
+	// ≥ 1h so a misconfiguration can't turn the alert into a per-tick spam.
+	ReminderInterval time.Duration `koanf:"reminder_interval"`
 }
 
 // TelegramConfig configures the Telegram Bot API notifier. BotToken and
@@ -317,4 +330,9 @@ const (
 	defaultInterActionDelay   = 2 * time.Second
 
 	defaultVolumeName = "media"
+
+	// Target-unreachable alert (ADR-0032): default reminder cadence and the
+	// floor any configured cadence is clamped to.
+	defaultTargetUnreachableReminder = 24 * time.Hour
+	minTargetUnreachableReminder     = time.Hour
 )

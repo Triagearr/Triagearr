@@ -81,7 +81,7 @@ func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 		return RunPlan{}, fmt.Errorf("decider: no disk_usage snapshot recorded yet")
 	}
 
-	needBytes := neededBytes(snap.TotalBytes, snap.FreePercent, v.TargetFreePercent)
+	needBytes := NeededBytes(snap.TotalBytes, snap.FreePercent, v.TargetFreePercent)
 	// Target already met: nothing to free. Return an empty plan rather than
 	// electing the top-scored torrent — the budget check below appends a
 	// candidate before testing it, so needBytes == 0 would otherwise delete one
@@ -169,9 +169,10 @@ func (d *Decider) Plan(ctx context.Context, v Volume) (RunPlan, error) {
 	return plan, nil
 }
 
-// neededBytes returns how many bytes must be freed to reach targetPct.
-// Zero when current free% already meets or exceeds target.
-func neededBytes(totalBytes uint64, freePct, targetPct float64) int64 {
+// NeededBytes returns how many bytes must be freed to reach targetPct.
+// Zero when current free% already meets or exceeds target. Exported so the
+// disk-pressure watcher reports the same gap the planner budgets against.
+func NeededBytes(totalBytes uint64, freePct, targetPct float64) int64 {
 	if freePct >= targetPct {
 		return 0
 	}
