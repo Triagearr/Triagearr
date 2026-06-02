@@ -1,9 +1,11 @@
 import type { RunResponseT } from "@/api/schemas";
 import { shortHash } from "@/lib/format";
 
-export function torrentLabel(name: string | undefined, hash: string, maxLen = 40): string {
-  if (name) return name.length > maxLen ? name.slice(0, maxLen - 1) + "…" : name;
-  return shortHash(hash, 12);
+// Full torrent name for display; falls back to a short hash when unnamed.
+// Truncation is left to CSS (.name-cell/.name-text) so the full name shows
+// whenever the column has room, with ellipsis only when it genuinely overflows.
+export function torrentLabel(name: string | undefined, hash: string): string {
+  return name ? name : shortHash(hash, 12);
 }
 
 export function isInFlight(run: RunResponseT) {

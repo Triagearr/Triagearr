@@ -42,13 +42,13 @@ const outcomeDesc: Partial<Record<AuditOutcomeT, () => string>> = {
   skipped: m.ao_desc_skipped, not_attempted: m.ao_desc_not_attempted,
 };
 export const runStatusLabel: Record<string, () => string> = {
-  pending: m.rs_label_pending, running: m.rs_label_running, completed: m.rs_label_completed, aborted: m.rs_label_aborted,
+  pending: m.rs_label_pending, running: m.rs_label_running, completed: m.rs_label_completed, aborted: m.rs_label_aborted, stopped: m.rs_label_stopped,
 };
 export const runTriggerLabel: Record<string, () => string> = {
   disk_pressure: m.rt_label_disk_pressure, http: m.rt_label_http, cli: m.rt_label_cli,
 };
 export const stopReasonLabel: Record<string, () => string> = {
-  target_reached: m.sr_label_target_reached, no_more_candidates: m.sr_label_no_more_candidates,
+  target_reached: m.sr_label_target_reached, no_more_candidates: m.sr_label_no_more_candidates, user_stopped: m.sr_label_user_stopped,
 };
 export const auditStepLabel: Record<string, () => string> = {
   arr_delete: m.ast_label_arr_delete, nlink_check: m.ast_label_nlink_check, qbit_delete: m.ast_label_qbit_delete,

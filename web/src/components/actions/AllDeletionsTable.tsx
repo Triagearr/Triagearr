@@ -74,7 +74,11 @@ export function AllDeletionsTable({ actions, onSelectRun, onAudit }: {
                 #{a.run_id}
               </button>
             </td>
-            <td>{torrentLabel(a.torrent_name, a.torrent_hash)}</td>
+            <td className="name-cell">
+              <span className="name-text" title={a.torrent_name ?? a.torrent_hash}>
+                {torrentLabel(a.torrent_name, a.torrent_hash)}
+              </span>
+            </td>
             <td><ActionStatusBadge status={a.status} /></td>
             <td className="num">{humanBytes(a.freed_bytes)}</td>
             <td style={{ fontSize: 11.5, color: "var(--fg-3)" }}>{relativeTime(a.started_at)}</td>

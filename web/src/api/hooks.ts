@@ -664,3 +664,19 @@ export function useTriggerRun() {
     },
   });
 }
+
+// useStopRun requests a clean stop of an in-flight live run. The stop is
+// cooperative: the backend finishes the candidate it is on, then settles the
+// run to "stopped". The detail panel keeps polling until the status lands.
+export function useStopRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/api/v1/runs/${id}/stop`, RunResponse, { method: "POST" }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.run(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.runs });
+      qc.invalidateQueries({ queryKey: ["actions"] });
+    },
+  });
+}

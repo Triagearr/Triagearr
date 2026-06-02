@@ -1,4 +1,4 @@
-import { useRunActions } from "@/api/hooks";
+import { useRunActions, useStopRun } from "@/api/hooks";
 import type { RunResponseT } from "@/api/schemas";
 import { humanBytes, relativeTime } from "@/lib/format";
 import { useIsPhone } from "@/lib/useMediaQuery";
@@ -14,6 +14,7 @@ export function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: n
   const actions = useRunActions(run.run_id, inFlight ? 2_000 : undefined);
   const actionList = actions.data?.actions ?? [];
   const isPhone = useIsPhone();
+  const stopRun = useStopRun();
 
   return (
     <div className="run-detail" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
@@ -27,6 +28,18 @@ export function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: n
           {inFlight && <span className="badge badge-warn"><span className="dot amber pulse" style={{ marginRight: 3 }} />{m.actions_status_running()}</span>}
           {run.status === "aborted" && <span className="badge badge-danger">{m.actions_status_aborted()}</span>}
           {run.status === "completed" && <span className="badge badge-success">{m.actions_status_completed()}</span>}
+          {run.status === "stopped" && <span className="badge badge-warn">{m.actions_status_stopped()}</span>}
+          {inFlight && (
+            <button
+              type="button"
+              className="btn btn-destructive btn-sm"
+              style={{ marginLeft: "auto" }}
+              disabled={stopRun.isPending}
+              onClick={() => stopRun.mutate(run.run_id)}
+            >
+              {stopRun.isPending ? m.actions_stopping() : m.actions_stop_run()}
+            </button>
+          )}
         </div>
         <MetricGrid
           cols={5}
@@ -76,7 +89,11 @@ export function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: n
               {run.candidates.map((c) => (
                 <tr key={c.torrent_hash}>
                   <td className="mono" style={{ color: "var(--fg-3)" }}>#{c.rank}</td>
-                  <td>{torrentLabel(c.torrent_name, c.torrent_hash)}</td>
+                  <td className="name-cell">
+                    <span className="name-text" title={c.torrent_name ?? c.torrent_hash}>
+                      {torrentLabel(c.torrent_name, c.torrent_hash)}
+                    </span>
+                  </td>
                   <td className="num">{c.score.toFixed(1)}</td>
                   <td className="num">{humanBytes(c.would_free_bytes)}</td>
                 </tr>
@@ -133,7 +150,11 @@ export function RunDetail({ run, onAudit }: { run: RunResponseT; onAudit: (id: n
               {actionList.map((a) => (
                 <tr key={a.id} className="clickable" onClick={() => onAudit(a.id)}>
                   <td className="mono" style={{ color: "var(--fg-3)" }}>#{a.rank}</td>
-                  <td>{torrentLabel(a.torrent_name, a.torrent_hash)}</td>
+                  <td className="name-cell">
+                    <span className="name-text" title={a.torrent_name ?? a.torrent_hash}>
+                      {torrentLabel(a.torrent_name, a.torrent_hash)}
+                    </span>
+                  </td>
                   <td><ActionStatusBadge status={a.status} /></td>
                   <td className="num">{humanBytes(a.freed_bytes)}</td>
                   <td style={{ fontSize: 11.5, color: "var(--fg-3)" }}>{relativeTime(a.started_at)}</td>
