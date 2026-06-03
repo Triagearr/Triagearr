@@ -6,7 +6,35 @@ import (
 	"log/slog"
 
 	"github.com/Triagearr/Triagearr/internal/config"
+	"github.com/Triagearr/Triagearr/internal/store"
 )
+
+// loadWithOverrides reads YAML from path, layers persisted settings_overrides
+// on top, and returns the effective config. Called at boot and on SIGHUP.
+func loadWithOverrides(ctx context.Context, path string, s *store.Store) (*config.Config, error) {
+	rows, err := s.ListSettingsOverrides(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ovs := make([]config.Override, len(rows))
+	for i, r := range rows {
+		ovs[i] = config.Override{Key: r.Key, ValueJSON: r.ValueJSON}
+	}
+	cfg, err := config.LoadWithOverrides(path, ovs)
+	if err != nil {
+		return nil, err
+	}
+	// arr_connections (the DB table) is the source of truth for *arr
+	// instances; the YAML `arrs:` block only seeds it on first boot (ADR-0022).
+	if err := resolveArrConnections(ctx, s, cfg); err != nil {
+		return nil, err
+	}
+	// Same pattern for torrent clients (ADR-0025).
+	if err := resolveTorrentClientConnections(ctx, s, cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
 
 // resolveConnections is the shared boot path that promotes a DB-owned
 // connections table to be the source of truth for a slice of cfg (ADR-0022 /
