@@ -53,6 +53,25 @@ Authentication itself is opt-in and managed at runtime (ADR-0019): until a user 
 created from Settings → Security the API is open; once enabled, requests need a
 session cookie or the `X-API-Key` header. See [docs/ARCHITECTURE.md](ARCHITECTURE.md#http-api).
 
+### Lockout recovery
+
+Both in-app password operations require the *current* password, so a lost password
+locks you out of the dashboard. Recover from the host with the CLI (it acts on the
+configured SQLite store directly — holding the data dir is the trust boundary):
+
+```bash
+# Set a new password, keeping auth enabled. Omit --password to auto-generate one
+# (printed once); use --stdin for a masked interactive prompt.
+triagearr auth set-password -c /config/config.yml
+triagearr auth set-password -c /config/config.yml --stdin
+
+# Or drop auth entirely, returning the dashboard to open mode.
+triagearr auth disable -c /config/config.yml --yes
+```
+
+A running daemon picks up either change within ~3s (the auth-enabled flag is cached
+that long) — no restart needed.
+
 ## `storage`
 
 Durations use Go's `time.Duration` syntax (`h`/`m`/`s`) — there is no `d` unit,

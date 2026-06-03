@@ -62,6 +62,7 @@ func main() {
 			},
 			scoreCommand(configFlag),
 			runCommand(configFlag),
+			authCommand(configFlag),
 			{
 				Name:  "inspect",
 				Usage: "inspect the local Triagearr state",
