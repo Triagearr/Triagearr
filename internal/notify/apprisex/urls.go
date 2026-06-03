@@ -41,11 +41,11 @@ func DiscordURL(webhookURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("discord: parsing webhook URL: %w", err)
 	}
-	id, token, err := segmentsAfter(parsed.Path, "webhooks")
-	if err != nil {
-		return "", fmt.Errorf("discord: webhook URL must look like .../webhooks/{id}/{token}: %w", err)
+	seg := segmentsAfter(parsed.Path, "webhooks", 2)
+	if seg == nil {
+		return "", fmt.Errorf("discord: webhook URL must look like .../webhooks/{id}/{token}")
 	}
-	return fmt.Sprintf("discord://%s/%s", url.PathEscape(id), url.PathEscape(token)), nil
+	return fmt.Sprintf("discord://%s/%s", url.PathEscape(seg[0]), url.PathEscape(seg[1])), nil
 }
 
 // NtfyURL builds ntfy(s)://[{user}:{pass}@]{host}/{topic}. server may include a
@@ -119,8 +119,7 @@ func SlackURL(webhookURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("slack: parsing webhook URL: %w", err)
 	}
-	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	tok := tokensAfter(parts, "services", 3)
+	tok := segmentsAfter(parsed.Path, "services", 3)
 	if tok == nil {
 		return "", fmt.Errorf("slack: webhook URL must look like .../services/{T}/{B}/{X}")
 	}
@@ -128,21 +127,10 @@ func SlackURL(webhookURL string) (string, error) {
 		url.PathEscape(tok[0]), url.PathEscape(tok[1]), url.PathEscape(tok[2])), nil
 }
 
-// segmentsAfter returns the two path segments immediately following the named
-// anchor segment, erroring if the structure doesn't match.
-func segmentsAfter(path, anchor string) (a, b string, err error) {
+// segmentsAfter returns exactly n non-empty path segments immediately following
+// the named anchor in the URL path, or nil if the structure doesn't match.
+func segmentsAfter(path, anchor string, n int) []string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	for i, p := range parts {
-		if p == anchor && i+2 < len(parts) && parts[i+1] != "" && parts[i+2] != "" {
-			return parts[i+1], parts[i+2], nil
-		}
-	}
-	return "", "", fmt.Errorf("missing %q/{a}/{b} segments", anchor)
-}
-
-// tokensAfter returns exactly n non-empty path segments immediately following
-// the named anchor, or nil if the structure doesn't match.
-func tokensAfter(parts []string, anchor string, n int) []string {
 	for i, p := range parts {
 		if p != anchor || i+n >= len(parts) {
 			continue

@@ -436,18 +436,20 @@ function ProviderDrawer({ meta, open, onClose }: { meta: ProviderMeta | null; op
 
   const enabledVal = field("enabled") === "true" || (!(`${prefix}.enabled` in pending) && node.enabled === true);
 
-  // Mute list: pending JSON wins, else the persisted array.
-  const muteCurrent: string[] = (() => {
-    const key = `${prefix}.mute`;
+  // A pending JSON-encoded array wins, else the persisted array (mute, email "to").
+  const jsonArrayField = (suffix: string): string[] => {
+    const key = `${prefix}.${suffix}`;
     if (key in pending) {
       try {
-        return JSON.parse(pending[key] ?? "[]");
+        return JSON.parse(pending[key] ?? "[]") as string[];
       } catch {
         return [];
       }
     }
-    return (node.mute as string[] | null) ?? [];
-  })();
+    return (node[suffix] as string[] | null) ?? [];
+  };
+
+  const muteCurrent = jsonArrayField("mute");
   const minSeverityCurrent = field("min_severity") || (node.min_severity as string) || "info";
 
   const dirtyCount = Object.keys(pending).length;
@@ -533,17 +535,7 @@ function ProviderDrawer({ meta, open, onClose }: { meta: ProviderMeta | null; op
                 label={m.settings_notif_email_to()}
                 type="text"
                 placeholder="a@example.com, b@example.com"
-                value={(() => {
-                  const key = `${prefix}.to`;
-                  if (key in pending) {
-                    try {
-                      return (JSON.parse(pending[key] ?? "[]") as string[]).join(", ");
-                    } catch {
-                      return "";
-                    }
-                  }
-                  return ((node.to as string[] | null) ?? []).join(", ");
-                })()}
+                value={jsonArrayField("to").join(", ")}
                 onChange={(v) =>
                   set(
                     `${prefix}.to`,
