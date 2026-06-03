@@ -26,6 +26,7 @@ import (
 // enumerating every kind (ADR-0033). Ordered: info < warning < error.
 type Severity int
 
+// Severity floors, ordered info < warning < error.
 const (
 	SeverityInfo Severity = iota
 	SeverityWarning
@@ -68,6 +69,7 @@ func ParseSeverity(s string) (Severity, error) {
 // emits, so these strings must not change casually.
 type EventKind string
 
+// Event kinds — the stable wire values providers route and mute on.
 const (
 	EventRunExecuted       EventKind = "run.executed"
 	EventRunPartial        EventKind = "run.partial"

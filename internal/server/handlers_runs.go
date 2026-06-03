@@ -128,7 +128,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		// click can't find the run unarmed (status "pending" but no cancel yet).
 		runCtx, cancel := context.WithCancel(s.baseCtx)
 		s.runLock.Arm(id, cancel)
-		go s.executeRunAsync(id, eng.Actor, runCtx, cancel)
+		go s.executeRunAsync(runCtx, id, eng.Actor, cancel)
 		handoff = true
 	}
 	// Re-read so the response carries persisted state. The live goroutine may
@@ -150,7 +150,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 // always released. On Actor failure the run is marked "aborted" so the UI stops
 // showing it in-flight. The terminal "aborted" write uses baseCtx, not runCtx,
 // so a stop-driven cancellation doesn't also fail the bookkeeping write.
-func (s *Server) executeRunAsync(id int64, act *actor.Actor, runCtx context.Context, cancel context.CancelFunc) {
+func (s *Server) executeRunAsync(runCtx context.Context, id int64, act *actor.Actor, cancel context.CancelFunc) {
 	defer cancel()
 	defer s.runLock.Release()
 	if err := act.Execute(runCtx, id); err != nil {

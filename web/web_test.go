@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +11,8 @@ import (
 	"testing"
 )
 
-// servedAsset finds the hashed main bundle the embedded index.html points at,
-// so tests assert against a real asset rather than a guessed filename.
+// mainBundlePath finds the hashed main bundle the embedded index.html points
+// at, so tests assert against a real asset rather than a guessed filename.
 func mainBundlePath(t *testing.T) string {
 	t.Helper()
 	h := Handler()
@@ -19,20 +20,20 @@ func mainBundlePath(t *testing.T) string {
 		t.Skip("no dist build embedded; run `bun run build` in web/")
 	}
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil))
 	body := rec.Body.String()
 	i := strings.Index(body, "/assets/index-")
 	if i < 0 {
 		t.Fatalf("index.html has no main bundle reference:\n%s", body)
 	}
-	return body[i:strings.IndexByte(body[i:], '"')+i]
+	return body[i : strings.IndexByte(body[i:], '"')+i]
 }
 
 func TestServesGzipWhenAccepted(t *testing.T) {
 	h := Handler()
 	asset := mainBundlePath(t)
 
-	req := httptest.NewRequest(http.MethodGet, asset, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, asset, nil)
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -56,7 +57,7 @@ func TestServesIdentityWhenGzipNotAccepted(t *testing.T) {
 	h := Handler()
 	asset := mainBundlePath(t)
 
-	req := httptest.NewRequest(http.MethodGet, asset, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, asset, nil)
 	// No Accept-Encoding header at all.
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -75,14 +76,14 @@ func TestHashedAssetsAreImmutable(t *testing.T) {
 	asset := mainBundlePath(t)
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, asset, nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, asset, nil))
 	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "immutable") {
 		t.Fatalf("Cache-Control for hashed asset = %q, want immutable", got)
 	}
 
 	// index.html must NOT be immutable — it names the hashed bundles.
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil))
 	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
 		t.Fatalf("Cache-Control for index.html = %q, want no-cache", got)
 	}
@@ -92,7 +93,7 @@ func TestSPAFallbackServesIndex(t *testing.T) {
 	h := Handler()
 	// A client-side route with no matching file must return the SPA shell.
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings/scoring", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/settings/scoring", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}

@@ -66,12 +66,15 @@ func Handler() http.Handler {
 
 	assets := map[string]*asset{"index.html": index}
 	_ = fs.WalkDir(root, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || p == "index.html" {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || p == "index.html" {
 			return nil
 		}
 		a, err := loadAsset(root, p)
 		if err != nil {
-			return nil
+			return err
 		}
 		assets[p] = a
 		return nil
