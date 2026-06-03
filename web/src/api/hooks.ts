@@ -11,7 +11,6 @@ import {
   TorrentClientConnectionList,
   AuthChangePasswordResponse,
   AuthEnableResponse,
-  ConfigShape,
   SettingsView,
   NotificationCatalogue,
   NotificationDeliveries,
@@ -19,7 +18,6 @@ import {
   RunList,
   RunPreview,
   RunResponse,
-  ScoreList,
   ScoringDefaults,
   ScoringSimResultList,
   TrackerPolicy,
@@ -32,7 +30,6 @@ import {
   TorrentDetail,
   TorrentList,
   Version,
-  VolumeHistory,
   VolumeResponse,
 } from "./schemas";
 
@@ -41,7 +38,6 @@ export const queryKeys = {
   version: ["version"] as const,
   summary: ["summary"] as const,
   volume: ["volume"] as const,
-  volumeHistory: (since: string) => ["volume", "history", since] as const,
   torrents: (params: Record<string, string | number | boolean>) => ["torrents", params] as const,
   torrent: (hash: string) => ["torrent", hash] as const,
   snapshots: (hash: string, since: string) => ["torrent", hash, "snapshots", since] as const,
@@ -157,13 +153,6 @@ export function useVolume() {
     queryKey: queryKeys.volume,
     queryFn: () => apiFetch("/api/v1/volume", VolumeResponse),
     refetchInterval: 15_000,
-  });
-}
-
-export function useVolumeHistory(since = "24h") {
-  return useQuery({
-    queryKey: queryKeys.volumeHistory(since),
-    queryFn: () => apiFetch(`/api/v1/volume/history?since=${since}`, VolumeHistory),
   });
 }
 
@@ -292,13 +281,6 @@ export function useSnapshots(hash: string, since = "720h") {
   });
 }
 
-export function useScores() {
-  return useQuery({
-    queryKey: queryKeys.scores,
-    queryFn: () => apiFetch("/api/v1/scores?limit=50", ScoreList),
-  });
-}
-
 export function useRuns() {
   return useQuery({
     queryKey: queryKeys.runs,
@@ -366,13 +348,6 @@ export function useArrs() {
     queryKey: queryKeys.arrs,
     queryFn: () => apiFetch("/api/v1/arrs", ArrList),
     refetchInterval: 60_000,
-  });
-}
-
-export function useConfig() {
-  return useQuery({
-    queryKey: queryKeys.config,
-    queryFn: () => apiFetch("/api/v1/config", ConfigShape),
   });
 }
 

@@ -15,8 +15,6 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-var _ = noConflictStat // keep helper referenced; tests use it indirectly via custom stats
-
 // fakeSource is an in-memory Source. It mirrors enough of the store contract
 // for the actor tests without needing SQLite.
 type fakeSource struct {
@@ -169,11 +167,6 @@ func (q *fakeQbit) Delete(_ context.Context, h triagearr.Hash, _ triagearr.Delet
 	}
 	return nil
 }
-
-// noConflictStat is the test default: every stat reports nlink=1, i.e. the
-// inode is owned by qBit alone (the *arr delete already happened in fanoutArr).
-// T3.5 walks through cleanly. Tests for cross-seed scenarios swap this out.
-func noConflictStat(_ string) (int64, int64, error) { return 0, 1, nil }
 
 // fakeDeleter is a per-arr FileDeleter that records the file_ids it sees and
 // can be programmed to fail on specific calls.
