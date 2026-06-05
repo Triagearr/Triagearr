@@ -53,6 +53,25 @@ Authentication itself is opt-in and managed at runtime (ADR-0019): until a user 
 created from Settings → Security the API is open; once enabled, requests need a
 session cookie or the `X-API-Key` header. See [docs/ARCHITECTURE.md](ARCHITECTURE.md#http-api).
 
+### Lockout recovery
+
+Both in-app password operations require the *current* password, so a lost password
+locks you out of the dashboard. Recover from the host with the CLI (it acts on the
+configured SQLite store directly — holding the data dir is the trust boundary):
+
+```bash
+# Set a new password, keeping auth enabled. Omit --password to auto-generate one
+# (printed once); use --stdin for a masked interactive prompt.
+triagearr auth set-password -c /config/config.yml
+triagearr auth set-password -c /config/config.yml --stdin
+
+# Or drop auth entirely, returning the dashboard to open mode.
+triagearr auth disable -c /config/config.yml --yes
+```
+
+A running daemon picks up either change within ~3s (the auth-enabled flag is cached
+that long) — no restart needed.
+
 ## `storage`
 
 Durations use Go's `time.Duration` syntax (`h`/`m`/`s`) — there is no `d` unit,
@@ -240,28 +259,61 @@ delete if a sibling survives (see [HARDLINK_TOPOLOGY.md](HARDLINK_TOPOLOGY.md) a
 
 ## `notifications`
 
-A notification is sent **only** when a disk-pressure run reaches the Actor and
-executed at least one candidate — manual HTTP/CLI runs stay silent (ADR-0021).
-The message details the items deleted, their sizes, the total freed, and the
-volume's free space before/after.
+Triagearr fans events out best-effort to every enabled provider; a provider
+failure never taints or delays a run (ADR-0021). The human channels — Telegram,
+Discord, ntfy, email, Slack — are delivered through Apprise; `webhook` is the
+native structured-JSON provider for automation (ADR-0033).
+
+**Events** carry a fixed severity:
+
+| Kind | Severity | When |
+| --- | --- | --- |
+| `run.executed` | info | a disk-pressure run deleted everything cleanly |
+| `run.partial` | warning | a run deleted some items but others hard-failed |
+| `run.failed` | error | a run deleted nothing (all attempts failed) |
+| `disk.target_unreachable` | warning | even deleting everything eligible can't reach target (ADR-0032) |
+| `health.degraded` | error | a configured *arr/torrent-client became unreachable |
+| `health.recovered` | info | …and came back |
+
+Run events fire only for disk-pressure runs that reach the Actor — manual
+HTTP/CLI runs stay silent (ADR-0021).
+
+**Routing** is per provider, default-on/opt-out:
+
+| Key | Meaning |
+| --- | --- |
+| `<provider>.min_severity` | Floor: `info` (default, all) \| `warning` \| `error`. The channel only receives events at or above it. |
+| `<provider>.mute` | List of event kinds never sent to this channel, regardless of severity (e.g. `[run.executed]`). |
 
 ```yaml
 notifications:
-  telegram:
-    enabled: false
-    bot_token: "${TELEGRAM_BOT_TOKEN}"
-    chat_id: "${TELEGRAM_CHAT_ID}"
+  telegram: { enabled: false, bot_token: "${TELEGRAM_BOT_TOKEN}", chat_id: "${TELEGRAM_CHAT_ID}", min_severity: info, mute: [] }
+  discord:  { enabled: false, webhook_url: "…", min_severity: info, mute: [] }
+  ntfy:     { enabled: false, server: "https://ntfy.sh", topic: "…", username: "", password: "", min_severity: info, mute: [] }
+  email:    { enabled: false, host: "…", port: 587, username: "…", password: "…", from: "…", to: [], use_starttls: true, min_severity: warning, mute: [] }
+  slack:    { enabled: false, webhook_url: "…", min_severity: info, mute: [] }
+  webhook:  { enabled: false, url: "…", secret: "", min_severity: info, mute: [] }
+  target_unreachable: { reminder_interval: 24h }
 ```
 
-| Key                  | Meaning                                                        |
-| -------------------- | -------------------------------------------------------------- |
-| `telegram.enabled`   | Master switch for the Telegram provider.                       |
-| `telegram.bot_token` | Bot API token from BotFather. Required when enabled.           |
-| `telegram.chat_id`   | Target chat/channel id. Required when enabled.                  |
+| Provider | Required when enabled | URL form |
+| --- | --- | --- |
+| `telegram` | `bot_token`, `chat_id` | bot token from BotFather (`<id>:<secret>`) |
+| `discord` | `webhook_url` | `https://discord.com/api/webhooks/{id}/{token}` |
+| `ntfy` | `topic` | `server` empty → ntfy.sh; `http://host` for a private server |
+| `email` | `host`, `from`, `to` | SMTP; `use_starttls` selects TLS |
+| `slack` | `webhook_url` | `https://hooks.slack.com/services/{T}/{B}/{X}` |
+| `webhook` | `url` | any URL; `secret` signs the body (HMAC-SHA256, `X-Triagearr-Signature`) |
 
-`bot_token` and `chat_id` are also editable at runtime from the dashboard
-(Settings → Notifications) — the `notifications` section is on the override
-whitelist. The token is redacted from the effective-config view.
+`target_unreachable.reminder_interval` tunes the recurring shortfall alert
+(ADR-0032): `0` = once, no reminders; any value is clamped to ≥ 1h. The alert is
+always active when ≥ 1 provider is configured.
+
+Everything here is editable at runtime from the dashboard (Settings →
+Notifications), with per-provider tiles, routing controls, an event catalogue, a
+recent-deliveries panel and a per-event test — the `notifications` section is on
+the override whitelist. The Apprise service URL is built server-side from these
+fields and never logged or returned to the UI.
 
 ## Environment variable substitution
 

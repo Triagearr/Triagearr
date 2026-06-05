@@ -22,6 +22,7 @@ import (
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/linker"
 	"github.com/Triagearr/Triagearr/internal/notify"
+	"github.com/Triagearr/Triagearr/internal/runlock"
 	"github.com/Triagearr/Triagearr/internal/scorer"
 	"github.com/Triagearr/Triagearr/internal/store"
 )
@@ -94,6 +95,12 @@ type Options struct {
 	// invalid combinations before persisting anything. Required for the
 	// settings endpoints — they return 503 when nil.
 	ReloadValidate func(overrides []config.Override) error
+
+	// RunLock is the single-run guard shared with the disk-pressure watcher (and,
+	// via its file lock, the CLI) so live runs can't execute concurrently across
+	// triggers. When nil, New creates a private memory-only lock — fine for tests
+	// and any standalone use that has no peer trigger to coordinate with.
+	RunLock *runlock.Lock
 }
 
 // sessionTTL is the sliding window applied on every authenticated hit.
@@ -116,10 +123,11 @@ type Server struct {
 	// that triggered it (and is cancelled on daemon shutdown). Background
 	// (no cancellation) until Start runs — fine for tests that never Start.
 	baseCtx context.Context
-	// liveRun is a capacity-1 semaphore: at most one live run executes at a
-	// time. A second concurrent live trigger is rejected with 409 rather than
-	// racing the destructive pipeline against itself.
-	liveRun chan struct{}
+	// runLock admits at most one live run at a time across all triggers. A
+	// second concurrent live trigger is rejected with 409 rather than racing the
+	// destructive pipeline against itself. Shared with the disk-pressure watcher
+	// when wired by the daemon (see Options.RunLock).
+	runLock *runlock.Lock
 
 	// authState caches the "is any user registered" flag and the timestamp
 	// of the last DB check. Used by middleware.auth on every request to
@@ -136,17 +144,22 @@ type authStateCache struct {
 // New builds a Server with its initial Engine. Does not start listening. The
 // Engine may be swapped later via SwapEngine without restarting the listener.
 func New(opts Options, eng *Engine) *Server {
+	rl := opts.RunLock
+	if rl == nil {
+		rl = runlock.New()
+	}
 	s := &Server{
 		opts:     opts,
 		runRate:  buildRateLimiter(opts.RunsPerMinute, 60),
 		authRate: buildRateLimiter(opts.AuthPerMinute, 30),
 		baseCtx:  context.Background(),
-		liveRun:  make(chan struct{}, 1),
+		runLock:  rl,
 	}
 	s.eng.Store(eng)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/runs", s.security(s.auth(s.runRateLimit(s.handlePostRun))))
+	mux.HandleFunc("POST /api/v1/runs/{id}/stop", s.security(s.auth(s.handleStopRun)))
 	mux.HandleFunc("GET /api/v1/runs/preview", s.security(s.auth(s.handlePreviewRun)))
 	mux.HandleFunc("GET /api/v1/runs", s.security(s.auth(s.handleListRuns)))
 	mux.HandleFunc("GET /api/v1/runs/{id}", s.security(s.auth(s.handleGetRun)))
@@ -170,6 +183,8 @@ func New(opts Options, eng *Engine) *Server {
 	mux.HandleFunc("PUT /api/v1/settings", s.security(s.auth(s.handlePutSettings)))
 	mux.HandleFunc("DELETE /api/v1/settings/{key}", s.security(s.auth(s.handleDeleteSetting)))
 	mux.HandleFunc("POST /api/v1/notifications/test", s.security(s.auth(s.handleTestNotification)))
+	mux.HandleFunc("GET /api/v1/notifications/catalogue", s.security(s.auth(s.handleNotificationCatalogue)))
+	mux.HandleFunc("GET /api/v1/notifications/deliveries", s.security(s.auth(s.handleNotificationDeliveries)))
 	mux.HandleFunc("GET /api/v1/scoring/defaults", s.security(s.auth(s.handleGetScoringDefaults)))
 	mux.HandleFunc("PUT /api/v1/scoring/defaults", s.security(s.auth(s.handlePutScoringDefaults)))
 	mux.HandleFunc("POST /api/v1/scoring/simulate", s.security(s.auth(s.handleSimulateScoring)))

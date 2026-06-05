@@ -13,6 +13,7 @@ import (
 
 	"github.com/Triagearr/Triagearr/internal/config"
 	"github.com/Triagearr/Triagearr/internal/decider"
+	"github.com/Triagearr/Triagearr/internal/runlock"
 	"github.com/Triagearr/Triagearr/internal/store"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
@@ -59,6 +60,21 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	mode := triagearr.ResolveRunMode(daemonLive, triagearr.RunTriggerCLI, live)
 	if live && mode != triagearr.RunModeLive {
 		return errors.New("--live requires the daemon's mode: live (current config is dry-run)")
+	}
+
+	// A live CLI run shares the cross-process run-lock with the daemon (HTTP +
+	// disk-pressure triggers). Claim it before planning/persisting so a contended
+	// run writes nothing and can't race the daemon's destructive pipeline.
+	if mode == triagearr.RunModeLive {
+		lock, err := runlock.Open(runLockPath(cfg))
+		if err != nil {
+			return fmt.Errorf("opening run lock: %w", err)
+		}
+		defer func() { _ = lock.Close() }()
+		if !lock.TryAcquire() {
+			return errors.New("a live run is already in progress (daemon or another CLI); try again later")
+		}
+		defer lock.Release()
 	}
 
 	v := theVolume(cfg)

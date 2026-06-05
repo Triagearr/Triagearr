@@ -176,14 +176,76 @@ action:
   # contract makes the stat() it needs viable.
 
 # -----------------------------------------------------------------------------
-# Notifications
+# Notifications (ADR-0033)
 # -----------------------------------------------------------------------------
-# A notification is sent only when a disk-pressure run actually reaches the
-# Actor and deletes (or attempts to delete) at least one item — manual HTTP/CLI
-# runs stay silent on purpose (ADR-0021). bot_token + chat_id are also editable
-# from the dashboard (Settings → Notifications).
+# Events flow to every enabled provider best-effort: a provider failure is never
+# allowed to taint or delay a run. Disk-pressure run reports fire only when a run
+# reaches the Actor; manual HTTP/CLI runs stay silent (ADR-0021). Health and
+# target-unreachable events fire independently. All fields are also editable from
+# the dashboard (Settings → Notifications), including a per-event test.
+#
+# Human channels (telegram/discord/ntfy/email/slack) are delivered via Apprise;
+# webhook is the native structured-JSON provider for automation.
+#
+# Per-provider routing (default-on, opt-out):
+#   min_severity: floor — info | warning | error (empty = info, all events)
+#   mute:         list of event kinds never sent to this channel, e.g.
+#                 [run.executed]. Kinds: run.executed (info), run.partial (warn),
+#                 run.failed (error), disk.target_unreachable (warn),
+#                 health.degraded (error), health.recovered (info).
 notifications:
   telegram:
     enabled: false
     bot_token: ${TELEGRAM_BOT_TOKEN}
     chat_id: ${TELEGRAM_CHAT_ID}
+    min_severity: info
+    mute: []
+
+  discord:
+    enabled: false
+    webhook_url: ${DISCORD_WEBHOOK_URL:-}   # https://discord.com/api/webhooks/{id}/{token}
+    min_severity: info
+    mute: []
+
+  ntfy:
+    enabled: false
+    server: https://ntfy.sh              # empty = ntfy.sh; http://host for a private server
+    topic: ${NTFY_TOPIC:-}
+    username: ""                          # optional, for a private server
+    password: ""
+    min_severity: info
+    mute: []
+
+  email:
+    enabled: false
+    host: ${SMTP_HOST:-}
+    port: 587
+    username: ${SMTP_USER:-}
+    password: ${SMTP_PASS:-}
+    from: triagearr@example.com
+    to: []                                # recipient addresses
+    use_starttls: true
+    min_severity: warning                 # email is noisy by nature — raise the floor
+    mute: []
+
+  slack:
+    enabled: false
+    webhook_url: ${SLACK_WEBHOOK_URL:-}     # https://hooks.slack.com/services/{T}/{B}/{X}
+    min_severity: info
+    mute: []
+
+  # Native structured-JSON webhook (ADR-0033). Posts the typed event as JSON to
+  # url; when secret is set, the body is signed with HMAC-SHA256 in the
+  # X-Triagearr-Signature header. The only provider that emits machine-readable
+  # fields rather than rendered text.
+  webhook:
+    enabled: false
+    url: ${WEBHOOK_URL:-}
+    secret: ""
+    min_severity: info
+    mute: []
+
+  # Recurring "disk-pressure target unreachable" alert (ADR-0032). Always active
+  # when ≥1 provider is configured; only its reminder cadence is tunable.
+  target_unreachable:
+    reminder_interval: 24h                # 0 = alert once, no reminders; clamped ≥ 1h

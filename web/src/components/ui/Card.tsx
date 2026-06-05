@@ -28,7 +28,3 @@ export function CardDescription({ className, ...p }: HTMLAttributes<HTMLParagrap
 export function CardContent({ className, ...p }: HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("px-5 pb-5", className)} {...p} />;
 }
-
-export function CardFooter({ className, ...p }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("flex items-center px-5 pb-5", className)} {...p} />;
-}

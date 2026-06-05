@@ -261,6 +261,9 @@ type RunStopReason string
 const (
 	StopTargetReached    RunStopReason = "target_reached"
 	StopNoMoreCandidates RunStopReason = "no_more_candidates"
+	// StopUserStopped marks a run cut short by an operator via the stop control,
+	// distinct from a target-reached or exhausted plan.
+	StopUserStopped RunStopReason = "user_stopped"
 )
 
 // Run is the persisted record of one Decider invocation.

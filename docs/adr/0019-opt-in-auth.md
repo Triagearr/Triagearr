@@ -56,6 +56,7 @@ Authentication is **opt-in, managed from the dashboard, persisted in the SQLite 
 - **No more "you forgot to set api_key and now everything is unprotected" footgun.** The dashboard banner makes "auth disabled" visible. Programmatic clients still get `X-API-Key`, never lose the ability to operate.
 - **bcrypt** lives in `golang.org/x/crypto/bcrypt` (already a transitive dep of much of the Go ecosystem; we now require it directly). Cost 10 — ~70ms per hash on the homelab CPU, fast enough for a single-user dashboard, slow enough to make offline brute-force impractical against the leaked hash.
 - **Single user, by design.** Multi-user / RBAC is out of scope. If we ever need it, we'd grow `auth_users` into a real table; the migration is straightforward.
+- **Lockout recovery is out-of-band.** Both in-app password operations require the current password, so a lost password needs host access to recover: `triagearr auth set-password` (rotate, keep auth on) or `triagearr auth disable` (drop to open mode). See [docs/CONFIGURATION.md](../CONFIGURATION.md#lockout-recovery).
 
 ## Alternatives considered
 

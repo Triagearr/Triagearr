@@ -39,18 +39,98 @@ type Config struct {
 	Notifications NotificationsConfig `koanf:"notifications"`
 }
 
-// NotificationsConfig groups the configured notification providers. Each
-// provider is independently toggled; an empty/disabled section is a no-op.
+// NotificationsConfig groups the configured notification providers (ADR-0033).
+// Each channel is independently toggled and routed; an empty/disabled section
+// is a no-op. The human channels (Telegram/Discord/ntfy/Email/Slack) are
+// delivered via Apprise; Webhook is the native structured-JSON provider.
 type NotificationsConfig struct {
 	Telegram TelegramConfig `koanf:"telegram"`
+	Discord  DiscordConfig  `koanf:"discord"`
+	Ntfy     NtfyConfig     `koanf:"ntfy"`
+	Email    EmailConfig    `koanf:"email"`
+	Slack    SlackConfig    `koanf:"slack"`
+	Webhook  WebhookConfig  `koanf:"webhook"`
+
+	// TargetUnreachable tunes the "disk-pressure target can't be reached"
+	// alert (ADR-0032). The alert itself is not toggleable — it rides on
+	// whatever providers are configured; only its reminder cadence is tunable.
+	TargetUnreachable TargetUnreachableConfig `koanf:"target_unreachable"`
+}
+
+// TargetUnreachableConfig configures the recurring "target unreachable" alert.
+type TargetUnreachableConfig struct {
+	// ReminderInterval is the minimum delay between two reminders while the
+	// shortfall persists. Unset defaults to 24h; any set value is clamped to
+	// ≥ 1h so a misconfiguration can't turn the alert into a per-tick spam.
+	ReminderInterval time.Duration `koanf:"reminder_interval"`
+}
+
+// ProviderRouting is the severity-threshold routing shared by every provider
+// (ADR-0033). MinSeverity is the floor ("info"|"warning"|"error"; empty = info,
+// the most permissive). Mute lists event kinds to suppress regardless of floor.
+// Embedded with koanf ",squash" so its keys flatten under each provider, e.g.
+// notifications.discord.min_severity.
+type ProviderRouting struct {
+	MinSeverity string   `koanf:"min_severity"`
+	Mute        []string `koanf:"mute"`
 }
 
 // TelegramConfig configures the Telegram Bot API notifier. BotToken and
 // ChatID are required when Enabled.
 type TelegramConfig struct {
-	Enabled  bool   `koanf:"enabled"`
-	BotToken string `koanf:"bot_token"`
-	ChatID   string `koanf:"chat_id"`
+	Enabled         bool   `koanf:"enabled"`
+	BotToken        string `koanf:"bot_token"`
+	ChatID          string `koanf:"chat_id"`
+	ProviderRouting `koanf:",squash"`
+}
+
+// DiscordConfig configures the Discord webhook notifier. WebhookURL is the full
+// https://discord.com/api/webhooks/{id}/{token} URL.
+type DiscordConfig struct {
+	Enabled         bool   `koanf:"enabled"`
+	WebhookURL      string `koanf:"webhook_url"`
+	ProviderRouting `koanf:",squash"`
+}
+
+// NtfyConfig configures the ntfy notifier. Server may be empty (defaults to
+// ntfy.sh); Username/Password enable private-server auth.
+type NtfyConfig struct {
+	Enabled         bool   `koanf:"enabled"`
+	Server          string `koanf:"server"`
+	Topic           string `koanf:"topic"`
+	Username        string `koanf:"username"`
+	Password        string `koanf:"password"`
+	ProviderRouting `koanf:",squash"`
+}
+
+// EmailConfig configures the SMTP notifier.
+type EmailConfig struct {
+	Enabled         bool     `koanf:"enabled"`
+	Host            string   `koanf:"host"`
+	Port            int      `koanf:"port"`
+	Username        string   `koanf:"username"`
+	Password        string   `koanf:"password"`
+	From            string   `koanf:"from"`
+	To              []string `koanf:"to"`
+	UseStartTLS     bool     `koanf:"use_starttls"`
+	ProviderRouting `koanf:",squash"`
+}
+
+// SlackConfig configures the Slack incoming-webhook notifier. WebhookURL is the
+// full https://hooks.slack.com/services/{T}/{B}/{X} URL.
+type SlackConfig struct {
+	Enabled         bool   `koanf:"enabled"`
+	WebhookURL      string `koanf:"webhook_url"`
+	ProviderRouting `koanf:",squash"`
+}
+
+// WebhookConfig configures the native structured-JSON webhook (ADR-0033). When
+// Secret is set, requests are signed with HMAC-SHA256 over the body.
+type WebhookConfig struct {
+	Enabled         bool   `koanf:"enabled"`
+	URL             string `koanf:"url"`
+	Secret          string `koanf:"secret"`
+	ProviderRouting `koanf:",squash"`
 }
 
 // ActionConfig tunes the M5 Actor's destructive pipeline.
@@ -267,6 +347,7 @@ type PollingConfig struct {
 	ArrFileMinInterval    time.Duration `koanf:"arr_file_min_interval"`
 	TrackerInterval       time.Duration `koanf:"tracker_interval"`
 	DiskInterval          time.Duration `koanf:"disk_interval"`
+	HealthInterval        time.Duration `koanf:"health_interval"`
 	MaintainerrInterval   time.Duration `koanf:"maintainerr_interval"`
 	DownsampleCron        string        `koanf:"downsample_cron"`
 }
@@ -299,6 +380,7 @@ const (
 	defaultArrFileMinInterval    = 200 * time.Millisecond // ≈ 5 req/s
 	defaultTrackerInterval       = 6 * time.Hour
 	defaultDiskInterval          = 5 * time.Minute
+	defaultHealthInterval        = 5 * time.Minute
 	defaultDownsampleCron        = "0 3 * * *"
 	defaultRetentionRaw          = 7 * 24 * time.Hour
 	defaultRetentionDaily        = 365 * 24 * time.Hour
@@ -317,4 +399,9 @@ const (
 	defaultInterActionDelay   = 2 * time.Second
 
 	defaultVolumeName = "media"
+
+	// Target-unreachable alert (ADR-0032): default reminder cadence and the
+	// floor any configured cadence is clamped to.
+	defaultTargetUnreachableReminder = 24 * time.Hour
+	minTargetUnreachableReminder     = time.Hour
 )

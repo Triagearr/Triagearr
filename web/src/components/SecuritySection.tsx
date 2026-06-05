@@ -21,6 +21,11 @@ import { m } from "@/paraglide/messages";
 /** SecuritySection drives the opt-in built-in auth from the Settings page. */
 export function SecuritySection() {
   const session = useSession();
+  // The generated-password card lives here, not inside the panels: enabling auth
+  // flips auth_enabled, which swaps EnablePanel for ManagePanel. State held in
+  // EnablePanel would unmount with it, hiding the one-time password before it
+  // could be read. Hoisting it keeps the card visible across that swap.
+  const [generated, setGenerated] = useState<string | null>(null);
 
   if (session.isLoading) {
     return null;
@@ -48,7 +53,12 @@ export function SecuritySection() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!status?.auth_enabled ? <EnablePanel /> : <ManagePanel />}
+        {!status?.auth_enabled ? (
+          <EnablePanel onGenerated={setGenerated} />
+        ) : (
+          <ManagePanel onGenerated={setGenerated} />
+        )}
+        {generated && <GeneratedPasswordCard password={generated} />}
       </CardContent>
     </Card>
   );
@@ -76,10 +86,9 @@ function UserBadge({ username }: { username: string }) {
   );
 }
 
-function EnablePanel() {
+function EnablePanel({ onGenerated }: { onGenerated: (pw: string) => void }) {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
-  const [generated, setGenerated] = useState<string | null>(null);
   const enable = useEnableAuth();
 
   return (
@@ -95,7 +104,7 @@ function EnablePanel() {
             { username: username.trim(), password: password || undefined },
             {
               onSuccess: (data) => {
-                if (data.password) setGenerated(data.password);
+                if (data.password) onGenerated(data.password);
                 setPassword("");
               },
             },
@@ -120,7 +129,6 @@ function EnablePanel() {
         </Button>
       </form>
       <FormError error={enable.isError ? enable.error : null} />
-      {generated && <GeneratedPasswordCard password={generated} />}
     </div>
   );
 }
@@ -148,20 +156,19 @@ function GeneratedPasswordCard({ password }: { password: string }) {
   );
 }
 
-function ManagePanel() {
+function ManagePanel({ onGenerated }: { onGenerated: (pw: string) => void }) {
   return (
     <div className="space-y-4">
-      <ChangePasswordForm />
+      <ChangePasswordForm onGenerated={onGenerated} />
       <hr className="border-border" />
       <DisableAuthForm />
     </div>
   );
 }
 
-function ChangePasswordForm() {
+function ChangePasswordForm({ onGenerated }: { onGenerated: (pw: string) => void }) {
   const [current, setCurrent] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [generated, setGenerated] = useState<string | null>(null);
   const change = useChangePassword();
   return (
     <div className="space-y-3">
@@ -174,7 +181,7 @@ function ChangePasswordForm() {
             { current, newPassword: newPassword || undefined },
             {
               onSuccess: (data) => {
-                if (data.password) setGenerated(data.password);
+                if (data.password) onGenerated(data.password);
                 setCurrent("");
                 setNewPassword("");
               },
@@ -202,7 +209,6 @@ function ChangePasswordForm() {
         </Button>
       </form>
       <FormError error={change.isError ? change.error : null} />
-      {generated && <GeneratedPasswordCard password={generated} />}
     </div>
   );
 }

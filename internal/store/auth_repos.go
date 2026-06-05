@@ -67,6 +67,25 @@ func (s *Store) GetAuthUserByID(ctx context.Context, id int64) (AuthUser, error)
 	return u, nil
 }
 
+// GetSoleAuthUser loads the single operator account. The app only ever creates
+// one (enable refuses when auth is already on), so this resolves the account
+// without a username — used by the recovery CLI. Returns sql.ErrNoRows when
+// auth is disabled (the table is empty).
+func (s *Store) GetSoleAuthUser(ctx context.Context) (AuthUser, error) {
+	var u AuthUser
+	err := s.reader.GetContext(ctx, &u, `
+		SELECT id, username, password_hash, created_at, password_changed_at
+		FROM auth_users ORDER BY id LIMIT 1
+	`)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AuthUser{}, err
+		}
+		return AuthUser{}, fmt.Errorf("loading sole auth_user: %w", err)
+	}
+	return u, nil
+}
+
 // InsertAuthUser creates the user. Fails with a unique-constraint error if
 // the username already exists.
 func (s *Store) InsertAuthUser(ctx context.Context, username, passwordHash string) (int64, error) {
@@ -99,6 +118,17 @@ func (s *Store) DeleteAuthUser(ctx context.Context, id int64) error {
 		return fmt.Errorf("deleting auth_user: %w", err)
 	}
 	return nil
+}
+
+// ClearAuthUsers removes every operator account, returning the number deleted.
+// This disables built-in auth (an empty auth_users table is open mode) and is
+// the CLI lockout-recovery path. Sessions cascade away via the foreign key.
+func (s *Store) ClearAuthUsers(ctx context.Context) (int64, error) {
+	res, err := s.writer.ExecContext(ctx, `DELETE FROM auth_users`)
+	if err != nil {
+		return 0, fmt.Errorf("clearing auth_users: %w", err)
+	}
+	return res.RowsAffected()
 }
 
 // InsertAuthSession stores a fresh session for a user.

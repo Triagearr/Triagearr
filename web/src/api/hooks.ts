@@ -11,13 +11,13 @@ import {
   TorrentClientConnectionList,
   AuthChangePasswordResponse,
   AuthEnableResponse,
-  ConfigShape,
   SettingsView,
+  NotificationCatalogue,
+  NotificationDeliveries,
   RunActionList,
   RunList,
   RunPreview,
   RunResponse,
-  ScoreList,
   ScoringDefaults,
   ScoringSimResultList,
   TrackerPolicy,
@@ -30,7 +30,6 @@ import {
   TorrentDetail,
   TorrentList,
   Version,
-  VolumeHistory,
   VolumeResponse,
 } from "./schemas";
 
@@ -39,7 +38,6 @@ export const queryKeys = {
   version: ["version"] as const,
   summary: ["summary"] as const,
   volume: ["volume"] as const,
-  volumeHistory: (since: string) => ["volume", "history", since] as const,
   torrents: (params: Record<string, string | number | boolean>) => ["torrents", params] as const,
   torrent: (hash: string) => ["torrent", hash] as const,
   snapshots: (hash: string, since: string) => ["torrent", hash, "snapshots", since] as const,
@@ -57,6 +55,8 @@ export const queryKeys = {
   trackerPolicies: ["scoring", "tracker-policies"] as const,
   config: ["config"] as const,
   settings: ["settings"] as const,
+  notificationCatalogue: ["notifications", "catalogue"] as const,
+  notificationDeliveries: ["notifications", "deliveries"] as const,
 };
 
 export function useSession() {
@@ -153,13 +153,6 @@ export function useVolume() {
     queryKey: queryKeys.volume,
     queryFn: () => apiFetch("/api/v1/volume", VolumeResponse),
     refetchInterval: 15_000,
-  });
-}
-
-export function useVolumeHistory(since = "24h") {
-  return useQuery({
-    queryKey: queryKeys.volumeHistory(since),
-    queryFn: () => apiFetch(`/api/v1/volume/history?since=${since}`, VolumeHistory),
   });
 }
 
@@ -288,13 +281,6 @@ export function useSnapshots(hash: string, since = "720h") {
   });
 }
 
-export function useScores() {
-  return useQuery({
-    queryKey: queryKeys.scores,
-    queryFn: () => apiFetch("/api/v1/scores?limit=50", ScoreList),
-  });
-}
-
 export function useRuns() {
   return useQuery({
     queryKey: queryKeys.runs,
@@ -365,13 +351,6 @@ export function useArrs() {
   });
 }
 
-export function useConfig() {
-  return useQuery({
-    queryKey: queryKeys.config,
-    queryFn: () => apiFetch("/api/v1/config", ConfigShape),
-  });
-}
-
 export function useSettings() {
   return useQuery({
     queryKey: queryKeys.settings,
@@ -403,10 +382,33 @@ export function useUpdateSettings() {
 
 // POST /api/v1/notifications/test — delivers a synthetic notification through
 // the saved provider config so the operator can verify credentials. Tests the
-// currently-loaded config, so unsaved edits must be saved first.
+// currently-loaded config, so unsaved edits must be saved first. An empty opts
+// tests every provider with the generic event; provider/kind narrow the test.
+export type TestNotificationOpts = { provider?: string; kind?: string };
 export function useTestNotification() {
   return useMutation({
-    mutationFn: () => apiFetchVoid("/api/v1/notifications/test", { method: "POST" }),
+    mutationFn: (opts: TestNotificationOpts = {}) =>
+      apiFetchVoid("/api/v1/notifications/test", {
+        method: "POST",
+        body: JSON.stringify(opts),
+      }),
+  });
+}
+
+// GET /api/v1/notifications/catalogue — the static event taxonomy + severities.
+export function useNotificationCatalogue() {
+  return useQuery({
+    queryKey: queryKeys.notificationCatalogue,
+    queryFn: () => apiFetch("/api/v1/notifications/catalogue", NotificationCatalogue),
+    staleTime: Infinity, // the catalogue is build-static
+  });
+}
+
+// GET /api/v1/notifications/deliveries — recent fan-out attempts (in-memory).
+export function useNotificationDeliveries() {
+  return useQuery({
+    queryKey: queryKeys.notificationDeliveries,
+    queryFn: () => apiFetch("/api/v1/notifications/deliveries", NotificationDeliveries),
   });
 }
 
@@ -660,6 +662,22 @@ export function useTriggerRun() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.runs });
       qc.invalidateQueries({ queryKey: queryKeys.summary });
+      qc.invalidateQueries({ queryKey: ["actions"] });
+    },
+  });
+}
+
+// useStopRun requests a clean stop of an in-flight live run. The stop is
+// cooperative: the backend finishes the candidate it is on, then settles the
+// run to "stopped". The detail panel keeps polling until the status lands.
+export function useStopRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/api/v1/runs/${id}/stop`, RunResponse, { method: "POST" }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.run(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.runs });
       qc.invalidateQueries({ queryKey: ["actions"] });
     },
   });

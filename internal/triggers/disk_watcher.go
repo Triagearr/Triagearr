@@ -6,6 +6,7 @@ package triggers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -14,8 +15,14 @@ import (
 	"github.com/Triagearr/Triagearr/internal/decider"
 	"github.com/Triagearr/Triagearr/internal/notify"
 	"github.com/Triagearr/Triagearr/internal/pollers"
+	"github.com/Triagearr/Triagearr/internal/runlock"
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
+
+// errRunInProgress reports that a live pressure fire was skipped because the
+// shared run-lock was held by another trigger. tick() treats it as a benign
+// skip — not a failure — and leaves lastFire untouched so the next tick retries.
+var errRunInProgress = errors.New("live run already in progress")
 
 // NewDiskWatcher constructs a DiskWatcher for the single watched volume.
 func NewDiskWatcher(rule VolumeRule, d *decider.Decider, store RunStore, interval time.Duration) *DiskWatcher {
@@ -40,14 +47,18 @@ type VolumeRule struct {
 	TargetFreePercent    float64
 }
 
-// RunStore is the subset of store ops the watcher writes through. The last two
-// methods are read-only and serve the post-action notification (ADR-0021).
+// RunStore is the subset of store ops the watcher writes through. The action/
+// name lookups serve the post-action notification (ADR-0021); the notification-
+// state trio backs the throttled target-unreachable alert (ADR-0032).
 type RunStore interface {
 	InsertRun(ctx context.Context, r triagearr.Run) (int64, error)
 	InsertRunItems(ctx context.Context, runID int64, items []triagearr.RunItem) error
 	LatestDiskUsage(ctx context.Context) (*triagearr.DiskUsage, error)
 	ListActionsByRun(ctx context.Context, runID int64) ([]triagearr.Action, error)
 	TorrentNamesByHashes(ctx context.Context, hashes []triagearr.Hash) (map[triagearr.Hash]string, error)
+	GetNotificationState(ctx context.Context, eventKey string) (time.Time, bool, error)
+	MarkNotificationSent(ctx context.Context, eventKey string, at time.Time) error
+	ClearNotificationState(ctx context.Context, eventKey string) error
 }
 
 // DiskWatcher fires Decider runs when the volume drops below its threshold.
@@ -74,6 +85,15 @@ type DiskWatcher struct {
 	// than an inferred one. Nil skips the "after" figure. Wired to
 	// pollers.Statfs.
 	Sampler func(path string) (triagearr.DiskUsage, error)
+	// RunLock is the single-run guard shared with the HTTP server (and, via its
+	// file lock, the CLI). A pressure run that resolves to live must hold it
+	// across Actor.Execute so it can't race a concurrent live run from another
+	// trigger. Nil disables guarding (dry-run daemons / tests that never act).
+	RunLock *runlock.Lock
+	// TargetUnreachableReminder is the minimum delay between two
+	// target-unreachable reminders while the shortfall persists (ADR-0032).
+	// Zero falls back to the config default at wiring time.
+	TargetUnreachableReminder time.Duration
 
 	now func() time.Time
 	// lastFire is the time of the most recent fire. firingNow tracks whether
@@ -120,7 +140,12 @@ func (w *DiskWatcher) tick(ctx context.Context, grace time.Duration) error {
 		return nil
 	}
 	if err := w.fire(ctx, *snap); err != nil {
-		slog.Warn("disk_watcher fire failed", "err", err)
+		// A skip (another trigger holds the run-lock) is benign: leave lastFire
+		// untouched so the next tick retries promptly once the slot frees, rather
+		// than waiting out the re-fire grace for a run that never happened.
+		if !errors.Is(err, errRunInProgress) {
+			slog.Warn("disk_watcher fire failed", "err", err)
+		}
 		return nil
 	}
 	w.lastFire = now
@@ -129,6 +154,22 @@ func (w *DiskWatcher) tick(ctx context.Context, grace time.Duration) error {
 
 func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error {
 	r := w.Rule
+	// Resolve the mode up front (it depends only on DaemonLive, not the plan) so
+	// a live run can claim the shared single-run slot BEFORE planning/persisting.
+	// That way we never write a live run record that won't execute, and a
+	// concurrent HTTP/CLI run blocks this fire cleanly instead of racing the
+	// destructive pipeline.
+	mode := triagearr.ResolveRunMode(w.DaemonLive, triagearr.RunTriggerDiskPressure, false)
+	live := mode == triagearr.RunModeLive && w.Actor != nil
+	if live && w.RunLock != nil {
+		if !w.RunLock.TryAcquire() {
+			slog.Info("skipping pressure run, a live run is already in progress",
+				"free_pct", snap.FreePercent, "target_pct", r.TargetFreePercent)
+			return errRunInProgress
+		}
+		defer w.RunLock.Release()
+	}
+
 	v := decider.Volume{
 		Name:              r.Name,
 		Path:              r.Path,
@@ -142,7 +183,6 @@ func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error 
 	if err != nil {
 		return fmt.Errorf("planning: %w", err)
 	}
-	mode := triagearr.ResolveRunMode(w.DaemonLive, triagearr.RunTriggerDiskPressure, false)
 	run := triagearr.Run{
 		TriggeredBy:         triagearr.RunTriggerDiskPressure,
 		TriggeredAt:         w.now(),
@@ -169,13 +209,69 @@ func (w *DiskWatcher) fire(ctx context.Context, snap triagearr.DiskUsage) error 
 		"stop_reason", string(plan.StopReason),
 		"mode", string(mode),
 	)
-	if mode == triagearr.RunModeLive && w.Actor != nil {
-		if err := w.Actor.Execute(ctx, id); err != nil {
+	if live {
+		// Arm the stop registry so an operator can halt this autonomous run from
+		// the UI; the Actor observes the cancellation between candidates.
+		runCtx := ctx
+		if w.RunLock != nil {
+			var cancel context.CancelFunc
+			runCtx, cancel = context.WithCancel(ctx)
+			defer cancel()
+			w.RunLock.Arm(id, cancel)
+		}
+		if err := w.Actor.Execute(runCtx, id); err != nil {
 			return fmt.Errorf("actor execute: %w", err)
 		}
 		w.notifyRun(ctx, snap, id, mode, plan.Items)
 	}
+	// Advisory, mode-independent: warn the operator when even deleting every
+	// eligible candidate can't reach target. Runs after a live execute so the
+	// message reflects what was actually reclaimable.
+	w.maybeAlertShortfall(ctx, snap, plan, mode)
 	return nil
+}
+
+// maybeAlertShortfall emits the throttled "target unreachable" alert (ADR-0032)
+// when the plan stopped on no_more_candidates — the volume can't reach target
+// even after deleting everything eligible. Best-effort: every failure is logged
+// and swallowed so it never taints the run. When the condition does not hold the
+// throttle is cleared so a future episode alerts immediately.
+func (w *DiskWatcher) maybeAlertShortfall(ctx context.Context, snap triagearr.DiskUsage, plan decider.RunPlan, mode triagearr.RunMode) {
+	const eventPrefix = "target_unreachable:"
+	key := eventPrefix + w.Rule.Name
+
+	if plan.StopReason != triagearr.StopNoMoreCandidates {
+		if err := w.Store.ClearNotificationState(ctx, key); err != nil {
+			slog.Warn("notify: clearing target-unreachable state failed", "err", err)
+		}
+		return
+	}
+	if w.Notifier == nil || w.Notifier.Empty() {
+		return
+	}
+
+	last, sent, err := w.Store.GetNotificationState(ctx, key)
+	if err != nil {
+		slog.Warn("notify: reading target-unreachable state failed", "err", err)
+		return
+	}
+	now := w.now()
+	if sent && now.Sub(last) < w.TargetUnreachableReminder {
+		return // still inside the reminder window
+	}
+
+	w.Notifier.DispatchAlert(ctx, notify.Alert{
+		VolumeName:       w.Rule.Name,
+		Mode:             string(mode),
+		FreePct:          snap.FreePercent,
+		TargetFreePct:    w.Rule.TargetFreePercent,
+		NeedBytes:        decider.NeededBytes(snap.TotalBytes, snap.FreePercent, w.Rule.TargetFreePercent),
+		ReclaimableBytes: plan.EstimatedFreedBytes,
+		CandidateCount:   len(plan.Items),
+	})
+	if err := w.Store.MarkNotificationSent(ctx, key, now); err != nil {
+		slog.Warn("notify: recording target-unreachable state failed", "err", err)
+	}
 }
 
 // notifyRun builds and dispatches the post-action report for a live

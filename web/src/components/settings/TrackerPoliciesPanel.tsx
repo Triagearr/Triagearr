@@ -194,11 +194,15 @@ function PoliciesTable() {
               <TD className="text-right tabular-nums">{row.torrent_count}</TD>
               <TD>
                 {row.all_dead ? (
-                  <Badge variant="destructive">{m.settings_tracker_status_dead()}</Badge>
+                  <Badge variant="outline" className="border-transparent bg-rose-600 text-white dark:bg-rose-600">
+                    {m.settings_tracker_status_dead()}
+                  </Badge>
                 ) : row.any_alive ? (
-                  <Badge variant="success">{m.settings_tracker_status_alive()}</Badge>
+                  <Badge variant="outline" className="border-transparent bg-emerald-600 text-white dark:bg-emerald-600">
+                    {m.settings_tracker_status_alive()}
+                  </Badge>
                 ) : (
-                  <Badge>—</Badge>
+                  <Badge variant="muted">—</Badge>
                 )}
               </TD>
               <TD>

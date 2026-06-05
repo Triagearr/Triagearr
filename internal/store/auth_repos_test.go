@@ -61,6 +61,47 @@ func TestAuthUser_GetMissing(t *testing.T) {
 	require.ErrorIs(t, err, sql.ErrNoRows)
 }
 
+func TestGetSoleAuthUser(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	_, err := s.GetSoleAuthUser(ctx)
+	require.ErrorIs(t, err, sql.ErrNoRows, "no account → ErrNoRows (auth disabled)")
+
+	id, err := s.InsertAuthUser(ctx, "operator", "hash")
+	require.NoError(t, err)
+
+	sole, err := s.GetSoleAuthUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, id, sole.ID)
+	require.Equal(t, "operator", sole.Username)
+}
+
+func TestClearAuthUsers(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	// Empty table → idempotent no-op reporting zero rows.
+	n, err := s.ClearAuthUsers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), n)
+
+	uid, err := s.InsertAuthUser(ctx, "operator", "hash")
+	require.NoError(t, err)
+	require.NoError(t, s.InsertAuthSession(ctx, "tok", uid, time.Now().UTC().Add(time.Hour)))
+
+	n, err = s.ClearAuthUsers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), n)
+
+	has, err := s.HasAuthUser(ctx)
+	require.NoError(t, err)
+	require.False(t, has, "clearing returns the store to open mode")
+
+	_, err = s.LookupAuthSession(ctx, "tok")
+	require.ErrorIs(t, err, sql.ErrNoRows, "clearing users must cascade their sessions")
+}
+
 func TestAuthSession_LookupAndExpiry(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

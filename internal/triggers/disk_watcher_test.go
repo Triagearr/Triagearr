@@ -14,14 +14,15 @@ import (
 	"github.com/Triagearr/Triagearr/internal/triagearr"
 )
 
-// fakeNotifier records every report it is handed.
+// fakeNotifier records every event it is handed.
 type fakeNotifier struct {
-	got []notify.Report
+	got []notify.Event
 }
 
-func (f *fakeNotifier) Name() string { return "fake" }
-func (f *fakeNotifier) Send(_ context.Context, r notify.Report) error {
-	f.got = append(f.got, r)
+func (f *fakeNotifier) Name() string            { return "fake" }
+func (f *fakeNotifier) Routing() notify.Routing { return notify.Routing{} }
+func (f *fakeNotifier) Send(_ context.Context, ev notify.Event) error {
+	f.got = append(f.got, ev)
 	return nil
 }
 
@@ -174,18 +175,19 @@ func TestDiskWatcher_NotifyRun(t *testing.T) {
 	w.notifyRun(ctx, snap, runID, triagearr.RunModeLive, items)
 
 	require.Len(t, fn.got, 1)
-	rep := fn.got[0]
-	require.Equal(t, runID, rep.RunID)
-	require.Equal(t, "data", rep.VolumeName)
-	require.Equal(t, 5.0, rep.FreePctBefore)
-	require.Equal(t, 22.0, rep.FreePctAfter)
-	require.Len(t, rep.Items, 2)
-	// Display names resolve from the torrents table (seeded name == hash).
-	require.Equal(t, "h1", rep.Items[0].Name)
-	require.Equal(t, 1, rep.SucceededCount())
-	require.Equal(t, int64(5*1024*1024*1024), rep.TotalFreedBytes)
+	msg := fn.got[0]
+	// One success + one qbit failure → a partial run (ADR-0033).
+	require.Equal(t, notify.EventRunPartial, msg.Kind)
+	require.Equal(t, notify.SeverityWarning, msg.Severity)
+	require.NotNil(t, msg.Run)
+	// The provider sees formatted text (ADR-0032); assert the run details landed.
+	require.Contains(t, msg.Text, `disk pressure on "data"`)
+	require.Contains(t, msg.Text, "5.0% -> 22.0%")
+	require.Contains(t, msg.Text, "Deleted 1/2 items")
+	// Display name resolves from the torrents table (seeded name == hash).
+	require.Contains(t, msg.Text, "h1 — 5.0 GiB [ok]")
 	// The failed item must still carry its real size (not actions.freed_bytes).
-	require.Equal(t, int64(3*1024*1024*1024), rep.Items[1].SizeBytes)
+	require.Contains(t, msg.Text, "h2 — 3.0 GiB [failed: qbit]")
 }
 
 func TestDiskWatcher_NotifyRun_NoActionsIsSilent(t *testing.T) {

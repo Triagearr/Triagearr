@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -126,8 +127,9 @@ func (s *Server) resolveSession(r *http.Request) (int64, bool) {
 	sess, err := s.opts.Store.LookupAuthSession(r.Context(), hash)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
-			// Treat a DB error as anonymous; the next request will retry.
-			_ = err
+			// Treat a DB error as anonymous; the next request will retry. Logged so
+			// a failing auth DB is visible rather than silently degrading to anon.
+			slog.Warn("auth: session lookup failed", "err", err)
 		}
 		return 0, false
 	}

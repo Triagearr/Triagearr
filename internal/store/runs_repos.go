@@ -61,9 +61,25 @@ func (s *Store) InsertRunItems(ctx context.Context, runID int64, items []triagea
 
 // MarkRunStatus updates only the status column of an existing run.
 func (s *Store) MarkRunStatus(ctx context.Context, id int64, status string) error {
-	res, err := s.writer.ExecContext(ctx, `UPDATE runs SET status = ? WHERE id = ?`, status, id)
+	return s.updateRun(ctx, id, `UPDATE runs SET status = ? WHERE id = ?`, status)
+}
+
+// MarkRunStopped marks a run cut short by an operator: status "stopped" plus
+// the user_stopped reason, so the UI can distinguish a clean stop from an error
+// abort or a target-reached completion.
+func (s *Store) MarkRunStopped(ctx context.Context, id int64) error {
+	return s.updateRun(ctx, id,
+		`UPDATE runs SET status = 'stopped', stop_reason = ? WHERE id = ?`,
+		string(triagearr.StopUserStopped))
+}
+
+// updateRun runs a single-row UPDATE against runs keyed by id (passed last) and
+// reports "run not found" when nothing matched, sparing each marker the same
+// exec/rows-affected boilerplate.
+func (s *Store) updateRun(ctx context.Context, id int64, query string, args ...any) error {
+	res, err := s.writer.ExecContext(ctx, query, append(args, id)...)
 	if err != nil {
-		return fmt.Errorf("updating run %d status: %w", id, err)
+		return fmt.Errorf("updating run %d: %w", id, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
