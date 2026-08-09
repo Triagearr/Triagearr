@@ -193,16 +193,16 @@ executed — manual HTTP/CLI runs stay silent. One event, not four.
 - [x] Mount-convention boot validation (ADR-0023): sample qBit `save_path` + *arr import paths, `stat()` them in Triagearr's namespace, refuse to start with a diagnostic when the layout violates the TRaSH single-shared-mount convention
 - [x] Tracker poller hybrid (event + periodic): qBit poller signals on `trackerCatchup` after each tick; tracker poller catches up `HashesWithoutTrackers` (2s debounce) instead of waiting for the next 6h sweep. Periodic sweep kept for alive→dead transitions (Factor 7).
 - [x] Optional `public_url` per connection (arr + torrent client): the internal URL keeps serving API calls, but deep links in the UI (today: `arr_url` returned by `GET /api/v1/torrents/{hash}`) prefer `public_url` when set so users land on `https://sonarr.example.com/series/...` instead of `http://gluetun:8989/...`. `arrBaseURL` now reads the DB-owned `arr_connections` row (ADR-0022 alignment). `public_url` is also persisted on `torrent_client_connections` for a future "Open client" link; no per-torrent deep link is exposed today since qBit WebUI has no canonical per-torrent route.
-- [ ] Test coverage ≥70% on `scorer`, `linker`, `decider`, `actor`
-- [x] `govulncheck` clean (added to `.github/workflows/test.yml` after the coverage step; currently 0 vulns in app code, 13 in transitive deps not called)
+- [x] Test coverage ≥70% on `scorer`, `linker`, `decider`, `actor` (2026-08-09: total 79.2%, package floor 65%, `actor`/`decider` held to 80% via `.testcoverage.yml` override — gate enforced in CI on every PR)
+- [x] `govulncheck` clean (added to `.github/workflows/test.yml` after the coverage step; go1.26.5 clears GO-2026-5856, the last reachable finding — see #16)
 - [x] Goreleaser produces signed artifacts (cosign v3 keyless OIDC, bundle format, signs the `checksums.txt` which covers archives + SBOMs transitively; container images signed via `docker_signs`)
 - [x] SBOM generation via `syft` in the goreleaser pipeline (CycloneDX per archive — SPDX dropped, audience is homelab not enterprise compliance)
-- [x] SLSA build provenance attestation via `actions/attest-build-provenance@v4.1.0` (one step per `dist/checksums.txt`, one per `dist/digests.txt` for the container)
+- [x] SLSA build provenance attestation via `actions/attest-build-provenance@v4.2.2` (one step per `dist/checksums.txt`, one per `dist/digests.txt` for the container)
 - [x] Container image: distroless or `scratch` base, runs as non-root (`USER 65532:65532`), read-only root filesystem
 - [x] `SECURITY.md` at repo root: supported versions, GitHub private advisory + email fallback, scope, built-in safety contract, auth/secret storage, ADR cross-refs
 - [x] Dependabot configured for weekly dep bumps grouped by ecosystem (gomod, npm/web, github-actions, docker) — `.github/dependabot.yml`. Renovate considered but Dependabot is GitHub-native and sufficient for the dep surface.
 - [x] Documentation reviewed for accuracy against final code (2026-05-29: README + docs reconciled to code — net/http ServeMux not chi, ADR-0019 opt-in auth, `torrent_clients`/scoring DB-owned config, real endpoint surface)
-- [ ] Demo GIF in README
+- [x] Demo GIF in README (`docs/assets/demo.webp`, embedded in the README hero)
 - [ ] Announcement post drafted (r/sonarr, r/Plex, Discord communities)
 
 ## Post-1.0 backlog (V2 candidates)

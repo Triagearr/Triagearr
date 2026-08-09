@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0 – 1.0.0-rc4] - 2026-08-09
+
+Everything shipped between the last dated entry (0.6.1) and this cleanup
+landed under a single accumulating `[Unreleased]` section instead of being
+cut per-tag (`v0.7.0` through `v1.0.0-rc3` were all released without a
+changelog update) — grouped here rather than reconstructed retroactively
+per-tag. Also includes `1.0.0-rc4`: the go1.26.5 govulncheck fix and the
+go-deps/web-deps/actions dependency bumps (#16-#19).
+
 ### Added
 - Multi-channel notifications (ADR-0033). Beyond Telegram, notifications now
   fan out to Discord, ntfy, email (SMTP) and Slack via `unraid/apprise-go`, plus
