@@ -9,31 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TorrentsRouteImport } from './routes/torrents'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as ActionsRouteImport } from './routes/actions'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as TorrentsIndexRouteImport } from './routes/torrents.index'
+import { Route as ActionsRouteImport } from './routes/actions'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as TorrentsRouteImport } from './routes/torrents'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
-import { Route as SettingsTorrentClientConnectionsRouteImport } from './routes/settings.torrent-client-connections'
-import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
-import { Route as SettingsScoringRouteImport } from './routes/settings.scoring'
-import { Route as SettingsPollingRouteImport } from './routes/settings.polling'
-import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
-import { Route as SettingsModeRouteImport } from './routes/settings.mode'
-import { Route as SettingsDiskPressureRouteImport } from './routes/settings.disk-pressure'
-import { Route as SettingsDebugRouteImport } from './routes/settings.debug'
-import { Route as SettingsArrConnectionsRouteImport } from './routes/settings.arr-connections'
 import { Route as SettingsAboutRouteImport } from './routes/settings.about'
+import { Route as SettingsArrConnectionsRouteImport } from './routes/settings.arr-connections'
+import { Route as SettingsDebugRouteImport } from './routes/settings.debug'
+import { Route as SettingsDiskPressureRouteImport } from './routes/settings.disk-pressure'
+import { Route as SettingsModeRouteImport } from './routes/settings.mode'
+import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
+import { Route as SettingsPollingRouteImport } from './routes/settings.polling'
+import { Route as SettingsScoringRouteImport } from './routes/settings.scoring'
+import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
+import { Route as SettingsTorrentClientConnectionsRouteImport } from './routes/settings.torrent-client-connections'
+import { Route as TorrentsIndexRouteImport } from './routes/torrents.index'
 
-const TorrentsRoute = TorrentsRouteImport.update({
-  id: '/torrents',
-  path: '/torrents',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ActionsRoute = ActionsRouteImport.update({
@@ -41,19 +36,64 @@ const ActionsRoute = ActionsRouteImport.update({
   path: '/actions',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TorrentsIndexRoute = TorrentsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => TorrentsRoute,
+const TorrentsRoute = TorrentsRouteImport.update({
+  id: '/torrents',
+  path: '/torrents',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAboutRoute = SettingsAboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsArrConnectionsRoute = SettingsArrConnectionsRouteImport.update({
+  id: '/arr-connections',
+  path: '/arr-connections',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsDebugRoute = SettingsDebugRouteImport.update({
+  id: '/debug',
+  path: '/debug',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsDiskPressureRoute = SettingsDiskPressureRouteImport.update({
+  id: '/disk-pressure',
+  path: '/disk-pressure',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsModeRoute = SettingsModeRouteImport.update({
+  id: '/mode',
+  path: '/mode',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsPollingRoute = SettingsPollingRouteImport.update({
+  id: '/polling',
+  path: '/polling',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsScoringRoute = SettingsScoringRouteImport.update({
+  id: '/scoring',
+  path: '/scoring',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSecurityRoute = SettingsSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsTorrentClientConnectionsRoute =
@@ -62,50 +102,10 @@ const SettingsTorrentClientConnectionsRoute =
     path: '/torrent-client-connections',
     getParentRoute: () => SettingsRoute,
   } as any)
-const SettingsSecurityRoute = SettingsSecurityRouteImport.update({
-  id: '/security',
-  path: '/security',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsScoringRoute = SettingsScoringRouteImport.update({
-  id: '/scoring',
-  path: '/scoring',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsPollingRoute = SettingsPollingRouteImport.update({
-  id: '/polling',
-  path: '/polling',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
-  id: '/notifications',
-  path: '/notifications',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsModeRoute = SettingsModeRouteImport.update({
-  id: '/mode',
-  path: '/mode',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsDiskPressureRoute = SettingsDiskPressureRouteImport.update({
-  id: '/disk-pressure',
-  path: '/disk-pressure',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsDebugRoute = SettingsDebugRouteImport.update({
-  id: '/debug',
-  path: '/debug',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsArrConnectionsRoute = SettingsArrConnectionsRouteImport.update({
-  id: '/arr-connections',
-  path: '/arr-connections',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsAboutRoute = SettingsAboutRouteImport.update({
-  id: '/about',
-  path: '/about',
-  getParentRoute: () => SettingsRoute,
+const TorrentsIndexRoute = TorrentsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TorrentsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -225,18 +225,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/torrents': {
-      id: '/torrents'
-      path: '/torrents'
-      fullPath: '/torrents'
-      preLoaderRoute: typeof TorrentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/actions': {
@@ -246,19 +239,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/torrents/': {
-      id: '/torrents/'
-      path: '/'
-      fullPath: '/torrents/'
-      preLoaderRoute: typeof TorrentsIndexRouteImport
-      parentRoute: typeof TorrentsRoute
+    '/torrents': {
+      id: '/torrents'
+      path: '/torrents'
+      fullPath: '/torrents'
+      preLoaderRoute: typeof TorrentsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/settings/': {
       id: '/settings/'
@@ -267,60 +260,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/torrent-client-connections': {
-      id: '/settings/torrent-client-connections'
-      path: '/torrent-client-connections'
-      fullPath: '/settings/torrent-client-connections'
-      preLoaderRoute: typeof SettingsTorrentClientConnectionsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/security': {
-      id: '/settings/security'
-      path: '/security'
-      fullPath: '/settings/security'
-      preLoaderRoute: typeof SettingsSecurityRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/scoring': {
-      id: '/settings/scoring'
-      path: '/scoring'
-      fullPath: '/settings/scoring'
-      preLoaderRoute: typeof SettingsScoringRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/polling': {
-      id: '/settings/polling'
-      path: '/polling'
-      fullPath: '/settings/polling'
-      preLoaderRoute: typeof SettingsPollingRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/notifications': {
-      id: '/settings/notifications'
-      path: '/notifications'
-      fullPath: '/settings/notifications'
-      preLoaderRoute: typeof SettingsNotificationsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/mode': {
-      id: '/settings/mode'
-      path: '/mode'
-      fullPath: '/settings/mode'
-      preLoaderRoute: typeof SettingsModeRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/disk-pressure': {
-      id: '/settings/disk-pressure'
-      path: '/disk-pressure'
-      fullPath: '/settings/disk-pressure'
-      preLoaderRoute: typeof SettingsDiskPressureRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/debug': {
-      id: '/settings/debug'
-      path: '/debug'
-      fullPath: '/settings/debug'
-      preLoaderRoute: typeof SettingsDebugRouteImport
+    '/settings/about': {
+      id: '/settings/about'
+      path: '/about'
+      fullPath: '/settings/about'
+      preLoaderRoute: typeof SettingsAboutRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/arr-connections': {
@@ -330,12 +274,68 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsArrConnectionsRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/about': {
-      id: '/settings/about'
-      path: '/about'
-      fullPath: '/settings/about'
-      preLoaderRoute: typeof SettingsAboutRouteImport
+    '/settings/debug': {
+      id: '/settings/debug'
+      path: '/debug'
+      fullPath: '/settings/debug'
+      preLoaderRoute: typeof SettingsDebugRouteImport
       parentRoute: typeof SettingsRoute
+    }
+    '/settings/disk-pressure': {
+      id: '/settings/disk-pressure'
+      path: '/disk-pressure'
+      fullPath: '/settings/disk-pressure'
+      preLoaderRoute: typeof SettingsDiskPressureRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/mode': {
+      id: '/settings/mode'
+      path: '/mode'
+      fullPath: '/settings/mode'
+      preLoaderRoute: typeof SettingsModeRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/notifications': {
+      id: '/settings/notifications'
+      path: '/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof SettingsNotificationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/polling': {
+      id: '/settings/polling'
+      path: '/polling'
+      fullPath: '/settings/polling'
+      preLoaderRoute: typeof SettingsPollingRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/scoring': {
+      id: '/settings/scoring'
+      path: '/scoring'
+      fullPath: '/settings/scoring'
+      preLoaderRoute: typeof SettingsScoringRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/security': {
+      id: '/settings/security'
+      path: '/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof SettingsSecurityRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/torrent-client-connections': {
+      id: '/settings/torrent-client-connections'
+      path: '/torrent-client-connections'
+      fullPath: '/settings/torrent-client-connections'
+      preLoaderRoute: typeof SettingsTorrentClientConnectionsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/torrents/': {
+      id: '/torrents/'
+      path: '/'
+      fullPath: '/torrents/'
+      preLoaderRoute: typeof TorrentsIndexRouteImport
+      parentRoute: typeof TorrentsRoute
     }
   }
 }
