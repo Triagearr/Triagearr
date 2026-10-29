@@ -153,6 +153,7 @@ type linkView struct {
 	ArrURL       string `json:"arr_url"`
 	TitleSlug    string `json:"title_slug"`
 	FileID       int64  `json:"file_id"`
+	MediaID      int64  `json:"media_id"`
 	Size         int64  `json:"size"`
 	LivePath     string `json:"live_path"`
 	DroppedPath  string `json:"dropped_path"`
@@ -234,6 +235,7 @@ func (s *Server) handleGetTorrent(w http.ResponseWriter, r *http.Request) {
 					ArrURL:       baseURL,
 					TitleSlug:    l.TitleSlug,
 					FileID:       l.FileID,
+					MediaID:      l.MediaID,
 					Size:         l.Size,
 					LivePath:     l.LivePath,
 					DroppedPath:  l.DroppedPath,

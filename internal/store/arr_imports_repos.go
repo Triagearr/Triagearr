@@ -97,6 +97,7 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 	type row struct {
 		ArrType      string `db:"arr_type"`
 		FileID       int64  `db:"file_id"`
+		MediaID      int64  `db:"media_id"`
 		DownloadID   string `db:"download_id"`
 		DroppedPath  string `db:"dropped_path"`
 		ImportedPath string `db:"imported_path"`
@@ -106,7 +107,7 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 	}
 	var rows []row
 	if err := s.reader.SelectContext(ctx, &rows, `
-		SELECT ai.arr_type, ai.file_id, ai.download_id,
+		SELECT ai.arr_type, ai.file_id, mf.media_id, ai.download_id,
 		       ai.dropped_path, ai.imported_path, mf.size, mf.path AS live_path,
 		       COALESCE(m.title_slug, '') AS title_slug
 		FROM arr_imports ai
@@ -126,6 +127,7 @@ func (s *Store) LinksByHash(ctx context.Context, hash triagearr.Hash) ([]triagea
 		out[i] = triagearr.Link{
 			ArrType:      triagearr.ArrType(r.ArrType),
 			FileID:       r.FileID,
+			MediaID:      r.MediaID,
 			DownloadID:   triagearr.Hash(r.DownloadID),
 			TitleSlug:    r.TitleSlug,
 			DroppedPath:  r.DroppedPath,
