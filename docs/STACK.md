@@ -69,10 +69,12 @@ These are all `golang.org/x` packages — stdlib-adjacent, maintained by the Go 
 
 | | Choice | Version | Alternatives considered |
 |---|---|---|---|
-| Multi-channel fan-out | `github.com/unraid/apprise-go` | **v0.2.6** | `containrrr/shoutrrr` (stale, Aug 2023), hand-written `net/http` per channel |
+| Multi-channel fan-out | `github.com/unraid/apprise-go` | **v0.2.8** | `containrrr/shoutrrr` (stale, Aug 2023), hand-written `net/http` per channel |
 | Structured webhook | `net/http` (stdlib) | n/a | — |
 
 **Why Apprise (ADR-0033):** human channels (Telegram, Discord, ntfy, email, Slack) are delivered through `unraid/apprise-go`, a maintained 1:1 Go port of the standard Apprise URL schema. It is **+1 direct dependency** (transitive tree: `gomarkdown/markdown` + `golang.org/x/crypto` + `golang.org/x/net`, no heavy SDKs) and exposes a semantic `NotifyType` that maps onto Triagearr's event severity, so each service renders priority/colour natively. This overrides ADR-0001's stdlib-first default for a scoped, high-leverage gain — hand-writing a `net/http` adapter per channel (the ADR-0021 Telegram bar) does not scale to five channels. `containrrr/shoutrrr` was the obvious Go pick but is ~2 years stale and lacks a semantic notification type. The native Telegram adapter from ADR-0021 is **removed** — Telegram now rides Apprise.
+
+**Why apprise-go stays on 0.2.x:** 0.3 adds an AMQP client and 0.4 adds XMPP and OpenPGP (~80 extra packages compiled in) for channels Triagearr does not use; that breaks the "no heavy SDKs" bar above. Revisit only for a security fix.
 
 **Why the webhook stays stdlib:** Apprise is a text sink and cannot emit arbitrary structured JSON. The native webhook (`internal/notify/webhook`, ~60 lines `net/http` + HMAC-SHA256) is the one provider that serialises the typed event for machine consumers (automation), realising ADR-0032's deferred "Option B" exactly where it pays off.
 
@@ -80,17 +82,18 @@ These are all `golang.org/x` packages — stdlib-adjacent, maintained by the Go 
 
 | | Choice | Version | Alternatives considered |
 |---|---|---|---|
-| Bundler | Vite | **8.0.x** | webpack, parcel |
+| Bundler | Vite | **8.3.x** | webpack, parcel |
 | Runtime / pm | Bun | **1.3.x** | npm, pnpm, yarn |
-| Framework | React | **19.2.6** | Svelte 5, Preact, Solid.js, HTMX + Templ |
+| Framework | React | **19.3.1** | Svelte 5, Preact, Solid.js, HTMX + Templ |
 | Language | TypeScript | **6.0.x** | plain JavaScript |
 | Component library | shadcn/ui primitives (handcrafted equiv.) | **4.7.0** | Radix UI, Headless UI, Mantine |
-| Icons | lucide-react | **1.16.x** | Heroicons, Phosphor |
+| Icons | lucide-react | **1.64.x** | Heroicons, Phosphor |
 | Routing | TanStack Router | **1.170.x** | React Router |
-| Data fetching | TanStack Query | **5.100.x** | SWR, plain fetch |
+| Data fetching | TanStack Query | **5.105.x** | SWR, plain fetch |
 | Styling | Tailwind CSS | **4.3.x** (Vite-native plugin) | vanilla CSS, CSS modules |
-| Charts | Recharts | **3.8.x** | Tremor, visx, uPlot |
-| Schema validation | zod | **4.4.x** | yup, valibot |
+| Charts | Recharts | **3.10.x** | Tremor, visx, uPlot |
+| Schema validation | zod | **4.6.x** | yup, valibot |
+| Fonts | `@fontsource-variable/geist` + `geist-mono` | **5.3.x** | `geist` (pulls Next.js as a peer just to ship two woff2 files) |
 | Embedding | `embed.FS` (stdlib) | n/a | http.FileSystem from disk |
 
 **Why React 19 + shadcn:** ecosystem alignment (Sonarr, Radarr, Maintainerr, Bazarr are all React-based), the highest visual ceiling (shadcn produces "this looks professional" UIs with minimal effort), and the largest contributor pool. See [ADR-0008](adr/0008-react-shadcn-ui.md) and [ADR-0018](adr/0018-m6-frontend-stack.md) for the M6-era tightening.

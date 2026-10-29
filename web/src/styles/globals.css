@@ -1,21 +1,8 @@
 @import "tailwindcss";
 
 /* ── Geist fonts ──────────────────────────────────────────────────────────── */
-@font-face {
-  font-family: "Geist";
-  src: url("../../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Geist Mono";
-  src: url("../../node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 /* ── Design tokens ────────────────────────────────────────────────────────── */
 @layer base {
@@ -95,7 +82,7 @@
   body {
     background: var(--bg);
     color: var(--fg);
-    font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-family: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     font-size: 13px;
   }
@@ -120,8 +107,8 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --font-sans: "Geist", ui-sans-serif, system-ui;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui;
 }
 
 /* ── App shell ────────────────────────────────────────────────────────────── */
@@ -180,7 +167,7 @@
 .nav-count {
   margin-left: auto;
   font-size: 10.5px;
-  font-family: "Geist Mono", ui-monospace, monospace;
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
   color: var(--fg-3);
 }
 .sidebar-foot {
@@ -201,7 +188,7 @@
 .sidebar-foot-row strong {
   color: var(--fg-2);
   font-weight: 500;
-  font-family: "Geist Mono", ui-monospace, monospace;
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
   font-size: 11px;
 }
 .sidebar-foot-divider {
@@ -339,14 +326,14 @@
 .tbl tr.clickable { cursor: pointer; }
 .tbl tr.clickable:hover td { background: var(--hover); }
 .tbl tr.row-selected td { background: color-mix(in oklch, var(--primary) 8%, var(--card)); }
-.tbl td.num { font-family: "Geist Mono", ui-monospace, monospace; text-align: right; font-variant-numeric: tabular-nums; }
-.tbl td.mono { font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; }
+.tbl td.num { font-family: "Geist Mono Variable", ui-monospace, monospace; text-align: right; font-variant-numeric: tabular-nums; }
+.tbl td.mono { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 12px; }
 .name-cell { max-width: 0; }
 .name-text { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; }
 .name-meta { display: flex; gap: 5px; align-items: center; margin-top: 3px; font-size: 10.5px; color: var(--fg-3); flex-wrap: wrap; }
 
 /* ── Score cell ───────────────────────────────────────────────────────────── */
-.score-cell { display: inline-flex; align-items: center; gap: 7px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; color: var(--fg-2); }
+.score-cell { display: inline-flex; align-items: center; gap: 7px; font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 12px; color: var(--fg-2); }
 /* Fixed-width numeric column so every cell aligns regardless of magnitude
    (scores span "0.00" to a +2000 boost or a −10000 HnR veto). The bar keeps its
    fixed track and proportional fill; only the number was making cells jump. */
@@ -360,7 +347,7 @@
 
 /* ── Stat cards ───────────────────────────────────────────────────────────── */
 .stat-label { font-size: 11.5px; color: var(--fg-3); margin-bottom: 2px; }
-.stat-value { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; font-family: "Geist Mono", ui-monospace, monospace; }
+.stat-value { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; font-family: "Geist Mono Variable", ui-monospace, monospace; }
 .stat-foot  { font-size: 11px; color: var(--fg-3); margin-top: 3px; }
 
 /* ── Disk gauge ───────────────────────────────────────────────────────────── */
@@ -397,7 +384,7 @@
   transform: translateY(-50%);
   white-space: nowrap;
   font-size: 10.5px;
-  font-family: "Geist Mono", ui-monospace, monospace;
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
   color: var(--fg-2);
 }
 .mark-label-text.right { left:  calc(100% + 5px); }
@@ -414,12 +401,12 @@
 }
 .gauge-grid > div { background: var(--card); padding: 9px 12px; }
 .gauge-lbl { font-size: 11px; color: var(--fg-3); }
-.gauge-val { font-family: "Geist Mono", ui-monospace, monospace; font-size: 14px; margin-top: 2px; }
+.gauge-val { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 14px; margin-top: 2px; }
 
 /* ── Disk editor (settings drag handles) ─────────────────────────────────── */
 .disk-editor { user-select: none; }
 .disk-editor-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 20px; }
-.disk-editor-current { font-size: 32px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; font-family: "Geist Mono", ui-monospace, monospace; }
+.disk-editor-current { font-size: 32px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; font-family: "Geist Mono Variable", ui-monospace, monospace; }
 .disk-editor-bar-region { position: relative; margin: 0 20px; padding-top: 36px; padding-bottom: 36px; }
 .disk-editor-track { position: relative; height: 28px; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--border); overflow: hidden; }
 .disk-editor-fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, var(--green), var(--amber) 55%, var(--red)); opacity: 0.85; transition: width 200ms; }
@@ -507,7 +494,7 @@
   width: 100%;
   box-sizing: border-box;
 }
-.ds-input.mono-val, .ds-select.mono-val { font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; }
+.ds-input.mono-val, .ds-select.mono-val { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 12px; }
 .ds-input:focus, .ds-select:focus { border-color: var(--primary); outline: 2px solid var(--ring); outline-offset: 1px; }
 .ds-input:disabled { opacity: 0.55; background: var(--bg-2); }
 .ds-input-sm  { height: 26px; padding: 0 7px; font-size: 11.5px; }
@@ -684,7 +671,7 @@
 .arr-tile-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .arr-tile-tag  { font-size: 11px; color: var(--fg-3); margin-top: 1px; }
 .arr-tile-state { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11.5px; flex-shrink: 0; min-width: 0; }
-.arr-tile-url { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arr-tile-url { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 11px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* wrap so chips drop to a new line instead of spilling past a narrow tile;
    min-height is only a floor, so the extra row just grows the card. */
 .arr-tile-toggles { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
@@ -704,15 +691,15 @@
 .arr-chip-dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; display: inline-block; }
 /* break long unbreakable tokens (URLs, keys) so the message wraps inside the
    card rather than being clipped or pushing the tile wider. */
-.arr-tile-error { font-family: "Geist Mono", ui-monospace, monospace; font-size: 10.5px; color: var(--red-2); background: var(--red-bg); padding: 5px 8px; border-radius: 4px; display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.arr-tile-error { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 10.5px; color: var(--red-2); background: var(--red-bg); padding: 5px 8px; border-radius: 4px; display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
 .arr-tile-foot { font-size: 11px; color: var(--fg-3); display: flex; align-items: center; }
 .arr-tile-empty { text-align: center; padding: 16px; color: var(--fg-3); font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; border: 1px dashed var(--border); border-radius: 6px; }
 
 /* ── Audit trail ──────────────────────────────────────────────────────────── */
 .audit-step { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
 .audit-step:last-child { border-bottom: none; }
-.audit-step-time { font-family: "Geist Mono", ui-monospace, monospace; font-size: 10.5px; color: var(--fg-3); flex: none; min-width: 36px; }
-.audit-step-name { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--fg-2); flex: none; }
+.audit-step-time { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 10.5px; color: var(--fg-3); flex: none; min-width: 36px; }
+.audit-step-name { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 11.5px; color: var(--fg-2); flex: none; }
 .audit-step-detail { font-size: 11px; color: var(--fg-3); }
 
 /* ── Live strip ───────────────────────────────────────────────────────────── */
@@ -732,7 +719,7 @@
 }
 .metric-cell { background: var(--card); padding: 9px 11px; }
 .metric-k { font-size: 10px; color: var(--fg-3); text-transform: uppercase; letter-spacing: .05em; }
-.metric-v { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11.5px; margin-top: 2px; }
+.metric-v { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 11.5px; margin-top: 2px; }
 .metric-v.plain { font-family: inherit; font-size: 12.5px; }
 
 /* ── Inline banner (alerts) ──────────────────────────────────────────────── */
@@ -754,7 +741,7 @@
 /* ── Misc ─────────────────────────────────────────────────────────────────── */
 .kv-grid { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 12.5px; }
 .kv-grid dt { color: var(--fg-3); }
-.kv-grid dd { margin: 0; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; }
+.kv-grid dd { margin: 0; font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 12px; }
 
 .help {
   display: inline-flex;
@@ -772,7 +759,7 @@
 
 /* ── kbd shortcut ─────────────────────────────────────────────────────────── */
 kbd {
-  font-family: "Geist Mono", ui-monospace, monospace;
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
   font-size: 10.5px;
   padding: 1px 5px;
   border: 1px solid var(--border);
@@ -806,13 +793,13 @@ input[type=range] { accent-color: var(--primary); }
   text-align: left;
 }
 .action-card-row1 { display: flex; align-items: center; gap: 8px; }
-.action-card-rank { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; color: var(--fg-3); }
+.action-card-rank { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 11px; color: var(--fg-3); }
 .action-card-name { font-size: 12.5px; font-weight: 500; flex: 1; min-width: 0; word-break: break-word; }
 .action-card-meta {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-size: 11px; color: var(--fg-3);
 }
-.action-card-meta .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+.action-card-meta .mono { font-family: "Geist Mono Variable", ui-monospace, monospace; }
 .action-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .action-card.clickable { cursor: pointer; }
 .action-card.clickable:hover { background: var(--hover); }
@@ -857,7 +844,7 @@ input[type=range] { accent-color: var(--primary); }
 }
 .torrent-card-foot { font-size: 11px; }
 .torrent-card-sep { color: var(--fg-4); }
-.torrent-card .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+.torrent-card .mono { font-family: "Geist Mono Variable", ui-monospace, monospace; }
 
 /* ── Responsive overrides ─────────────────────────────────────────────────── */
 /* Mobile topbar visibility: shown only when the desktop sidebar is hidden. */

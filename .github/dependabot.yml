@@ -6,6 +6,10 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # 0.3+ compiles in AMQP, XMPP and OpenPGP clients we never use (docs/STACK.md).
+      - dependency-name: github.com/unraid/apprise-go
+        versions: [">= 0.3.0"]
     groups:
       go-deps:
         patterns: ["*"]

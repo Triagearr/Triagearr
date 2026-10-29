@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Go dependencies refreshed (koanf 2.4.1, urfave/cli 3.14.0, modernc.org/sqlite 1.61.0, x/time 0.16.0, testify 1.12.1); `apprise-go` held at 0.2.8, newer releases compile in AMQP, XMPP and OpenPGP clients.
+- Web dependencies refreshed (React 19.3, Vite 8.3, Vitest 5, TanStack, Recharts 3.10, zod 4.6, lucide 1.64).
+- Geist fonts now come from `@fontsource-variable/geist`; the `geist` package dragged Next.js, sharp and Babel into the install tree.
+
+### Security
+
+- `bun audit` clean: drops Next.js from the web install tree and pins patched `postcss`, `nanoid`, `browserslist`, `baseline-browser-mapping` and `@babel/core` through `overrides`.
+- `anchore/sbom-action` 0.24.3.
+
 ## [1.0.0-rc5] - 2026-10-29
 
 ### Added
