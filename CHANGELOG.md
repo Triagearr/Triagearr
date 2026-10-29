@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc6] - 2026-10-29
+
 ### Changed
 
 - Go dependencies refreshed (koanf 2.4.1, urfave/cli 3.14.0, modernc.org/sqlite 1.61.0, x/time 0.16.0, testify 1.12.1); `apprise-go` held at 0.2.8, newer releases compile in AMQP, XMPP and OpenPGP clients.
