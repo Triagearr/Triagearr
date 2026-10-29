@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -98,6 +99,14 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		"version", version,
 	)
 
+	// Pollers return the cancelled context on a normal stop; anything else
+	// is a real failure worth surfacing, even though shutdown proceeds.
+	waitPollers := func() {
+		if err := <-mgrDone; err != nil && !errors.Is(err, context.Canceled) {
+			slog.Warn("pollers stopped with an error", "err", err)
+		}
+	}
+
 	// reload rebuilds the engine + pollers from the freshly persisted overrides
 	// and swaps them in. It drains the old pollers before starting the new set
 	// so two DiskWatchers can't both act during the swap. On any failure it
@@ -112,7 +121,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 			return fmt.Errorf("building engine: %w", err)
 		}
 		engineCancel()
-		<-mgrDone
+		waitPollers()
 		engineCtx, engineCancel = context.WithCancel(signalCtx)
 		mgrDone = make(chan error, 1)
 		go func() { mgrDone <- pollers.NewManager(newPs...).Run(engineCtx) }()
@@ -127,7 +136,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		select {
 		case <-signalCtx.Done():
 			engineCancel()
-			<-mgrDone
+			waitPollers()
 			if httpSrv != nil {
 				return <-httpErrCh
 			}
@@ -136,7 +145,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 			// The listener died (bind failure or fatal serve error). Tear the
 			// pollers down and surface it.
 			engineCancel()
-			<-mgrDone
+			waitPollers()
 			return err
 		case req := <-reloadCh:
 			req.done <- reload()
