@@ -297,6 +297,7 @@ type RunItem struct {
 type Link struct {
 	ArrType      ArrType
 	FileID       int64
+	MediaID      int64 // *arr movie/series id owning the file; lets consumers act on the media without slug matching
 	DownloadID   Hash
 	TitleSlug    string // URL slug for Sonarr/Radarr deep links; empty for other arr types
 	DroppedPath  string // *arr-side source path at import (diagnostic only)

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `GET /api/v1/torrents/{hash}`: each link now carries `media_id`, the
+  Radarr movie / Sonarr series id owning the file, so API consumers can act on
+  the media (tag it, open it) without matching on `title_slug`.
+
 ## [0.7.0 – 1.0.0-rc4] - 2026-08-09
 
 Everything shipped between the last dated entry (0.6.1) and this cleanup

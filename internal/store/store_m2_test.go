@@ -532,6 +532,7 @@ func TestArrImports_JoinFiltersOrphanedFileIDs(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got, 1, "the orphaned arr_imports row (fileId=11 absent from media_files) must be filtered out")
 	require.Equal(t, int64(10), got[0].FileID)
+	require.Equal(t, int64(7), got[0].MediaID, "media id comes from the live media_files row")
 	require.Equal(t, "/files/media/E01.mkv", got[0].LivePath)
 }
 
