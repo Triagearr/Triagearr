@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc5] - 2026-10-29
+
 ### Added
 - `GET /api/v1/torrents/{hash}`: each link now carries `media_id`, the
   Radarr movie / Sonarr series id owning the file, so API consumers can act on
   the media (tag it, open it) without matching on `title_slug`.
+
+### Security
+- Go 1.26.10 and `golang.org/x/net` 0.62.0: fixes the stdlib (`crypto/tls`,
+  `crypto/x509`, `net/http`, `net/url`, ...) and x/net vulnerabilities reported
+  by govulncheck since 1.0.0-rc4.
 
 ## [0.7.0 – 1.0.0-rc4] - 2026-08-09
 
