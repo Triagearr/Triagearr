@@ -6,7 +6,7 @@ This document captures every dependency Triagearr commits to, the version pin, a
 
 | | Choice | Version | Why |
 |---|---|---|---|
-| Language | Go | **1.26.3** | Mature stdlib, `log/slog` mature, easy cross-compile, single static binary |
+| Language | Go | **1.26.10** | Mature stdlib, `log/slog` mature, easy cross-compile, single static binary |
 
 ## CLI framework
 
@@ -139,7 +139,7 @@ bumps each independently. These are **developer tools, not `go.mod` dependencies
 | | Choice | Version | Why |
 |---|---|---|---|
 | Toolchain manager | `aquaproj/aqua` | repo-local config | Declarative, per-repo pins; Renovate-friendly |
-| Go | `golang/go` | go1.26.3 | Build/test/run the daemon |
+| Go | `golang/go` | go1.26.10 | Build/test/run the daemon |
 | Go linter | `golangci/golangci-lint` | v2.12.2 | `make lint` |
 | JS runtime/pm | `oven-sh/bun` | 1.3.14 | `web/` install + Vite dev/build |
 | Node.js | `nodejs/node` | v26.2.0 | Vite tooling + Playwright MCP (E2E) |
